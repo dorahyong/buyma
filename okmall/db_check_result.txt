@@ -1,0 +1,301 @@
+=== ace_products ===
+{
+  "id": 1,
+  "raw_data_id": 31,
+  "reference_number": "a0ad1f80-692e-4303-a931-dddaf8acaa77",
+  "control": "publish",
+  "name": "【即発】NIKE 남성 나이키 드라이 핏 페이서 하프 짚【国内発】",
+  "brand_id": 275,
+  "category_id": 6054,
+  "price": 6300,
+  "available_until": "2026-02-17",
+  "buying_area_id": "2002003000",
+  "shipping_area_id": "2002003000",
+  "model_no": "FQ2494-010",
+  "is_published": 0
+}
+---
+{
+  "id": 2,
+  "raw_data_id": 32,
+  "reference_number": "a4cd36ec-ca54-4702-ba64-8872d12f0925",
+  "control": "publish",
+  "name": "【即発】NIKE 남성 에브리데이 코튼 스트레치 박서 3팩【国内発】",
+  "brand_id": 275,
+  "category_id": 0,
+  "price": 5900,
+  "available_until": "2026-02-17",
+  "buying_area_id": "2002003000",
+  "shipping_area_id": "2002003000",
+  "model_no": "KE1007-MP1",
+  "is_published": 0
+}
+---
+{
+  "id": 3,
+  "raw_data_id": 33,
+  "reference_number": "f5b9ea98-beea-4716-a070-7962045736ec",
+  "control": "publish",
+  "name": "【即発】NIKE 남성 나이키 스톰핏 윈드러너 프리마로프트 후디드 자켓【国内発】",
+  "brand_id": 275,
+  "category_id": 3302,
+  "price": 22200,
+  "available_until": "2026-02-17",
+  "buying_area_id": "2002003000",
+  "shipping_area_id": "2002003000",
+  "model_no": "FB8185-077",
+  "is_published": 0
+}
+---
+
+=== ace_product_images ===
+{
+  "id": 1,
+  "ace_product_id": 621,
+  "position": 1,
+  "source_image_url": "https://product-image.wconcept.co.kr/productimg/image/img9/98/307477598_GK90847.jpg",
+  "cloudflare_image_url": null,
+  "buyma_image_path": null,
+  "is_uploaded": 0,
+  "upload_error": null,
+  "created_at": "2026-01-19 11:27:49",
+  "updated_at": "2026-01-19 11:27:49"
+}
+---
+{
+  "id": 2,
+  "ace_product_id": 621,
+  "position": 2,
+  "source_image_url": "https://product-image.wconcept.co.kr/productimg/image/img9/98/307477598_add1_IG11788.jpg",
+  "cloudflare_image_url": null,
+  "buyma_image_path": null,
+  "is_uploaded": 0,
+  "upload_error": null,
+  "created_at": "2026-01-19 11:27:49",
+  "updated_at": "2026-01-19 11:27:49"
+}
+---
+{
+  "id": 3,
+  "ace_product_id": 621,
+  "position": 3,
+  "source_image_url": "https://product-image.wconcept.co.kr/productimg/image/img9/98/307477598_add2_IG11788.jpg",
+  "cloudflare_image_url": null,
+  "buyma_image_path": null,
+  "is_uploaded": 0,
+  "upload_error": null,
+  "created_at": "2026-01-19 11:27:49",
+  "updated_at": "2026-01-19 11:27:49"
+}
+---
+{
+  "id": 4,
+  "ace_product_id": 621,
+  "position": 4,
+  "source_image_url": "https://product-image.wconcept.co.kr/productimg/image/img9/98/307477598_add3_IG11788.jpg",
+  "cloudflare_image_url": null,
+  "buyma_image_path": null,
+  "is_uploaded": 0,
+  "upload_error": null,
+  "created_at": "2026-01-19 11:27:49",
+  "updated_at": "2026-01-19 11:27:49"
+}
+---
+{
+  "id": 5,
+  "ace_product_id": 621,
+  "position": 5,
+  "source_image_url": "https://product-image.wconcept.co.kr/productimg/image/img9/98/307477598_add4_IG11788.jpg",
+  "cloudflare_image_url": null,
+  "buyma_image_path": null,
+  "is_uploaded": 0,
+  "upload_error": null,
+  "created_at": "2026-01-19 11:27:49",
+  "updated_at": "2026-01-19 11:27:49"
+}
+---
+
+=== ace_product_options ===
+{
+  "id": 1,
+  "ace_product_id": 1,
+  "option_type": "color",
+  "value": "Black",
+  "master_id": 2,
+  "position": 1,
+  "details_json": null,
+  "source_option_value": "Black",
+  "created_at": "2026-01-18 20:10:30"
+}
+---
+{
+  "id": 2,
+  "ace_product_id": 1,
+  "option_type": "size",
+  "value": "S",
+  "master_id": 0,
+  "position": 1,
+  "details_json": "{\"실측\": \"95 전후\"}",
+  "source_option_value": "S",
+  "created_at": "2026-01-18 20:10:30"
+}
+---
+{
+  "id": 3,
+  "ace_product_id": 1,
+  "option_type": "size",
+  "value": "M",
+  "master_id": 0,
+  "position": 2,
+  "details_json": "{\"실측\": \"100 전후\"}",
+  "source_option_value": "M",
+  "created_at": "2026-01-18 20:10:30"
+}
+---
+{
+  "id": 4,
+  "ace_product_id": 1,
+  "option_type": "size",
+  "value": "L",
+  "master_id": 0,
+  "position": 3,
+  "details_json": "{\"실측\": \"105 전후\"}",
+  "source_option_value": "L",
+  "created_at": "2026-01-18 20:10:30"
+}
+---
+{
+  "id": 5,
+  "ace_product_id": 2,
+  "option_type": "color",
+  "value": "WHITE/HEATHER GREY/BLACK",
+  "master_id": 1,
+  "position": 1,
+  "details_json": null,
+  "source_option_value": "WHITE/HEATHER GREY/BLACK",
+  "created_at": "2026-01-18 21:53:45"
+}
+---
+
+=== ace_product_variants ===
+{
+  "id": 1,
+  "ace_product_id": 1,
+  "color_value": "Black",
+  "size_value": "S",
+  "options_json": "[{\"type\": \"color\", \"value\": \"Black\"}, {\"type\": \"size\", \"value\": \"S\"}]",
+  "stock_type": "stock_in_hand",
+  "stocks": 1,
+  "source_option_code": "2234429",
+  "source_stock_status": "in_stock",
+  "created_at": "2026-01-18 20:10:31",
+  "updated_at": "2026-01-18 20:10:31"
+}
+---
+{
+  "id": 2,
+  "ace_product_id": 1,
+  "color_value": "Black",
+  "size_value": "M",
+  "options_json": "[{\"type\": \"color\", \"value\": \"Black\"}, {\"type\": \"size\", \"value\": \"M\"}]",
+  "stock_type": "stock_in_hand",
+  "stocks": 1,
+  "source_option_code": "2234430",
+  "source_stock_status": "in_stock",
+  "created_at": "2026-01-18 20:10:31",
+  "updated_at": "2026-01-18 20:10:31"
+}
+---
+{
+  "id": 3,
+  "ace_product_id": 1,
+  "color_value": "Black",
+  "size_value": "L",
+  "options_json": "[{\"type\": \"color\", \"value\": \"Black\"}, {\"type\": \"size\", \"value\": \"L\"}]",
+  "stock_type": "stock_in_hand",
+  "stocks": 1,
+  "source_option_code": "2234431",
+  "source_stock_status": "in_stock",
+  "created_at": "2026-01-18 20:10:31",
+  "updated_at": "2026-01-18 20:10:31"
+}
+---
+{
+  "id": 4,
+  "ace_product_id": 2,
+  "color_value": "WHITE/HEATHER GREY/BLACK",
+  "size_value": "S",
+  "options_json": "[{\"type\": \"color\", \"value\": \"WHITE/HEATHER GREY/BLACK\"}, {\"type\": \"size\", \"value\": \"S\"}]",
+  "stock_type": "stock_in_hand",
+  "stocks": 1,
+  "source_option_code": "2523263",
+  "source_stock_status": "in_stock",
+  "created_at": "2026-01-18 21:53:45",
+  "updated_at": "2026-01-18 21:53:45"
+}
+---
+{
+  "id": 5,
+  "ace_product_id": 2,
+  "color_value": "WHITE/HEATHER GREY/BLACK",
+  "size_value": "M",
+  "options_json": "[{\"type\": \"color\", \"value\": \"WHITE/HEATHER GREY/BLACK\"}, {\"type\": \"size\", \"value\": \"M\"}]",
+  "stock_type": "stock_in_hand",
+  "stocks": 1,
+  "source_option_code": "2523264",
+  "source_stock_status": "in_stock",
+  "created_at": "2026-01-18 21:53:45",
+  "updated_at": "2026-01-18 21:53:45"
+}
+---
+
+=== buyma_tokens ===
+{
+  "id": 1,
+  "access_token": "tq-N9OBvWbFywhVnDZotTt3F_acitU_54zosskh3pSs...",
+  "refresh_token": "prS54OPae_oX-MPpOx1Tu6TbV9El1kPekpEz1iOeAis...",
+  "updated_at": "2026-01-14 10:30:17"
+}
+
+=== ace_product_shipping ===
+{
+  "id": 1,
+  "ace_product_id": 1,
+  "shipping_method_id": 369,
+  "created_at": "2026-01-18 20:10:31"
+}
+---
+{
+  "id": 2,
+  "ace_product_id": 2,
+  "shipping_method_id": 369,
+  "created_at": "2026-01-18 21:53:45"
+}
+---
+{
+  "id": 3,
+  "ace_product_id": 3,
+  "shipping_method_id": 369,
+  "created_at": "2026-01-18 21:53:45"
+}
+---
+{
+  "id": 4,
+  "ace_product_id": 4,
+  "shipping_method_id": 369,
+  "created_at": "2026-01-18 21:53:45"
+}
+---
+{
+  "id": 5,
+  "ace_product_id": 5,
+  "shipping_method_id": 369,
+  "created_at": "2026-01-18 21:53:45"
+}
+---
+
+=== 데이터 수 ===
+ace_products: 967
+ace_product_images: 1530
+ace_product_options: 2727
+ace_product_variants: 1760
