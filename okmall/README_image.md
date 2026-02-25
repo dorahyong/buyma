@@ -17,7 +17,7 @@ Remote Address
 Referrer Policy
 strict-origin-when-cross-origin
 
-### REquests header
+### Requests header
 :authority
 display.wconcept.co.kr
 :method
@@ -185,6 +185,54 @@ wconcept_product_detail.html
                             <!-- // 20170912 video play button -->
                         </div>
 
+
+---
+
+## 이슈 해결 기록
+
+### 검색 결과 1개일 때 추천 상품까지 수집되는 문제 (2026-01-27)
+
+**문제 현상:**
+- 검색 결과가 2개 이상인 경우: 정상
+- 검색 결과가 없는 경우: 정상
+- 검색 결과가 1개인 경우: "이 상품을 찾으셨나요?" 추천 상품까지 수집됨
+
+**원인 분석:**
+W컨셉 검색 페이지의 HTML 구조:
+```html
+<!-- 실제 검색 결과 영역 -->
+<div class="sc-1v9lvl2-0 kkERjW product-list">
+    <div class="sc-pieeex-0 jNgOLy items-grid list">
+        <div class="sc-jpuob9-8 iMBqZp product-item item type-all">
+        ...
+        </div>
+    </div>
+</div>
+
+<!-- "이 상품을 찾으셨나요?" 추천 영역 -->
+<div class="sc-l8ky0t-0 jiYAqI box area-rec-title">
+    <h3 class="sc-ixpkst-0 ffPCFB title">
+        <span class="sc-tdjdw3-0 cra-dzL text">이 상품을 찾으셨나요?</span>
+    </h3>
+</div>
+<div class="sc-1v9lvl2-0 kkERjW product-list area-rec-prd-list">
+    <div class="sc-pieeex-0 jNgOLy items-grid list">
+        <div class="sc-jpuob9-8 iMBqZp product-item item type-simple">
+        ...
+        </div>
+    </div>
+</div>
+```
+
+**핵심 차이점:**
+- 실제 검색 결과: `product-list` 클래스만 있음
+- 추천 상품 영역: `product-list area-rec-prd-list` 클래스 (area-rec-prd-list 추가됨)
+
+**해결 방법:**
+1. `.product-list:not(.area-rec-prd-list)` 셀렉터로 추천 영역 제외
+2. 해당 영역 내에서만 `.product-item` 검색
+
+---
 
 # cloudflare R2 에 이미지 저장하기
 - ace_product_images 테이블에 저장된 데이터를 기반으로 이미지를 다운로드 후 cloudeflare R2  저장소에 이미지를 저장하고 원블록스 http 이미지 url을 확보한 후 ace_product_images 테이블에 업데이트한다. 

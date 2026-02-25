@@ -43,8 +43,6 @@ from botocore.exceptions import ClientError
 import requests
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 # .env 파일 로드
 load_dotenv()
@@ -68,8 +66,6 @@ UPLOAD_PREFIX = "upload"  # R2 버킷 내 폴더 경로 (소스별 구분)
 REQUEST_TIMEOUT = 30  # 이미지 다운로드 타임아웃 (초)
 RETRY_COUNT = 3  # 실패 시 재시도 횟수
 RETRY_DELAY = 2  # 재시도 간 대기 시간 (초)
-# 병렬 처리 설정
-DEFAULT_WORKERS = 5
 
 # NOT FOUND 표시
 NOT_FOUND_VALUE = "not found"
@@ -410,23 +406,21 @@ class R2ImageUploader:
             result.error_message = str(e)
             return result
 
-    def run(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None, workers: int = DEFAULT_WORKERS) -> Dict:
+    def run(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None) -> Dict:
         """
-        전체 실행 (병렬 처리)
+        전체 실행
 
         Args:
             limit: 최대 처리 건수
             retry_failed: True면 실패한 것만 재시도
             ace_product_id: 특정 상품 ID만 처리
             brand: 특정 브랜드만 처리
-            workers: 병렬 처리 스레드 수
 
         Returns:
             실행 통계
         """
         log("=" * 60)
         log("R2 이미지 업로드 시작")
-        log(f"병렬 처리: {workers}스레드")
         log("=" * 60)
 
         if self.dry_run:
@@ -447,48 +441,29 @@ class R2ImageUploader:
             log("업로드할 이미지가 없습니다.")
             return {'total': 0, 'success': 0, 'failed': 0}
 
-        # 통계 (스레드 안전)
         stats = {'total': len(images), 'success': 0, 'failed': 0}
-        stats_lock = threading.Lock()
-        total = len(images)
 
-        def process_image(idx: int, image: ImageRecord) -> None:
-            """단일 이미지 처리 (스레드에서 실행)"""
-            log(f"[{idx + 1}/{total}] id={image.id}, product={image.ace_product_id}, pos={image.position}")
+        for idx, image in enumerate(images):
+            log(f"\n[{idx + 1}/{len(images)}] id={image.id}, product={image.ace_product_id}, pos={image.position}")
+            log(f"  원본: {image.source_image_url[:80]}...")
 
             # 이미지 처리
             result = self.process_single_image(image)
 
             if result.success:
                 log(f"  => 성공: {result.r2_url}", "SUCCESS")
-                with stats_lock:
-                    stats['success'] += 1
+                stats['success'] += 1
 
                 # DB 업데이트 (dry_run이 아닐 때만)
                 if not self.dry_run:
                     self.update_database(image.id, result.r2_url, True)
             else:
                 log(f"  => 실패: {result.error_message}", "ERROR")
-                with stats_lock:
-                    stats['failed'] += 1
+                stats['failed'] += 1
 
                 # DB 업데이트 (dry_run이 아닐 때만)
                 if not self.dry_run:
                     self.update_database(image.id, None, False, result.error_message)
-
-        # 병렬 처리 실행
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = []
-            for idx, image in enumerate(images):
-                future = executor.submit(process_image, idx, image)
-                futures.append(future)
-            
-            # 모든 작업 완료 대기
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    log(f"스레드 오류: {e}", "ERROR")
 
         # 결과 출력
         log("\n" + "=" * 60)
@@ -509,23 +484,46 @@ def main():
     parser = argparse.ArgumentParser(
         description='Cloudflare R2에 이미지 업로드 및 DB 업데이트'
     )
-    parser.add_argument('--limit', type=int, default=None, help='최대 처리 건수')
-    parser.add_argument('--dry-run', action='store_true', help='테스트 모드 (실제 업로드 안함)')
-    parser.add_argument('--retry-failed', action='store_true', help='실패한 이미지만 재시도')
-    parser.add_argument('--ace-product-id', type=int, default=None, help='특정 상품 ID만 처리')
-    parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')
-    parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'병렬 처리 스레드 수 (기본: {DEFAULT_WORKERS})')
+    parser.add_argument(
+        '--limit',
+        type=int,
+        default=None,
+        help='최대 처리 건수'
+    )
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='테스트 모드 (실제 업로드 안함)'
+    )
+    parser.add_argument(
+        '--retry-failed',
+        action='store_true',
+        help='실패한 이미지만 재시도'
+    )
+    parser.add_argument(
+        '--ace-product-id',
+        type=int,
+        default=None,
+        help='특정 상품 ID만 처리'
+    )
+    parser.add_argument(
+        '--brand',
+        type=str,
+        default=None,
+        help='특정 브랜드만 처리'
+    )
 
     args = parser.parse_args()
+    headless = args.headless.lower() != 'false' if hasattr(args, 'headless') else True
 
     try:
+        # 업로더 실행
         uploader = R2ImageUploader(dry_run=args.dry_run)
         stats = uploader.run(
             limit=args.limit,
             retry_failed=args.retry_failed,
             ace_product_id=args.ace_product_id,
-            brand=args.brand,
-            workers=args.workers
+            brand=args.brand
         )
 
         if stats.get('failed', 0) > 0:

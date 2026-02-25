@@ -65,4 +65,8 @@ htmlcov/
 *.db
 *.sqlite3
 
+# Buyma 민감 파일
+okmall/buyma_cookies.json
+okmall/get_token.py
+
 nul

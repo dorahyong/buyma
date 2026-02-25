@@ -40,8 +40,8 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# convert_to_japanese_gemini.py에서 배치 번역 함수 가져오기
-from convert_to_japanese_gemini import run_batch_translation
+# convert_to_japanese.py에서 번역 맵과 함수 가져오기
+from convert_to_japanese_gemini import KOREAN_TO_JAPANESE, convert_to_japanese
 
 # .env 파일 로드 (프로젝트 루트에서)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
@@ -328,9 +328,20 @@ def convert_measurements_to_details(
         # 키 → 일본어 키 변환 (영문/한국어 모두 지원)
         jp_key = MEASUREMENT_KEY_TO_JAPANESE.get(orig_key)
 
-        # 매핑에 없는 경우 스킵 (필요한 키는 MEASUREMENT_KEY_TO_JAPANESE에 추가)
+        # 매핑에 없는 경우 Gemini API로 번역 시도
         if jp_key is None and orig_key not in MEASUREMENT_KEY_TO_JAPANESE:
-            continue
+            # 번역 전에 한국어인지 확인
+            import re
+            if re.search(r'[가-힣]', orig_key):
+                try:
+                    jp_key = convert_to_japanese(orig_key)
+                    log(f"  → 측정 키 Gemini 번역: '{orig_key}' → '{jp_key}'")
+                except Exception as e:
+                    log(f"  → 측정 키 번역 실패: '{orig_key}' - {e}", "WARNING")
+                    continue
+            else:
+                # 영문이지만 매핑에 없음
+                continue
 
         # jp_key가 None인 경우 (제외 항목으로 명시된 경우)
         if not jp_key:
@@ -445,11 +456,9 @@ def format_buyma_product_name(brand_name: str, product_name: str, model_id: str 
     """
     # 상품명에서 불필요한 부분 제거
     clean_name = product_name.strip()
-    # 모델 아이디가 있다면 상품명 뒤에 공백과 함께 추가
-    full_product_name = f"{clean_name} {model_id}" if model_id else clean_name
 
     # 바이마 형식으로 포맷 (브랜드명은 영문만 사용)
-    return f"送料・関税込 | {brand_name} | {full_product_name}"
+    return f"【{brand_name}】{clean_name}" + (f"【{model_id}】" if model_id else "")
 
 
 def generate_product_comments(raw_data: Dict, options: List[Dict]) -> str:
@@ -757,7 +766,7 @@ class RawToAceConverter:
 
         return {'buyma_category_id': 0, 'buyma_category_name': None}
 
-    def fetch_raw_data(self, limit: int = None, brand: str = None, raw_id: int = None, upsert: bool = False) -> List[Dict]:
+    def fetch_raw_data(self, limit: int = None, brand: str = None, raw_id: int = None) -> List[Dict]:
         with self.engine.connect() as conn:
             query = """
                 SELECT r.id, r.source_site, r.mall_product_id, r.brand_name_en,
@@ -772,8 +781,8 @@ class RawToAceConverter:
             if raw_id:
                 query += " AND r.id = :raw_id"
                 params['raw_id'] = raw_id
-            elif not upsert:
-                # upsert 모드가 아니면 미변환 데이터만 조회
+            else:
+                # 특정 ID 지정이 없을 때만 미변환 데이터 조회
                 query += " AND a.id IS NULL"
                 
             if brand:
@@ -805,11 +814,11 @@ class RawToAceConverter:
         category_info = self.get_category_info(raw_data.get('category_path', ''))
         options = json_data.get('options', [])
 
-        # 1. 상품명 생성 및 정제 (한국어 원본 저장, 배치 번역에서 처리)
-        product_name = raw_data.get('product_name', '')
+        # 1. 상품명 생성 및 정제 (한국어 → 일본어 번역 포함)
+        product_name_jp = convert_to_japanese(raw_data.get('product_name', ''))
         buyma_name = format_buyma_product_name(
             brand_name=raw_data.get('brand_name_en', ''),
-            product_name=product_name,
+            product_name=product_name_jp,
             model_id=raw_data.get('model_id')
         )
         buyma_name = sanitize_text(buyma_name)
@@ -887,9 +896,9 @@ class RawToAceConverter:
             if composition.get('material'): colorsize_comments_parts.append(f"소재: {composition['material']}")
         
         colorsize_comments = "\n".join(colorsize_comments_parts) if colorsize_comments_parts else None
-
-        # 일본어 번역은 배치 처리에서 수행 (colorsize_comments_jp = NULL로 저장)
-        colorsize_comments_jp = None
+        
+        # 일본어 변환 추가
+        colorsize_comments_jp = convert_to_japanese(colorsize_comments) if colorsize_comments else None
 
         ace_product = {
             'raw_data_id': raw_data['id'], 'source_site': raw_data.get('source_site', 'okmall'),
@@ -913,7 +922,8 @@ class RawToAceConverter:
             'source_original_price': original_price_krw, 'source_sales_price': purchase_price_krw,
         }
 
-        # 이미지는 image_collector_parallel.py에서 별도 수집하여 ace_product_images 테이블에 직접 저장
+        images = json_data.get('images', [])
+        ace_images = [{'position': i+1, 'source_image_url': url, 'is_uploaded': 0} for i, url in enumerate(images[:20])]
 
         ace_options = []
         colors = set()
@@ -921,17 +931,15 @@ class RawToAceConverter:
         for opt in options:
             color_raw = opt.get('color', 'FREE') or 'FREE'
             size_raw = opt.get('tag_size', 'FREE') or 'FREE'
-            # 품절 임박 텍스트 제거
-            size_raw = size_raw.replace('품절 임박', '').replace('품절임박', '').strip()
-
-            # 1. 색상 (한국어 원본 저장, 배치 번역에서 처리)
-            color = color_raw
-
-            # 2. 사이즈 (한국어 원본 저장, 배치 번역에서 처리) - 단일사이즈만 FREE로 변환
+            
+            # 1. 색상 번역
+            color = convert_to_japanese(color_raw)
+            
+            # 2. 사이즈 번역 및 단일사이즈 처리
             if size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈']:
                 size = 'FREE'
             else:
-                size = size_raw
+                size = convert_to_japanese(size_raw)
 
             if color and color not in colors:
                 colors.add(color)
@@ -956,53 +964,6 @@ class RawToAceConverter:
                     'details_json': details, 'source_option_value': size_raw
                 })
         ace_options.extend(sizes)
-
-        # measurements에만 있고 options에 없는 사이즈 추가 (out_of_stock 상태)
-        if measurements:
-            existing_sizes = {s['value'] for s in sizes}  # 이미 추가된 사이즈 (번역된 값)
-            existing_sizes_raw = {s['source_option_value'] for s in sizes}  # 원본 사이즈값
-
-            for measurement_size_raw in measurements.keys():
-                # 이미 options에서 추가된 사이즈는 스킵
-                if measurement_size_raw in existing_sizes_raw:
-                    continue
-
-                # 사이즈 (한국어 원본 저장, 배치 번역에서 처리) - 단일사이즈만 FREE로 변환
-                if measurement_size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈']:
-                    measurement_size = 'FREE'
-                else:
-                    measurement_size = measurement_size_raw
-
-                # 값으로 중복 체크
-                if measurement_size in existing_sizes:
-                    continue
-
-                # measurements에서 해당 사이즈의 측정값 가져와서 BUYMA 형식으로 변환
-                size_measurements = measurements.get(measurement_size_raw)
-                details_list = []
-                if size_measurements and isinstance(size_measurements, dict):
-                    details_list = convert_measurements_to_details(
-                        size_measurements,
-                        category_id=category_info.get('buyma_category_id', 0),
-                        category_keys_map=self._category_size_keys_cache
-                    )
-                details = json.dumps(details_list, ensure_ascii=False) if details_list else None
-
-                # 사이즈 옵션 추가 (measurements에만 있으므로 out_of_stock)
-                sizes.append({
-                    'option_type': 'size', 'value': measurement_size, 'master_id': 0,
-                    'position': len(sizes) + 1,
-                    'details_json': details, 'source_option_value': measurement_size_raw
-                })
-                existing_sizes.add(measurement_size)
-                existing_sizes_raw.add(measurement_size_raw)
-
-                log(f"  → measurements에서 추가 사이즈 발견: {measurement_size_raw} (out_of_stock)")
-
-            # sizes 리스트가 업데이트되었으므로 ace_options에서 기존 size 옵션 제거 후 다시 추가
-            ace_options = [opt for opt in ace_options if opt['option_type'] != 'size']
-            ace_options.extend(sizes)
-
         if not colors: ace_options.append({'option_type': 'color', 'value': 'FREE', 'master_id': 99, 'position': 1, 'details_json': None, 'source_option_value': None})
         if not sizes: ace_options.append({'option_type': 'size', 'value': 'FREE', 'master_id': 0, 'position': 1, 'details_json': None, 'source_option_value': None})
 
@@ -1010,13 +971,13 @@ class RawToAceConverter:
         for opt in options:
             color_raw = opt.get('color', 'FREE') or 'FREE'
             size_raw = opt.get('tag_size', 'FREE') or 'FREE'
-
-            # 색상/사이즈 (한국어 원본 저장, 배치 번역에서 처리)
-            color_val = color_raw
+            
+            # 색상/사이즈 번역 (위와 동일 로직)
+            color_val = convert_to_japanese(color_raw)
             if size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈']:
                 size_val = 'FREE'
             else:
-                size_val = size_raw.replace('품절 임박', '').replace('품절임박', '').strip()
+                size_val = convert_to_japanese(size_raw)
                 
             # 사장님 방침: 재고가 있으면 무조건 '주문 후 매입(purchase_for_order)'
             stock_type = 'purchase_for_order' if opt.get('status') == 'in_stock' else 'out_of_stock'
@@ -1036,91 +997,7 @@ class RawToAceConverter:
                 'source_option_code': None, 'source_stock_status': raw_data.get('stock_status')
             })
 
-        # measurements에만 있는 사이즈에 대한 variants 추가 (out_of_stock)
-        if measurements:
-            # 이미 variants에 있는 사이즈 목록
-            existing_variant_sizes = {v['size_value'] for v in ace_variants}
-            # 색상 목록 (variants가 있으면 그 색상들, 없으면 FREE)
-            color_values = list(colors) if colors else ['FREE']
-
-            for size_opt in sizes:
-                size_val = size_opt['value']
-                # 이미 variants에 있는 사이즈는 스킵
-                if size_val in existing_variant_sizes:
-                    continue
-
-                # 모든 색상과 조합하여 variant 추가
-                for color_val in color_values:
-                    ace_variants.append({
-                        'color_value': color_val, 'size_value': size_val,
-                        'options_json': json.dumps([{'type': 'color', 'value': color_val}, {'type': 'size', 'value': size_val}], ensure_ascii=False),
-                        'stock_type': 'out_of_stock', 'stocks': 0,
-                        'source_option_code': None, 'source_stock_status': 'out_of_stock'
-                    })
-
-        return {'product': ace_product, 'options': ace_options, 'variants': ace_variants}
-
-    def get_existing_ace_product(self, raw_data_id: int) -> Optional[Dict]:
-        """raw_data_id로 기존 ace_product 조회"""
-        with self.engine.connect() as conn:
-            result = conn.execute(text("""
-                SELECT id, reference_number, buyma_product_id
-                FROM ace_products
-                WHERE raw_data_id = :raw_data_id
-            """), {'raw_data_id': raw_data_id})
-            row = result.fetchone()
-            if row:
-                return {
-                    'id': row[0],
-                    'reference_number': row[1],
-                    'buyma_product_id': row[2]
-                }
-            return None
-
-    def update_ace_data(self, ace_data: Dict, existing_product: Dict) -> int:
-        """기존 ace 데이터 업데이트 (colorsize_comments, options, variants만)"""
-        ace_product_id = existing_product['id']
-        product = ace_data['product']
-
-        with self.engine.connect() as conn:
-            # 1. ace_products: colorsize_comments, colorsize_comments_jp만 업데이트
-            conn.execute(text("""
-                UPDATE ace_products
-                SET colorsize_comments = :colorsize_comments,
-                    colorsize_comments_jp = :colorsize_comments_jp,
-                    updated_at = NOW()
-                WHERE id = :ace_product_id
-            """), {
-                'colorsize_comments': product.get('colorsize_comments'),
-                'colorsize_comments_jp': product.get('colorsize_comments_jp'),
-                'ace_product_id': ace_product_id
-            })
-
-            # 2. ace_product_options: 기존 삭제 후 재생성
-            conn.execute(text("DELETE FROM ace_product_options WHERE ace_product_id = :ace_product_id"),
-                        {'ace_product_id': ace_product_id})
-            for opt in ace_data['options']:
-                opt['ace_product_id'] = ace_product_id
-                conn.execute(text("""
-                    INSERT INTO ace_product_options
-                    (ace_product_id, option_type, value, master_id, position, details_json, source_option_value)
-                    VALUES (:ace_product_id, :option_type, :value, :master_id, :position, :details_json, :source_option_value)
-                """), opt)
-
-            # 3. ace_product_variants: 기존 삭제 후 재생성
-            conn.execute(text("DELETE FROM ace_product_variants WHERE ace_product_id = :ace_product_id"),
-                        {'ace_product_id': ace_product_id})
-            for var in ace_data['variants']:
-                var['ace_product_id'] = ace_product_id
-                conn.execute(text("""
-                    INSERT INTO ace_product_variants
-                    (ace_product_id, color_value, size_value, options_json, stock_type, stocks, source_option_code, source_stock_status)
-                    VALUES (:ace_product_id, :color_value, :size_value, :options_json, :stock_type, :stocks, :source_option_code, :source_stock_status)
-                """), var)
-
-            conn.commit()
-            log(f"  → ace_product_id={ace_product_id} 업데이트 완료 (colorsize_comments, options, variants)")
-            return ace_product_id
+        return {'product': ace_product, 'images': ace_images, 'options': ace_options, 'variants': ace_variants}
 
     def save_ace_data(self, ace_data: Dict) -> int:
         with self.engine.connect() as conn:
@@ -1148,7 +1025,9 @@ class RawToAceConverter:
             """), product)
             ace_product_id = result.lastrowid
 
-            # 이미지는 image_collector_parallel.py에서 별도 처리
+            for img in ace_data['images']:
+                img['ace_product_id'] = ace_product_id
+                conn.execute(text("INSERT INTO ace_product_images (ace_product_id, position, source_image_url, is_uploaded) VALUES (:ace_product_id, :position, :source_image_url, :is_uploaded)"), img)
 
             for opt in ace_data['options']:
                 opt['ace_product_id'] = ace_product_id
@@ -1161,65 +1040,25 @@ class RawToAceConverter:
             conn.commit()
             return ace_product_id
 
-    def run_conversion(self, limit: int = None, brand: str = None, dry_run: bool = False, raw_id: int = None, upsert: bool = False) -> Dict:
+    def run_conversion(self, limit: int = None, brand: str = None, dry_run: bool = False, raw_id: int = None) -> Dict:
         self.load_brand_mapping()
         self.load_category_mapping()
         self.load_shipping_config()
         self.load_color_master_id_mapping()
         self.load_category_size_keys_mapping()  # 카테고리별 사이즈 키 매핑 로드
-        raw_data_list = self.fetch_raw_data(limit=limit, brand=brand, raw_id=raw_id, upsert=upsert)
-        if not raw_data_list: return {'total': 0, 'success': 0, 'failed': 0, 'skipped': 0, 'updated': 0}
-        success, failed, skipped, updated = 0, 0, 0, 0
+        raw_data_list = self.fetch_raw_data(limit=limit, brand=brand, raw_id=raw_id)
+        if not raw_data_list: return {'total': 0, 'success': 0, 'failed': 0}
+        success, failed = 0, 0
         for idx, raw_data in enumerate(raw_data_list):
             try:
                 log(f"[{idx+1}/{len(raw_data_list)}] 변환 중: raw_id={raw_data['id']}, brand={raw_data['brand_name_en']}...")
-
-                # 기존 ace_product 확인
-                existing_product = self.get_existing_ace_product(raw_data['id'])
-
-                if existing_product:
-                    if upsert:
-                        # upsert 모드: 업데이트
-                        ace_data = self.convert_single_raw_to_ace(raw_data)
-                        if not dry_run:
-                            self.update_ace_data(ace_data, existing_product)
-                        updated += 1
-                    else:
-                        # 기본 모드: 스킵
-                        log(f"  → 이미 변환된 데이터 (ace_product_id={existing_product['id']}), 스킵")
-                        skipped += 1
-                else:
-                    # 신규 데이터: INSERT
-                    ace_data = self.convert_single_raw_to_ace(raw_data)
-                    if not dry_run:
-                        self.save_ace_data(ace_data)
-                    success += 1
+                ace_data = self.convert_single_raw_to_ace(raw_data)
+                if not dry_run: self.save_ace_data(ace_data)
+                success += 1
             except Exception as e:
                 log(f"  → 변환 실패: {e}", "ERROR")
                 failed += 1
-
-        # 배치 번역 실행 (dry_run이 아니고 처리된 데이터가 있을 때)
-        if not dry_run and (success > 0 or updated > 0):
-            log("=" * 60)
-            log("배치 번역 시작...")
-            try:
-                # mall_brands에서 buyma_brand_name 조회
-                buyma_brand = None
-                if brand:
-                    with self.engine.connect() as conn:
-                        result = conn.execute(text("""
-                            SELECT buyma_brand_name 
-                            FROM mall_brands 
-                            WHERE mall_brand_name_en = :brand
-                            LIMIT 1
-                        """), {'brand': brand})
-                        row = result.fetchone()
-                        buyma_brand = row[0] if row else None
-                run_batch_translation(brand=buyma_brand, limit=None, dry_run=False)
-            except Exception as e:
-                log(f"배치 번역 실패: {e}", "ERROR")
-
-        return {'total': len(raw_data_list), 'success': success, 'failed': failed, 'skipped': skipped, 'updated': updated}
+        return {'total': len(raw_data_list), 'success': success, 'failed': failed}
 
 def main():
     parser = argparse.ArgumentParser(description='raw_scraped_data를 ace 테이블로 변환')
@@ -1227,24 +1066,21 @@ def main():
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--brand', type=str, default=None)
     parser.add_argument('--raw-id', type=int, help='특정 raw_scraped_data ID 처리')
-    parser.add_argument('--upsert', action='store_true', help='이미 변환된 데이터도 업데이트 (colorsize_comments, options, variants)')
     args = parser.parse_args()
 
     log("=" * 60)
     log("raw_to_ace_converter 시작")
-    log(f"  옵션: brand={args.brand}, limit={args.limit}, dry_run={args.dry_run}, raw_id={args.raw_id}, upsert={args.upsert}")
+    log(f"  옵션: brand={args.brand}, limit={args.limit}, dry_run={args.dry_run}, raw_id={args.raw_id}")
     log("=" * 60)
 
     try:
         converter = RawToAceConverter(DB_URL)
-        result = converter.run_conversion(limit=args.limit, brand=args.brand, dry_run=args.dry_run, raw_id=args.raw_id, upsert=args.upsert)
+        result = converter.run_conversion(limit=args.limit, brand=args.brand, dry_run=args.dry_run, raw_id=args.raw_id)
 
         log("=" * 60)
         log("변환 완료!")
         log(f"  총 처리: {result['total']}건")
-        log(f"  신규 INSERT: {result['success']}건")
-        log(f"  업데이트: {result['updated']}건")
-        log(f"  스킵: {result['skipped']}건")
+        log(f"  성공: {result['success']}건")
         log(f"  실패: {result['failed']}건")
         if args.dry_run:
             log("  (dry-run 모드: DB 저장 안함)")

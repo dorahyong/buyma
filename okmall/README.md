@@ -27,6 +27,12 @@
 - 소스 파일을 생성할 때에는 주석과 실행 로그를 자세하게 기재한다.
 - 근거 없이 추측하지 않는다. (예 : 파일이 안 열리거나 링크에 접속할 수 없거나 db에 접속할 수 없는데 파일명, 테이블명 등으로 추측하기)
 
+## 서버 정보
+- 고정 IP : 43.200.228.173
+- 도메인 : buyma-api.oneblocks.co.kr 
+- 콜백 리다이렉션 url, 웹훅 url은 README.buyma_api.md 파일에 있음
+- ~/buyma/buyma 아래 .git 존재
+
 ## 바이마 정보 (중요)
 - REST API : https://specification.personal-shopper-api.buyma.com/api/
 - Webhook : https://specification.personal-shopper-api.buyma.com/api/webhook/
@@ -606,3 +612,29 @@ updated_at
         </div>
     </div>
 </div>
+
+## 수집 관련 정보 3 - 브랜드 상품 상세 페이지 -  #ProductOPTList 품절임박 상품
+<div class="layout_popup03_content" id="ProductOPTList">
+                                                    <table class="shoes_size">
+                                                                                                                    <colgroup><col width="130"><col width="83"><col width="103"></colgroup>
+                                                                                                                <thead class="thL">
+                                                        <tr style="cursor:pointer;">
+                                                            <th rowspan="2" class="bt_clr bl_clr ngB">구매가능한<br>색상</th>
+                                                            <th colspan="2" class="bt_clr br_clr ngB">구매가능한 사이즈</th>
+                                                            <th rowspan="2" class="bt_clr br_clr ngB set_etc">비고</th>
+                                                        </tr>
+                                                        <tr style="cursor:pointer;">
+                                                            <th>택 사이즈</th>
+                                                                                                                            <th class="br_clr">오케이몰 실측 사이즈</th>
+                                                                                                                    </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                        <tr name="selectOption" sinfo="Free-단일사이즈^M9:01|Free-단일사이즈|2249484" sprice="559000" style="cursor: pointer; background-color: rgb(255, 255, 255);"><td class="t_center">Free</td><td class="t_center">단일사이즈<span class="size_notice">품절 임박</span></td><td class="t_center t_bold">-</td><td class="t_center set_etc"><span class="set_etc_opt2">559,000원</span></td></tr>
+                                                        </tbody>
+                                                    </table>
+                                                    <dl class="foot_size">
+                                                        <dd style="padding: 0;">
+                                                            <img src="https://okimg.okmall.com/zz_design/PC/List/sub_layerpopup4-1img.gif" alt="상품 구매시 필독사항">
+                                                                </dd>
+                                                    </dl>
+                                                </div>

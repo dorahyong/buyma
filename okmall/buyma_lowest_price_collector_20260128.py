@@ -22,8 +22,6 @@ import argparse
 import urllib.parse
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 import requests
 from bs4 import BeautifulSoup
@@ -65,16 +63,12 @@ HEADERS = {
 }
 
 # 요청 간 대기 시간 (초)
-REQUEST_DELAY = 0.5
-
-# 병렬 처리 설정
-DEFAULT_WORKERS = 3
+REQUEST_DELAY = 1.5
 
 # 마진 계산 상수
 EXCHANGE_RATE = 9.2          # 환율 (원/엔) - 고정값
 SALES_FEE_RATE = 0.055       # 바이마 판매수수료 5.5%
 DEFAULT_SHIPPING_FEE = 15000 # 기본 예상 배송비 (원)
-BUYMA_BUYER_ID = "9757794"
 
 # =====================================================
 # 유틸리티 함수
@@ -228,12 +222,15 @@ class BuymaLowestPriceCollector:
 
     def search_buyma_lowest_price(self, model_no: str) -> Tuple[Optional[int], Optional[str]]:
         """
-        바이마에서 model_no로 검색하여 경쟁자 최저가 조회
-        
-        - 내 상품(BUYMA_BUYER_ID)은 제외하고 경쟁자 최저가를 반환
-        - 중고 상품도 제외
-        - 내 상품만 있으면 None 반환 (경쟁자 없음)
+        바이마에서 model_no로 검색하여 최저가 조회
+
+        Args:
+            model_no: 모델번호 (예: "776523 V0VG4 8803")
+
+        Returns:
+            (최저가, 에러메시지) - 성공시 (가격, None), 실패시 (None, 에러메시지)
         """
+        # URL 인코딩
         encoded_model_no = urllib.parse.quote(model_no, safe='')
         url = BUYMA_SEARCH_URL.format(model_no=encoded_model_no)
 
@@ -241,38 +238,27 @@ class BuymaLowestPriceCollector:
             response = self.session.get(url, timeout=30)
             response.raise_for_status()
 
+            # HTML 파싱
             soup = BeautifulSoup(response.text, 'html.parser')
 
-            all_products = soup.find_all('li', class_='product')
-            if not all_products:
+            # 첫 번째 상품 찾기 (li.product)
+            first_product = soup.find('li', class_='product')
+            if not first_product:
+                # 검색 결과 없음
                 return None, "검색 결과 없음"
 
-            # 모든 상품을 순회하며 경쟁자(내 상품 제외, 중고 제외) 최저가 찾기
-            for product in all_products:
-                # 1. 중고 상품 제외
-                used_tag = product.find('span', class_='product_used_tag')
-                if used_tag:
-                    continue
-                
-                # 2. 내 상품 제외
-                buyer_elem = product.select_one('.product_Buyer a')
-                if buyer_elem:
-                    href = buyer_elem.get('href', '')
-                    buyer_match = re.search(r'/buyer/(\d+)', href)
-                    if buyer_match:
-                        buyer_id = buyer_match.group(1)
-                        if BUYMA_BUYER_ID and buyer_id == BUYMA_BUYER_ID:
-                            continue
+            # Price_Txt 클래스에서 가격 추출
+            price_elem = first_product.find('span', class_='Price_Txt')
+            if not price_elem:
+                return None, "가격 요소 없음"
 
-                # 3. 가격 추출 (경쟁자 상품)
-                price_elem = product.find('span', class_='Price_Txt')
-                if price_elem:
-                    price_text = price_elem.get_text(strip=True)
-                    price = parse_price(price_text)
-                    if price:
-                        return price, None
+            price_text = price_elem.get_text(strip=True)
+            price = parse_price(price_text)
 
-            return None, "경쟁자 없음 (내 상품/중고만 존재)"
+            if price is None:
+                return None, f"가격 파싱 실패: {price_text}"
+
+            return price, None
 
         except requests.exceptions.Timeout:
             return None, "요청 타임아웃"
@@ -377,22 +363,20 @@ class BuymaLowestPriceCollector:
         finally:
             conn.close()
 
-    def run(self, limit: int = None, brand: str = None, dry_run: bool = False, workers: int = DEFAULT_WORKERS) -> Dict:
+    def run(self, limit: int = None, brand: str = None, dry_run: bool = False) -> Dict:
         """
-        최저가 수집 실행 (병렬 처리)
+        최저가 수집 실행
 
         Args:
             limit: 최대 처리 건수
             brand: 특정 브랜드만 처리
             dry_run: True면 실제 저장하지 않음
-            workers: 병렬 처리 스레드 수
 
         Returns:
             처리 결과 통계
         """
         log("=" * 60)
         log("바이마 최저가 수집 시작")
-        log(f"병렬 처리: {workers}스레드, 딜레이: {REQUEST_DELAY}초")
         log("=" * 60)
 
         if dry_run:
@@ -405,20 +389,20 @@ class BuymaLowestPriceCollector:
             log("처리할 상품이 없습니다.")
             return {'total': 0, 'success': 0, 'not_found': 0, 'failed': 0}
 
-        # 통계 (스레드 안전)
-        stats = {'success': 0, 'not_found': 0, 'failed': 0}
-        stats_lock = threading.Lock()
-        total = len(products)
+        # 통계
+        success_count = 0
+        not_found_count = 0
+        failed_count = 0
 
-        def process_product(idx: int, product: Dict) -> None:
-            """단일 상품 처리 (스레드에서 실행)"""
+        for idx, product in enumerate(products):
             product_id = product['id']
             model_no = product['model_no']
             my_price = product['price']
+            brand_name = product.get('brand_name', '')
             source_sales_price = product.get('source_sales_price')
             category_id = product.get('category_id')
 
-            log(f"[{idx+1}/{total}] 검색 중: id={product_id}, model_no={model_no}")
+            log(f"[{idx+1}/{len(products)}] 검색 중: id={product_id}, model_no={model_no}")
 
             # 바이마 검색
             lowest_price, error_msg = self.search_buyma_lowest_price(model_no)
@@ -427,12 +411,10 @@ class BuymaLowestPriceCollector:
             if error_msg:
                 if "검색 결과 없음" in error_msg:
                     log(f"  → 검색 결과 없음")
-                    with stats_lock:
-                        stats['not_found'] += 1
+                    not_found_count += 1
                 else:
                     log(f"  → 실패: {error_msg}", "WARNING")
-                    with stats_lock:
-                        stats['failed'] += 1
+                    failed_count += 1
             else:
                 # 내 판매가 결정: 최저가 - (1~9 랜덤 엔)
                 my_price = lowest_price - random.randint(1, 9)
@@ -444,8 +426,7 @@ class BuymaLowestPriceCollector:
 
                 margin_str = f"{margin_rate:.2f}% ({margin_amount:,.0f}원)" if margin_rate is not None else "계산불가"
                 log(f"  → 바이마 최저가: {lowest_price:,}엔 | 내 판매가: {my_price:,}엔 | 마진: {margin_str}")
-                with stats_lock:
-                    stats['success'] += 1
+                success_count += 1
 
             # DB 저장
             if not dry_run:
@@ -458,37 +439,24 @@ class BuymaLowestPriceCollector:
                     error_msg=error_msg
                 )
 
-            # 요청 간 대기
-            time.sleep(REQUEST_DELAY)
-
-        # 병렬 처리 실행
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = []
-            for idx, product in enumerate(products):
-                future = executor.submit(process_product, idx, product)
-                futures.append(future)
-            
-            # 모든 작업 완료 대기
-            for future in as_completed(futures):
-                try:
-                    future.result()
-                except Exception as e:
-                    log(f"스레드 오류: {e}", "ERROR")
+            # 요청 간 대기 (서버 부하 방지)
+            if idx < len(products) - 1:
+                time.sleep(REQUEST_DELAY)
 
         # 결과 출력
         log("=" * 60)
         log("수집 완료!")
-        log(f"  총 처리: {total}건")
-        log(f"  성공: {stats['success']}건")
-        log(f"  검색결과 없음: {stats['not_found']}건")
-        log(f"  실패: {stats['failed']}건")
+        log(f"  총 처리: {len(products)}건")
+        log(f"  성공: {success_count}건")
+        log(f"  검색결과 없음: {not_found_count}건")
+        log(f"  실패: {failed_count}건")
         log("=" * 60)
 
         return {
-            'total': total,
-            'success': stats['success'],
-            'not_found': stats['not_found'],
-            'failed': stats['failed']
+            'total': len(products),
+            'success': success_count,
+            'not_found': not_found_count,
+            'failed': failed_count
         }
 
 
@@ -501,7 +469,6 @@ def main():
     parser.add_argument('--limit', type=int, default=None, help='처리할 최대 상품 수')
     parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')
     parser.add_argument('--dry-run', action='store_true', help='실제 저장하지 않고 결과만 출력')
-    parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'병렬 처리 스레드 수 (기본: {DEFAULT_WORKERS})')
 
     args = parser.parse_args()
 
@@ -510,8 +477,7 @@ def main():
         result = collector.run(
             limit=args.limit,
             brand=args.brand,
-            dry_run=args.dry_run,
-            workers=args.workers
+            dry_run=args.dry_run
         )
 
         if result['failed'] > 0:

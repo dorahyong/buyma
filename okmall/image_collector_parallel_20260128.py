@@ -28,8 +28,6 @@ import argparse
 import re
 import time
 import random
-import sys
-import io
 import multiprocessing as mp
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -37,11 +35,6 @@ from dataclasses import dataclass, field
 
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from sqlalchemy import create_engine, text
-
-# 표준 출력 인코딩 설정 (윈도우 환경 대응 - 일본어 출력용)
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
 
 # =====================================================
 # 설정
@@ -74,9 +67,6 @@ NOT_FOUND_VALUE = "not found"
 
 # 동시 처리 워커 수 (기본값)
 DEFAULT_WORKERS = 4
-
-# 워커별 중간 저장 단위
-BATCH_SAVE_SIZE = 10
 
 
 # =====================================================
@@ -111,7 +101,7 @@ def log(message: str, level: str = "INFO", worker_id: int = None) -> None:
     """로그 출력"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     worker_tag = f"[W{worker_id}]" if worker_id is not None else ""
-    print(f"[{timestamp}] [{level}] {worker_tag} {message}", flush=True)
+    print(f"[{timestamp}] [{level}] {worker_tag} {message}")
 
 
 def random_delay() -> None:
@@ -135,87 +125,11 @@ def normalize_image_url(url: str) -> str:
 # 워커 함수 (별도 프로세스에서 실행)
 # =====================================================
 
-def worker_process(worker_id: int, products: List[Dict], total: int, headless: bool, dry_run: bool, result_queue: mp.Queue):
+def worker_process(worker_id: int, products: List[Dict], total: int, headless: bool, result_queue: mp.Queue):
     """
     워커 프로세스 - 독립적인 브라우저로 상품 수집
-    50개마다 중간 저장
     """
-    from sqlalchemy import create_engine, text
-    
-    # 워커별 DB 연결 (각 프로세스가 독립적으로 연결)
-    engine = create_engine(DB_URL)
-    
-    # 통계
-    stats = {
-        'success': 0,
-        'not_found': 0,
-        'error': 0,
-        'total_images': 0
-    }
-    
-    # 중간 저장용 버퍼
-    buffer = []
-
-    def save_buffer():
-        """버퍼에 쌓인 결과를 DB에 저장"""
-        nonlocal buffer
-        if not buffer:
-            return
-        
-        # dry_run이면 저장 안하고 통계만 업데이트
-        if dry_run:
-            for result in buffer:
-                if result.status == "success":
-                    stats['success'] += 1
-                elif result.status == "not_found":
-                    stats['not_found'] += 1
-                else:
-                    stats['error'] += 1
-                stats['total_images'] += len(result.images)
-            log(f"[DRY-RUN] 저장 스킵: {len(buffer)}개 상품", "DB", worker_id)
-            buffer = []
-            return
-        
-        try:
-            with engine.connect() as conn:
-                for result in buffer:
-                    # 기존 이미지 삭제
-                    conn.execute(text("""
-                        DELETE FROM ace_product_images
-                        WHERE ace_product_id = :ace_product_id
-                    """), {'ace_product_id': result.ace_product_id})
-
-                    # 새 이미지 저장
-                    for img in result.images:
-                        conn.execute(text("""
-                            INSERT INTO ace_product_images (
-                                ace_product_id, position, source_image_url, is_uploaded
-                            ) VALUES (
-                                :ace_product_id, :position, :source_image_url, :is_uploaded
-                            )
-                        """), {
-                            'ace_product_id': img.ace_product_id,
-                            'position': img.position,
-                            'source_image_url': img.source_image_url,
-                            'is_uploaded': img.is_uploaded
-                        })
-                        stats['total_images'] += 1
-
-                    # 통계 업데이트
-                    if result.status == "success":
-                        stats['success'] += 1
-                    elif result.status == "not_found":
-                        stats['not_found'] += 1
-                    else:
-                        stats['error'] += 1
-
-                conn.commit()
-            
-            log(f"중간 저장 완료: {len(buffer)}개 상품", "DB", worker_id)
-            buffer = []
-            
-        except Exception as e:
-            log(f"중간 저장 실패: {e}", "ERROR", worker_id)
+    results = []
 
     try:
         with sync_playwright() as playwright:
@@ -249,17 +163,10 @@ def worker_process(worker_id: int, products: List[Dict], total: int, headless: b
             log(f"브라우저 시작 완료, {len(products)}개 상품 처리 예정", "BROWSER", worker_id)
 
             # 상품 처리
-            for i, product in enumerate(products):
+            for product in products:
                 idx = product.get('_idx', 0)
                 result = collect_single_product(page, product, worker_id, idx, total)
-                buffer.append(result)
-                
-                # 50개마다 중간 저장
-                if len(buffer) >= BATCH_SAVE_SIZE:
-                    save_buffer()
-
-            # 남은 버퍼 저장
-            save_buffer()
+                results.append(result)
 
             # 브라우저 종료
             context.close()
@@ -267,11 +174,9 @@ def worker_process(worker_id: int, products: List[Dict], total: int, headless: b
 
     except Exception as e:
         log(f"워커 오류: {e}", "ERROR", worker_id)
-        # 오류 발생해도 버퍼에 있는 것은 저장 시도
-        save_buffer()
 
-    # 통계만 전송 (결과는 이미 DB에 저장됨)
-    result_queue.put(stats)
+    # 결과 전송
+    result_queue.put(results)
 
 
 def collect_single_product(page: Page, product: Dict, worker_id: int, idx: int, total: int) -> ProductImageResult:
@@ -618,39 +523,36 @@ class WconceptImageCollectorParallel:
             if chunk:
                 p = mp.Process(
                     target=worker_process,
-                    args=(worker_id, chunk, total, self.headless, dry_run, result_queue)
+                    args=(worker_id, chunk, total, self.headless, result_queue)
                 )
                 p.start()
                 processes.append(p)
 
-        # 결과 수집 (각 워커의 통계)
-        total_stats = {
-            'total_products': total,
-            'success': 0,
-            'not_found': 0,
-            'error': 0,
-            'total_images': 0
-        }
-        
+        # 결과 수집
+        all_results = []
         for _ in processes:
-            worker_stats = result_queue.get()
-            total_stats['success'] += worker_stats['success']
-            total_stats['not_found'] += worker_stats['not_found']
-            total_stats['error'] += worker_stats['error']
-            total_stats['total_images'] += worker_stats['total_images']
+            results = result_queue.get()
+            all_results.extend(results)
 
         # 프로세스 종료 대기
         for p in processes:
             p.join()
 
         elapsed = time.time() - start_time
-        log(f"\n수집 완료: {total}개 상품, 소요시간: {elapsed:.1f}초")
+        log(f"\n수집 완료: {len(all_results)}개 상품, 소요시간: {elapsed:.1f}초")
 
-        # dry_run일 때는 이미 저장 안 했으므로 그대로
+        # DB 저장
         if dry_run:
-            log("\n[DRY RUN 모드에서는 중간 저장이 비활성화됩니다]", "WARNING")
-        
-        stats = total_stats
+            stats = {
+                'total_products': len(all_results),
+                'success': sum(1 for r in all_results if r.status == "success"),
+                'not_found': sum(1 for r in all_results if r.status == "not_found"),
+                'error': sum(1 for r in all_results if r.status == "error"),
+                'total_images': sum(len(r.images) for r in all_results)
+            }
+            log("\n[DB 저장 생략 - DRY RUN]", "WARNING")
+        else:
+            stats = self.batch_insert(all_results)
 
         # 결과 출력
         log("\n" + "=" * 60)

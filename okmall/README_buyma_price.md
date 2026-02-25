@@ -93,6 +93,9 @@ XMLHttpRequest
           </a>
         </div>
         <div class="product_name">
+          <!-- 중고일 경우 start --> 
+          <span class="product_used_tag"><font dir="auto" style="vertical-align: inherit;"><font dir="auto" style="vertical-align: inherit;">중고</font></font></span>
+          <!-- 중고일 경우 end --> 
           <a href="/item/123531295/" brand_name="BOTTEGA VENETA" category="メンズ/バッグ・カバン/ショルダーバッグ" category_id="3341" class="js-track-search-action js-ecommerce-item-click" data-action="view_item" data-ga-view="list" data-item-id="123531295" data-page="1" data-rank="0" price="595500" syo_id="123531295" syo_name="★BOTTEGA VENETA★ミディアムゲットアウェイスーツケース" data-track-search-action-binded="true"><font dir="auto" style="vertical-align: inherit;"><font dir="auto" style="vertical-align: inherit;">★BOTTEGA VENETA★미디엄 겟트 어웨이 가방</font></font></a>
         </div>
         <div class="product_price product_price_detail">
