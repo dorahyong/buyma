@@ -34,11 +34,11 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'), ov
 # =====================================================
 
 DB_CONFIG = {
-    'host': os.getenv('DB_HOST', '54.180.248.182'),
+    'host': os.getenv('DB_HOST'),
     'port': int(os.getenv('DB_PORT', 3306)),
-    'user': os.getenv('DB_USER', 'block'),
-    'password': os.getenv('DB_PASSWORD', '1234'),
-    'database': os.getenv('DB_NAME', 'buyma'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_NAME'),
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor
 }
@@ -102,12 +102,26 @@ KOREAN_TO_JAPANESE = {
     "가슴단면": "身幅",
     "소매 길이": "袖丈",
     "소매길이": "袖丈",
+    "팔길이": "袖丈",
+    "소매너비": "袖幅",
+    "소매 너비": "袖幅",
     "총장": "着丈",
     "총기장": "着丈",
+    "총 길이": "着丈",
     "암홀단면": "アームホール",
     "소매단면": "袖幅",
 
+    # === 신발/액세서리 부위 ===
+    "굽 높이": "ヒール高",
+    "목 높이": "首高さ",
+    "발폭 길이": "足幅",
+    "장식 가로길이": "飾り横",
+    "장식 세로길이": "飾り縦",
+    "지름": "直径",
+
     # === 가방 부위 ===
+    "가로 길이": "横",
+    "세로 길이": "縦",
     "가로": "横",
     "세로": "縦",
     "높이": "高さ",
@@ -125,6 +139,12 @@ KOREAN_TO_JAPANESE = {
     "안감": "裏地",
     "면": "コットン",
     "폴리에스터": "ポリエステル",
+    "폴리에스테르": "ポリエステル",
+    "엘라스틴": "エラスタン",
+    "폴리아미드": "ポリアミド",
+    "황동": "真鍮",
+    "브라스": "真鍮",
+    "리넨": "リネン",
     "나일론": "ナイロン",
     "울": "ウール",
     "실크": "シルク",
@@ -149,6 +169,9 @@ KOREAN_TO_JAPANESE = {
     "실버": "シルバー",
     "골드": "ゴールド",
     "멀티": "マルチ",
+
+    # === buyma 등록 불가 용어 치환 ===
+    "해링턴": "スイングトップ", # 스윙탑
 
     # === 카테고리 ===
     "남성": "メンズ",
@@ -200,6 +223,9 @@ def apply_hardcoded_mapping(text: str) -> str:
     result = result.replace("실측:", "実寸:")
     result = result.replace("(실측:", "(実寸:")
 
+    # 영문 buyma 금지 용어 치환 (대소문자 무시)
+    result = re.sub(r'(?i)harrington', 'スイングトップ', result)
+
     return result
 
 
@@ -207,7 +233,7 @@ def apply_hardcoded_mapping(text: str) -> str:
 # 번역 대상 수집
 # =====================================================
 
-def collect_translation_targets(conn, brand: str = None, limit: int = None) -> Dict:
+def collect_translation_targets(conn, brand: str = None, limit: int = None, price_checked_only: bool = False, with_images: bool = False, source: str = None) -> Dict:
     """
     번역이 필요한 모든 텍스트 수집
 
@@ -233,6 +259,16 @@ def collect_translation_targets(conn, brand: str = None, limit: int = None) -> D
               AND (p.colorsize_comments_jp IS NULL OR p.colorsize_comments_jp = '')
         """
         params = []
+
+        if price_checked_only:
+            sql += " AND p.buyma_lowest_price_checked_at IS NOT NULL"
+
+        if with_images:
+            sql += " AND p.id IN (SELECT DISTINCT ace_product_id FROM ace_product_images WHERE is_uploaded = 1)"
+
+        if source:
+            sql += " AND p.source_site = %s"
+            params.append(source.lower())
 
         if brand:
             sql += " AND p.brand_name = %s"
@@ -558,7 +594,7 @@ def convert_to_japanese(text: str) -> str:
 # 배치 처리 메인
 # =====================================================
 
-def run_batch_translation(brand: str = None, limit: int = None, dry_run: bool = False):
+def run_batch_translation(brand: str = None, limit: int = None, dry_run: bool = False, price_checked_only: bool = False, with_images: bool = False, source: str = None):
     """
     배치 번역 실행
 
@@ -577,7 +613,7 @@ def run_batch_translation(brand: str = None, limit: int = None, dry_run: bool = 
     try:
         # 1단계: 번역 대상 수집
         log("[1/4] 번역 대상 수집 중...")
-        targets = collect_translation_targets(conn, brand=brand, limit=limit)
+        targets = collect_translation_targets(conn, brand=brand, limit=limit, price_checked_only=price_checked_only, with_images=with_images, source=source)
 
         log(f"  → 상품: {len(targets['products'])}개")
         log(f"  → 옵션: {len(targets['options'])}개")
@@ -633,9 +669,12 @@ def main():
     parser.add_argument('--brand', type=str, help='특정 브랜드만 처리')
     parser.add_argument('--limit', type=int, help='처리할 상품 수 제한')
     parser.add_argument('--dry-run', action='store_true', help='테스트 모드')
+    parser.add_argument('--price-checked-only', action='store_true', help='최저가 확인된 상품만 번역')
+    parser.add_argument('--with-images', action='store_true', help='이미지 업로드 완료된 상품만 번역')
+    parser.add_argument('--source', type=str, default=None, help='수집처 필터 (예: okmall, kasina)')
     args = parser.parse_args()
 
-    run_batch_translation(brand=args.brand, limit=args.limit, dry_run=args.dry_run)
+    run_batch_translation(brand=args.brand, limit=args.limit, dry_run=args.dry_run, price_checked_only=args.price_checked_only, with_images=args.with_images, source=args.source)
 
 
 if __name__ == "__main__":

@@ -35,8 +35,12 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 
+import os
 from playwright.sync_api import sync_playwright, Page, Browser, BrowserContext
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # 표준 출력 인코딩 설정 (윈도우 환경 대응 - 일본어 출력용)
 if sys.platform == 'win32':
@@ -47,7 +51,7 @@ if sys.platform == 'win32':
 # 설정
 # =====================================================
 
-DB_URL = "mysql+pymysql://block:1234@54.180.248.182:3306/buyma?charset=utf8mb4"
+DB_URL = os.getenv('DATABASE_URL', f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT', 3306)}/{os.getenv('DB_NAME')}?charset=utf8mb4")
 
 # W컨셉 URL
 WCONCEPT_SEARCH_URL = "https://display.wconcept.co.kr/search"
@@ -474,18 +478,23 @@ class WconceptImageCollectorParallel:
 
         log(f"WconceptImageCollectorParallel 초기화 (headless={headless}, workers={num_workers})", "INFO")
 
-    def fetch_target_products(self, brand: str = None, model_no: str = None, limit: int = None) -> List[Dict]:
+    def fetch_target_products(self, brand: str = None, model_no: str = None, limit: int = None, price_checked_only: bool = False) -> List[Dict]:
         """대상 상품 조회"""
         with self.engine.connect() as conn:
             query = """
                 SELECT ap.id, ap.model_no, ap.brand_name, ap.name
                 FROM ace_products ap
                 LEFT JOIN ace_product_images api ON ap.id = api.ace_product_id
+                LEFT JOIN mall_sites ms ON ap.source_site = ms.site_name
                 WHERE (api.id IS NULL OR api.source_image_url = 'not found')
                   AND ap.model_no IS NOT NULL
                   AND ap.model_no != ''
+                  AND COALESCE(ms.has_own_images, 0) = 0
             """
             params = {}
+
+            if price_checked_only:
+                query += " AND ap.buyma_lowest_price_checked_at IS NOT NULL"
 
             if brand:
                 query += " AND UPPER(ap.brand_name) LIKE :brand"
@@ -570,7 +579,7 @@ class WconceptImageCollectorParallel:
         log(f"DB 저장 완료: {stats['total_images']}개 이미지", "DB")
         return stats
 
-    def run(self, brand: str = None, model_no: str = None, limit: int = None, dry_run: bool = False) -> Dict:
+    def run(self, brand: str = None, model_no: str = None, limit: int = None, dry_run: bool = False, price_checked_only: bool = False) -> Dict:
         """전체 실행"""
         log("=" * 60)
         log("W컨셉 이미지 수집 시작 (멀티프로세싱)")
@@ -588,7 +597,7 @@ class WconceptImageCollectorParallel:
             log("*** DRY RUN 모드 - DB 저장 안함 ***", "WARNING")
 
         # 대상 상품 조회
-        products = self.fetch_target_products(brand=brand, model_no=model_no, limit=limit)
+        products = self.fetch_target_products(brand=brand, model_no=model_no, limit=limit, price_checked_only=price_checked_only)
 
         if not products:
             log("수집 대상 상품이 없습니다.")
@@ -681,6 +690,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='테스트 모드 (DB 저장 안함)')
     parser.add_argument('--headless', type=str, default='true', help='브라우저 숨김 여부')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'동시 처리 워커 수 (기본 {DEFAULT_WORKERS})')
+    parser.add_argument('--price-checked-only', action='store_true', help='최저가 확인된 상품만 이미지 수집')
 
     args = parser.parse_args()
     headless = args.headless.lower() != 'false'
@@ -695,7 +705,8 @@ def main():
             brand=args.brand,
             model_no=args.model_no,
             limit=args.limit,
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            price_checked_only=args.price_checked_only
         )
 
         if stats.get('error', 0) > 0:

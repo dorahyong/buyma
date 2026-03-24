@@ -25,9 +25,13 @@ from typing import Optional, Dict, List, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
+import os
 import requests
 from bs4 import BeautifulSoup
 import pymysql
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # =====================================================
 # 설정값
@@ -35,11 +39,11 @@ import pymysql
 
 # DB 연결 정보
 DB_CONFIG = {
-    'host': '54.180.248.182',
-    'port': 3306,
-    'user': 'block',
-    'password': '1234',
-    'database': 'buyma',
+    'host': os.getenv('DB_HOST'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_NAME'),
     'charset': 'utf8mb4'
 }
 
@@ -65,7 +69,7 @@ HEADERS = {
 }
 
 # 요청 간 대기 시간 (초)
-REQUEST_DELAY = 0.5
+REQUEST_DELAY = 0.2
 
 # 병렬 처리 설정
 DEFAULT_WORKERS = 3
@@ -74,7 +78,7 @@ DEFAULT_WORKERS = 3
 EXCHANGE_RATE = 9.2          # 환율 (원/엔) - 고정값
 SALES_FEE_RATE = 0.055       # 바이마 판매수수료 5.5%
 DEFAULT_SHIPPING_FEE = 15000 # 기본 예상 배송비 (원)
-BUYMA_BUYER_ID = "9757794"
+BUYMA_BUYER_ID = os.getenv('BUYMA_BUYER_ID', '9757794')
 
 # =====================================================
 # 유틸리티 함수
@@ -167,6 +171,45 @@ def calculate_margin_rate(buyma_price_jpy: int, purchase_price_krw,
     return round(margin_rate, 2), round(total_margin_krw, 0)
 
 
+def calculate_target_price_jpy(purchase_price_krw: float, shipping_fee_krw: int = DEFAULT_SHIPPING_FEE,
+                                target_margin_rate: float = 0.20) -> Optional[int]:
+    """
+    목표 마진율이 되는 바이마 판매가(엔) 역산
+
+    역산 공식:
+    buyma_price_krw × (1 - 수수료율) - 총원가 + 부가세환급 = buyma_price_krw × 목표마진율
+    buyma_price_krw = (총원가 - 부가세환급) / (1 - 수수료율 - 목표마진율)
+
+    Args:
+        purchase_price_krw: 매입가 (원)
+        shipping_fee_krw: 배송비 (원)
+        target_margin_rate: 목표 마진율 (0.20 = 20%)
+
+    Returns:
+        바이마 판매가 (엔), 계산 불가 시 None
+    """
+    try:
+        purchase_price_krw = float(purchase_price_krw) if purchase_price_krw else 0
+        shipping_fee_krw = int(shipping_fee_krw) if shipping_fee_krw else DEFAULT_SHIPPING_FEE
+    except (ValueError, TypeError):
+        return None
+
+    if purchase_price_krw <= 0:
+        return None
+
+    total_cost = purchase_price_krw + float(shipping_fee_krw)
+    vat_refund = purchase_price_krw / 11.0
+    denominator = (1.0 - SALES_FEE_RATE) - target_margin_rate  # 0.945 - 0.20 = 0.745
+
+    if denominator <= 0:
+        return None
+
+    buyma_price_krw = (total_cost - vat_refund) / denominator
+    buyma_price_jpy = int(buyma_price_krw / EXCHANGE_RATE)
+
+    return buyma_price_jpy
+
+
 # =====================================================
 # 바이마 최저가 수집 클래스
 # =====================================================
@@ -183,7 +226,7 @@ class BuymaLowestPriceCollector:
         """DB 연결 생성"""
         return pymysql.connect(**self.db_config)
 
-    def fetch_products_to_check(self, limit: int = None, brand: str = None) -> List[Dict]:
+    def fetch_products_to_check(self, limit: int = None, brand: str = None, source: str = None) -> List[Dict]:
         """
         최저가 확인이 필요한 상품 목록 조회
 
@@ -210,6 +253,10 @@ class BuymaLowestPriceCollector:
             if brand:
                 query += " AND UPPER(brand_name) LIKE %s"
                 params.append(f"%{brand.upper()}%")
+
+            if source:
+                query += " AND source_site = %s"
+                params.append(source.lower())
 
             query += " ORDER BY buyma_lowest_price_checked_at ASC, id ASC"
 
@@ -277,6 +324,8 @@ class BuymaLowestPriceCollector:
         except requests.exceptions.Timeout:
             return None, "요청 타임아웃"
         except requests.exceptions.RequestException as e:
+            if '404' in str(e):
+                return None, "검색 결과 없음(404)"
             return None, f"요청 오류: {str(e)}"
         except Exception as e:
             return None, f"파싱 오류: {str(e)}"
@@ -339,10 +388,11 @@ class BuymaLowestPriceCollector:
             margin_rate, margin_amount = None, None
             purchase_price_jpy = None
 
-            if lowest_price and source_sales_price:
+            price_for_margin = lowest_price or my_price
+            if price_for_margin and source_sales_price:
                 shipping_fee = self.get_shipping_fee(category_id)
                 margin_rate, margin_amount = calculate_margin_rate(
-                    buyma_price_jpy=lowest_price,
+                    buyma_price_jpy=price_for_margin,
                     purchase_price_krw=source_sales_price,
                     shipping_fee_krw=shipping_fee
                 )
@@ -351,8 +401,11 @@ class BuymaLowestPriceCollector:
             if source_sales_price:
                 purchase_price_jpy = round(float(source_sales_price) / EXCHANGE_RATE)
 
-            # 최저가 여부 판단
-            is_lowest = 1 if lowest_price and my_price <= lowest_price else 0
+            # 최저가 여부 판단: 경쟁자 없으면(lowest_price=None) 자동 최저가
+            if not lowest_price:
+                is_lowest = 1
+            else:
+                is_lowest = 1 if my_price <= lowest_price else 0
 
             cur.execute("""
                 UPDATE ace_products
@@ -377,7 +430,7 @@ class BuymaLowestPriceCollector:
         finally:
             conn.close()
 
-    def run(self, limit: int = None, brand: str = None, dry_run: bool = False, workers: int = DEFAULT_WORKERS) -> Dict:
+    def run(self, limit: int = None, brand: str = None, source: str = None, dry_run: bool = False, workers: int = DEFAULT_WORKERS) -> Dict:
         """
         최저가 수집 실행 (병렬 처리)
 
@@ -399,14 +452,14 @@ class BuymaLowestPriceCollector:
             log("*** DRY RUN 모드 - 실제 저장하지 않음 ***", "WARNING")
 
         # 대상 상품 조회
-        products = self.fetch_products_to_check(limit=limit, brand=brand)
+        products = self.fetch_products_to_check(limit=limit, brand=brand, source=source)
 
         if not products:
             log("처리할 상품이 없습니다.")
             return {'total': 0, 'success': 0, 'not_found': 0, 'failed': 0}
 
         # 통계 (스레드 안전)
-        stats = {'success': 0, 'not_found': 0, 'failed': 0}
+        stats = {'success': 0, 'no_competitor': 0, 'failed': 0}
         stats_lock = threading.Lock()
         total = len(products)
 
@@ -425,10 +478,25 @@ class BuymaLowestPriceCollector:
 
             margin_rate, margin_amount = None, None
             if error_msg:
-                if "검색 결과 없음" in error_msg:
-                    log(f"  → 검색 결과 없음")
+                is_no_competitor = "검색 결과 없음" in error_msg or "경쟁자 없음" in error_msg
+
+                if is_no_competitor and source_sales_price:
+                    # 경쟁자 없음 → 마진율 20%가 되는 가격으로 설정
+                    shipping_fee = self.get_shipping_fee(category_id)
+                    target_price = calculate_target_price_jpy(source_sales_price, shipping_fee)
+                    if target_price:
+                        my_price = target_price
+                        margin_rate, margin_amount = calculate_margin_rate(my_price, source_sales_price, shipping_fee)
+                        margin_str = f"{margin_rate:.2f}% ({margin_amount:,.0f}원)" if margin_rate is not None else "계산불가"
+                        log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 마진20% 가격 설정: {my_price:,}엔 | 마진: {margin_str}")
+                    else:
+                        log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 가격 역산 실패")
                     with stats_lock:
-                        stats['not_found'] += 1
+                        stats['no_competitor'] += 1
+                elif is_no_competitor:
+                    log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 매입가 없어 가격 설정 불가")
+                    with stats_lock:
+                        stats['no_competitor'] += 1
                 else:
                     log(f"  → 실패: {error_msg}", "WARNING")
                     with stats_lock:
@@ -443,7 +511,7 @@ class BuymaLowestPriceCollector:
                     margin_rate, margin_amount = calculate_margin_rate(lowest_price, source_sales_price, shipping_fee)
 
                 margin_str = f"{margin_rate:.2f}% ({margin_amount:,.0f}원)" if margin_rate is not None else "계산불가"
-                log(f"  → 바이마 최저가: {lowest_price:,}엔 | 내 판매가: {my_price:,}엔 | 마진: {margin_str}")
+                log(f"  → [있음] 바이마 최저가: {lowest_price:,}엔 | 내 판매가: {my_price:,}엔 | 마진: {margin_str}")
                 with stats_lock:
                     stats['success'] += 1
 
@@ -479,15 +547,15 @@ class BuymaLowestPriceCollector:
         log("=" * 60)
         log("수집 완료!")
         log(f"  총 처리: {total}건")
-        log(f"  성공: {stats['success']}건")
-        log(f"  검색결과 없음: {stats['not_found']}건")
+        log(f"  성공 (경쟁자 있음): {stats['success']}건")
+        log(f"  경쟁자 없음 (마진20% 설정): {stats['no_competitor']}건")
         log(f"  실패: {stats['failed']}건")
         log("=" * 60)
 
         return {
             'total': total,
             'success': stats['success'],
-            'not_found': stats['not_found'],
+            'no_competitor': stats['no_competitor'],
             'failed': stats['failed']
         }
 
@@ -500,6 +568,7 @@ def main():
     parser = argparse.ArgumentParser(description='바이마 최저가 수집기')
     parser.add_argument('--limit', type=int, default=None, help='처리할 최대 상품 수')
     parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')
+    parser.add_argument('--source', type=str, default=None, help='수집처 필터 (예: okmall, kasina)')
     parser.add_argument('--dry-run', action='store_true', help='실제 저장하지 않고 결과만 출력')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'병렬 처리 스레드 수 (기본: {DEFAULT_WORKERS})')
 
@@ -510,6 +579,7 @@ def main():
         result = collector.run(
             limit=args.limit,
             brand=args.brand,
+            source=args.source,
             dry_run=args.dry_run,
             workers=args.workers
         )

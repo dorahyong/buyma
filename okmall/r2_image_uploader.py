@@ -45,21 +45,23 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from PIL import Image
+import io
 
 # .env 파일 로드
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # =====================================================
 # 설정
 # =====================================================
 
 # 데이터베이스 설정
-DB_URL = os.getenv("DATABASE_URL", "mysql+pymysql://block:1234@54.180.248.182:3306/buyma?charset=utf8mb4")
+DB_URL = os.getenv('DATABASE_URL', f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT', 3306)}/{os.getenv('DB_NAME')}?charset=utf8mb4")
 
 # Cloudflare R2 설정
 R2_ACCESS_KEY_ID = os.getenv("R2_ACCESS_KEY_ID", "")
 R2_SECRET_ACCESS_KEY = os.getenv("R2_SECRET_ACCESS_KEY", "")
-R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL", "https://94fae922764d4f66d866710a7206e438.r2.cloudflarestorage.com")
+R2_ENDPOINT_URL = os.getenv("R2_ENDPOINT_URL", "")
 R2_BUCKET_NAME = os.getenv("R2_BUCKET_NAME", "buyma-images")
 R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "")  # https://pub-xxxxx.r2.dev
 
@@ -126,8 +128,8 @@ def generate_filename(source_url: str, ace_product_id: int, position: int) -> st
     path = parsed.path
     ext = Path(path).suffix.lower()
 
-    # 확장자가 없거나 이상한 경우 기본값
-    if ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
+    # 확장자가 없거나 이상한 경우 기본값, webp는 jpg로 변환
+    if ext not in ['.jpg', '.jpeg', '.png', '.gif']:
         ext = '.jpg'
 
     # URL 해시로 고유성 확보
@@ -383,6 +385,39 @@ class R2ImageUploader:
             if not image_data:
                 result.error_message = "다운로드 실패"
                 return result
+
+            # 1-1. webp → jpg 변환 (바이마는 webp 미지원)
+            if image.source_image_url.lower().endswith('.webp'):
+                try:
+                    img = Image.open(io.BytesIO(image_data))
+                    # RGBA(투명 배경)면 흰색 배경 합성
+                    if img.mode == 'RGBA':
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        background.paste(img, mask=img.split()[3])
+                        img = background
+                    else:
+                        img = img.convert('RGB')
+                    buf = io.BytesIO()
+                    img.save(buf, format='JPEG', quality=95)
+                    image_data = buf.getvalue()
+                except Exception as e:
+                    result.error_message = f"webp 변환 실패: {e}"
+                    return result
+
+            # 1-2. PNG RGBA → 흰색 배경 합성 (투명 배경 제거)
+            elif image.source_image_url.lower().endswith('.png'):
+                try:
+                    img = Image.open(io.BytesIO(image_data))
+                    if img.mode == 'RGBA':
+                        background = Image.new('RGB', img.size, (255, 255, 255))
+                        background.paste(img, mask=img.split()[3])
+                        img = background
+                        buf = io.BytesIO()
+                        img.save(buf, format='PNG')
+                        image_data = buf.getvalue()
+                except Exception as e:
+                    result.error_message = f"PNG 투명 배경 변환 실패: {e}"
+                    return result
 
             # 2. 파일명 생성
             filename = generate_filename(

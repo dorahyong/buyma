@@ -5,12 +5,20 @@
 - mall_brands 테이블의 모든 활성 브랜드를 순회하며 수집
 - 이미지 수집 로직 제외 (요청 사항)
 - --dry-run 옵션 지원
+
+★ 봇 감지 방지 기능 (v2):
+- 30개마다 세션 교체 + 메인 페이지 방문
+- 세션 내에서는 쿠키 유지 (자연스러운 브라우징)
+- 랜덤 브라우저 프로필 (전체 헤더 세트)
+- 자연스러운 Referer 체인
+- 타임아웃 연속 5회 시 차단 감지 및 중지
 """
 
 import os
 import re
 import json
 import time
+import random
 import logging
 import argparse
 from datetime import datetime
@@ -37,18 +45,205 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # DB 연결 설정
-DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://block:1234@54.180.248.182:3306/buyma')
+DATABASE_URL = os.getenv('DATABASE_URL', f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT', 3306)}/{os.getenv('DB_NAME')}?charset=utf8mb4")
 engine = create_engine(DATABASE_URL, echo=False)
 
-# 스크래핑 설정
-USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
-HEADERS = {
-    'User-Agent': USER_AGENT,
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-    'Referer': 'https://www.okmall.com/',
-}
-SCRAPING_DELAY = 1.5
+# =====================================================
+# ★★★ 완전한 브라우저 프로필 (UA + 모든 헤더가 일치) ★★★
+# =====================================================
+BROWSER_PROFILES = [
+    # Chrome 120 on Windows
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    },
+    # Chrome 121 on Windows
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    },
+    # Chrome 120 on Mac
+    {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'Cache-Control': 'max-age=0',
+    },
+    # Firefox 121 on Windows
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.5,en;q=0.3',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+    },
+    # Edge 120 on Windows
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Microsoft Edge";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    },
+]
+
+# 딜레이 설정
+REQUEST_DELAY_MIN = 1.2  # 오케이몰 요청 간 최소 딜레이
+REQUEST_DELAY_MAX = 2.2  # 오케이몰 요청 간 최대 딜레이
+
+# 세션 관리 설정
+SESSION_REFRESH_INTERVAL = 30  # 30개마다 세션 교체 + 메인 페이지 방문
+MAX_CONSECUTIVE_TIMEOUTS = 5   # 연속 타임아웃 5회 시 차단으로 판단
+
+
+# =====================================================
+# ★★★ 오케이몰 세션 관리 클래스 ★★★
+# =====================================================
+class OkmallSessionManager:
+    """오케이몰 봇 감지 방지 세션 관리자"""
+
+    def __init__(self):
+        self.session = None
+        self.profile = None
+        self.request_count = 0
+        self.consecutive_timeout_count = 0
+        self.is_blocked = False
+
+    def create_new_session(self) -> Tuple[bool, Optional[str]]:
+        """새 오케이몰 세션 생성 + 메인 페이지 방문"""
+        try:
+            if self.session:
+                self.session.close()
+
+            self.session = requests.Session()
+            self.profile = random.choice(BROWSER_PROFILES).copy()
+
+            # 메인 페이지 방문 헤더 (구글에서 온 것처럼)
+            main_headers = self.profile.copy()
+            main_headers['Referer'] = 'https://www.google.com/'
+            main_headers['Sec-Fetch-Site'] = 'cross-site'
+            self.session.headers.update(main_headers)
+
+            logger.info("  [세션] 새 세션 시작 - 메인 페이지 방문 중...")
+            main_response = self.session.get('https://www.okmall.com/', timeout=15)
+
+            if main_response.status_code != 200:
+                return False, f"메인 페이지 접속 실패: {main_response.status_code}"
+
+            # 세션 내 이동용 헤더로 변경
+            product_headers = self.profile.copy()
+            product_headers['Referer'] = 'https://www.okmall.com/'
+            product_headers['Sec-Fetch-Site'] = 'same-origin'
+            self.session.headers.update(product_headers)
+
+            self.request_count = 0
+            time.sleep(random.uniform(0.5, 1.5))
+            logger.info("  [세션] 새 세션 준비 완료 (쿠키 획득됨)")
+            return True, None
+
+        except requests.exceptions.Timeout:
+            return False, "메인 페이지 타임아웃"
+        except Exception as e:
+            return False, f"세션 생성 오류: {str(e)}"
+
+    def fetch_page(self, url: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        세션 관리가 적용된 페이지 접속
+        - 30개마다 새 세션 + 메인 페이지 방문
+        - 타임아웃 연속 5회 시 차단 감지
+        """
+        if self.is_blocked:
+            return None, "차단됨"
+
+        # 세션 교체 필요 여부 확인
+        if self.session is None or self.request_count >= SESSION_REFRESH_INTERVAL:
+            success, error = self.create_new_session()
+            if not success:
+                return None, error
+
+        try:
+            response = self.session.get(url, timeout=30)
+            self.request_count += 1
+
+            if response.status_code == 403:
+                self.is_blocked = True
+                return None, "접근 차단됨 (403)"
+
+            response.raise_for_status()
+            self.consecutive_timeout_count = 0  # 성공 시 초기화
+            return response.text, None
+
+        except requests.exceptions.Timeout:
+            self.request_count += 1
+            self.consecutive_timeout_count += 1
+            logger.warning(f"  [타임아웃] 연속 {self.consecutive_timeout_count}회")
+
+            if self.consecutive_timeout_count >= MAX_CONSECUTIVE_TIMEOUTS:
+                self.is_blocked = True
+                return None, f"타임아웃 차단 감지 (연속 {MAX_CONSECUTIVE_TIMEOUTS}회)"
+            return None, "요청 타임아웃"
+
+        except requests.exceptions.RequestException as e:
+            self.request_count += 1
+            self.consecutive_timeout_count = 0
+            error_msg = str(e)
+            if '403' in error_msg:
+                self.is_blocked = True
+                return None, "접근 차단됨 (403)"
+            return None, f"요청 오류: {error_msg}"
+
+    def close(self):
+        if self.session:
+            self.session.close()
 
 # ===========================================
 # 데이터 추출 함수
@@ -275,6 +470,10 @@ def extract_product_data(html: str, product_url: str) -> Optional[Dict[str, Any]
     if any(opt.get('status') == 'in_stock' for opt in options):
         stock_status = 'in_stock'
 
+    # model_id 없으면 이후 단계(PRICE/IMAGE/REGISTER) 진행 불가 → 스킵
+    if not model_id:
+        return None
+
     mall_product_id = str(product_ld.get('sku', ''))
     if not mall_product_id:
         match = re.search(r'no=(\d+)', product_url)
@@ -320,20 +519,45 @@ def get_brands_from_database(brand_filter: str = None) -> List[Dict]:
         result = conn.execute(text(query), {"brand": brand_filter.upper()} if brand_filter else {})
         return [{'name': r[0], 'url': r[1]} for r in result]
 
-def get_product_urls_from_list(base_url: str, limit: int = None) -> List[str]:
+def get_published_product_ids(brand_name: str = None) -> set:
+    """등록 완료된 상품의 mall_product_id 목록 조회"""
+    with engine.connect() as conn:
+        query = """
+            SELECT r.mall_product_id 
+            FROM raw_scraped_data r
+            INNER JOIN ace_products a ON r.id = a.raw_data_id
+            WHERE r.source_site = 'okmall' 
+            AND a.is_published = 1
+        """
+        if brand_name:
+            query += " AND (UPPER(r.brand_name_en) = :brand OR UPPER(r.brand_name_kr) = :brand)"
+            result = conn.execute(text(query), {"brand": brand_name.upper()})
+        else:
+            result = conn.execute(text(query))
+        return {str(r[0]) for r in result}
+
+def get_product_urls_from_list(base_url: str, session_mgr: OkmallSessionManager, limit: int = None) -> List[str]:
     all_urls = []
     page = 1
     max_pages = 100
 
     while page <= max_pages:
-        page_url = f"{base_url}&page={page}" if '?' in base_url else f"{base_url}?page={page}"
-        try:
-            response = requests.get(page_url, headers=HEADERS, timeout=30)
-            response.raise_for_status()
-        except:
+        if session_mgr.is_blocked:
+            logger.error("  차단 감지됨 — 목록 수집 중단")
             break
 
-        soup = BeautifulSoup(response.text, 'html.parser')
+        page_url = f"{base_url}&page={page}" if '?' in base_url else f"{base_url}?page={page}"
+        html, error = session_mgr.fetch_page(page_url)
+        if error:
+            logger.warning(f"  목록 페이지 {page} 수집 실패: {error}")
+            if session_mgr.is_blocked:
+                break
+            page += 1
+            continue
+        if not html:
+            break
+
+        soup = BeautifulSoup(html, 'html.parser')
         product_boxes = soup.select('.item_box[data-productno]')
         if not product_boxes:
             break
@@ -349,13 +573,13 @@ def get_product_urls_from_list(base_url: str, limit: int = None) -> List[str]:
                 all_urls.append(f"https://www.okmall.com/products/view?no={product_no}")
         if scratch_count > 0:
             logger.info(f"  흠집특가 제외: {scratch_count}개")
-        
+
         if limit and len(all_urls) >= limit:
             all_urls = all_urls[:limit]
             break
-            
+
         page += 1
-        time.sleep(0.5)
+        time.sleep(random.uniform(0.5, 1.0))
 
     return list(dict.fromkeys(all_urls))
 
@@ -394,46 +618,103 @@ def main():
     parser.add_argument('--brand', type=str, help='특정 브랜드만 처리')
     parser.add_argument('--limit', type=int, help='브랜드당 최대 수집 상품 수')
     parser.add_argument('--dry-run', action='store_true', help='DB 저장 없이 테스트')
+    parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품만 스킵 (신규+미등록 상품 수집)')
     args = parser.parse_args()
 
     logger.info("=" * 60)
     logger.info(f"오케이몰 통합 수집 시작 (Mode: {'DRY-RUN' if args.dry_run else 'NORMAL'})")
+    logger.info(f"  세션 교체 주기: {SESSION_REFRESH_INTERVAL}개마다")
+    logger.info(f"  타임아웃 차단 감지: 연속 {MAX_CONSECUTIVE_TIMEOUTS}회")
+    if args.skip_existing:
+        logger.info("  신규+미등록 상품 수집 모드 (--skip-existing)")
     logger.info("=" * 60)
+
+    # ★ 세션 매니저 생성
+    session_mgr = OkmallSessionManager()
 
     brands = get_brands_from_database(args.brand)
     logger.info(f"대상 브랜드: {len(brands)}개")
 
     for brand in brands:
+        # ★ 차단 감지 시 전체 중단
+        if session_mgr.is_blocked:
+            logger.error("IP 차단 감지됨! 비행기모드 토글 필요 — 수집 중단")
+            break
+
         logger.info(f"\n>>> 브랜드 시작: {brand['name']}")
-        product_urls = get_product_urls_from_list(brand['url'], limit=args.limit)
+        product_urls = get_product_urls_from_list(brand['url'], session_mgr, limit=args.limit)
         logger.info(f"발견된 상품: {len(product_urls)}개")
+
+        if session_mgr.is_blocked:
+            logger.error("IP 차단 감지됨! 비행기모드 토글 필요 — 수집 중단")
+            break
+
+        # skip-existing 옵션이 활성화된 경우 등록 완료 상품만 필터링
+        if args.skip_existing:
+            published_ids = get_published_product_ids(brand['name'])
+            logger.info(f"등록 완료 상품: {len(published_ids)}개 (스킵 대상)")
+
+            # URL에서 mall_product_id 추출해서 필터링
+            new_urls = []
+            for url in product_urls:
+                match = re.search(r'no=(\d+)', url)
+                if match:
+                    product_id = match.group(1)
+                    if product_id not in published_ids:
+                        new_urls.append(url)
+                else:
+                    new_urls.append(url)
+
+            skipped_count = len(product_urls) - len(new_urls)
+            product_urls = new_urls
+            logger.info(f"수집 대상: {len(product_urls)}개 (신규+미등록), 스킵: {skipped_count}개 (등록완료)")
 
         batch_data = []
         for idx, url in enumerate(product_urls, 1):
+            # ★ 차단 감지 시 즉시 중단
+            if session_mgr.is_blocked:
+                logger.error("IP 차단 감지됨! 비행기모드 토글 필요 — 수집 중단")
+                break
+
             try:
-                response = requests.get(url, headers=HEADERS, timeout=30)
-                if response.status_code == 200:
-                    data = extract_product_data(response.text, url)
+                html, error = session_mgr.fetch_page(url)
+
+                if error:
+                    if session_mgr.is_blocked:
+                        logger.error(f"  [{idx}/{len(product_urls)}] 차단됨: {error}")
+                        break
+                    logger.warning(f"  [{idx}/{len(product_urls)}] 수집 실패: {error}")
+                    time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+                    continue
+
+                if html:
+                    data = extract_product_data(html, url)
                     if data:
+                        pid = data.get('mall_product_id', '?')
                         if args.dry_run:
-                            logger.info(f"  [{idx}/{len(product_urls)}] [DRY-RUN] 추출 성공: {data['product_name']}")
+                            logger.info(f"  [{idx}/{len(product_urls)}] [DRY-RUN] 추출 성공: pid={pid}, {data['product_name']}")
                         else:
                             batch_data.append(data)
-                            logger.info(f"  [{idx}/{len(product_urls)}] 추출 완료: {data['product_name']}")
-                
-                if len(batch_data) >= 10: # 10개 단위 저장
+                            logger.info(f"  [{idx}/{len(product_urls)}] 추출 완료: pid={pid}, {data['product_name']}")
+
+                if len(batch_data) >= 10:  # 10개 단위 저장
                     save_to_database(batch_data)
                     batch_data = []
-                
-                time.sleep(SCRAPING_DELAY)
+
+                time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
             except Exception as e:
                 logger.error(f"  [{idx}/{len(product_urls)}] 오류: {e}")
 
         if batch_data and not args.dry_run:
             save_to_database(batch_data)
 
+    # ★ 세션 정리
+    session_mgr.close()
+
     logger.info("\n" + "=" * 60)
     logger.info("모든 브랜드 수집 완료")
+    if session_mgr.is_blocked:
+        logger.warning("⚠ 차단으로 인해 일부 브랜드가 수집되지 않았을 수 있습니다")
     logger.info("=" * 60)
 
 if __name__ == "__main__":
