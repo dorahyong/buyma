@@ -1,0 +1,72 @@
+2026/03/18-14:52:15.544 a70c Reusing MANIFEST C:\Users\hyong\OneDrive\원블록스\buyma\smartstore\smartstore_profile\Default\Local Storage\leveldb/MANIFEST-000001
+2026/03/18-14:52:15.550 a70c Recovering log #3
+2026/03/18-14:52:15.558 a70c Reusing old log C:\Users\hyong\OneDrive\원블록스\buyma\smartstore\smartstore_profile\Default\Local Storage\leveldb/000003.log 
+2026/03/18-15:18:41.867 89e8 Level-0 table #5: started
+2026/03/18-15:18:41.886 89e8 Level-0 table #5: 18087 bytes OK
+2026/03/18-15:18:41.890 89e8 Delete type=0 #3
+2026/03/18-16:40:41.875 a70c Level-0 table #7: started
+2026/03/18-16:40:41.883 a70c Level-0 table #7: 23862 bytes OK
+2026/03/18-16:40:41.884 a70c Delete type=0 #4
+2026/03/18-17:28:41.901 a70c Level-0 table #9: started
+2026/03/18-17:28:41.909 a70c Level-0 table #9: 20909 bytes OK
+2026/03/18-17:28:41.911 a70c Delete type=0 #6
+2026/03/18-18:30:41.933 89e8 Level-0 table #11: started
+2026/03/18-18:30:41.940 89e8 Level-0 table #11: 22932 bytes OK
+2026/03/18-18:30:41.943 89e8 Delete type=0 #8
+2026/03/18-20:00:42.004 89e8 Level-0 table #13: started
+2026/03/18-20:00:42.013 89e8 Level-0 table #13: 24338 bytes OK
+2026/03/18-20:00:42.016 89e8 Delete type=0 #10
+2026/03/18-21:31:42.036 89e8 Level-0 table #15: started
+2026/03/18-21:31:42.045 89e8 Level-0 table #15: 23814 bytes OK
+2026/03/18-21:31:42.049 89e8 Delete type=0 #12
+2026/03/18-21:31:42.050 89e8 Compacting 4@0 + 1@1 files
+2026/03/18-21:31:42.057 89e8 Generated table #16@0: 17 keys, 6398 bytes
+2026/03/18-21:31:42.057 89e8 Compacted 4@0 + 1@1 files => 6398 bytes
+2026/03/18-21:31:42.058 89e8 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/03/18-21:31:42.059 89e8 Delete type=2 #7
+2026/03/18-21:31:42.059 89e8 Delete type=2 #9
+2026/03/18-21:31:42.059 89e8 Delete type=2 #11
+2026/03/18-21:31:42.059 89e8 Delete type=2 #13
+2026/03/18-21:31:42.059 89e8 Delete type=2 #15
+2026/03/18-22:52:42.072 89e8 Level-0 table #18: started
+2026/03/18-22:52:42.079 89e8 Level-0 table #18: 24272 bytes OK
+2026/03/18-22:52:42.081 89e8 Delete type=0 #14
+2026/03/19-00:01:42.102 a70c Level-0 table #20: started
+2026/03/19-00:01:42.109 a70c Level-0 table #20: 24629 bytes OK
+2026/03/19-00:01:42.111 a70c Delete type=0 #17
+2026/03/19-00:45:42.123 89e8 Level-0 table #22: started
+2026/03/19-00:45:42.136 89e8 Level-0 table #22: 20589 bytes OK
+2026/03/19-00:45:42.138 89e8 Delete type=0 #19
+2026/03/19-01:24:42.140 a70c Level-0 table #24: started
+2026/03/19-01:24:42.147 a70c Level-0 table #24: 19237 bytes OK
+2026/03/19-01:24:42.148 a70c Delete type=0 #21
+2026/03/19-01:24:42.149 a70c Compacting 4@0 + 1@1 files
+2026/03/19-01:24:42.154 a70c Generated table #25@0: 18 keys, 6406 bytes
+2026/03/19-01:24:42.154 a70c Compacted 4@0 + 1@1 files => 6406 bytes
+2026/03/19-01:24:42.154 a70c compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/03/19-01:24:42.155 a70c Delete type=2 #16
+2026/03/19-01:24:42.155 a70c Delete type=2 #18
+2026/03/19-01:24:42.155 a70c Delete type=2 #20
+2026/03/19-01:24:42.155 a70c Delete type=2 #22
+2026/03/19-01:24:42.155 a70c Delete type=2 #24
+2026/03/19-02:34:42.157 89e8 Level-0 table #27: started
+2026/03/19-02:34:42.170 89e8 Level-0 table #27: 22410 bytes OK
+2026/03/19-02:34:42.172 89e8 Delete type=0 #23
+2026/03/19-03:39:42.190 89e8 Level-0 table #29: started
+2026/03/19-03:39:42.203 89e8 Level-0 table #29: 21963 bytes OK
+2026/03/19-03:39:42.206 89e8 Delete type=0 #26
+2026/03/19-04:21:42.196 89e8 Level-0 table #31: started
+2026/03/19-04:21:42.205 89e8 Level-0 table #31: 20060 bytes OK
+2026/03/19-04:21:42.207 89e8 Delete type=0 #28
+2026/03/19-05:52:42.269 89e8 Level-0 table #33: started
+2026/03/19-05:52:42.280 89e8 Level-0 table #33: 23159 bytes OK
+2026/03/19-05:52:42.281 89e8 Delete type=0 #30
+2026/03/19-05:52:42.282 89e8 Compacting 4@0 + 1@1 files
+2026/03/19-05:52:42.289 89e8 Generated table #34@0: 18 keys, 6357 bytes
+2026/03/19-05:52:42.289 89e8 Compacted 4@0 + 1@1 files => 6357 bytes
+2026/03/19-05:52:42.290 89e8 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/03/19-05:52:42.292 89e8 Delete type=2 #25
+2026/03/19-05:52:42.292 89e8 Delete type=2 #27
+2026/03/19-05:52:42.292 89e8 Delete type=2 #29
+2026/03/19-05:52:42.292 89e8 Delete type=2 #31
+2026/03/19-05:52:42.292 89e8 Delete type=2 #33

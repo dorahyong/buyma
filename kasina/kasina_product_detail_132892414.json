@@ -1,0 +1,701 @@
+{
+    "baseInfo": {
+        "productNo": 132892414,
+        "saleStartYmdt": "2026-03-04 10:00:00",
+        "saleEndYmdt": "2099-12-31 23:59:59",
+        "salePeriodType": "PERIOD",
+        "registerYmdt": "2026-02-27 13:34:48",
+        "promotionText": null,
+        "productName": "NIKE AIR FORCE 1 LOW RETRO",
+        "productNameEn": "나이키 에어 포스 1 로우 레트로 스타디움 그린 브라이트 크림슨",
+        "imageUrls": [
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_main.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_1.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260303/132379/40/387979796/IB6834-300_add_2.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_3.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_4.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_5.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_6.webp",
+            "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_7.webp"
+        ],
+        "placeOriginLabel": "기타 직접입력",
+        "placeOriginEtcLabel": "기타/상품상세참조",
+        "manufactureYmdt": null,
+        "expirationYmdt": null,
+        "contentHeader": "<p><img src=\"//kasina.cdn-nhncommerce.com/Mall-No-CwNc/20260305/143705.425295791/02.webp\" alt=\"02.webp\"><img src=\"//kasina.cdn-nhncommerce.com/Mall-No-CwNc/20260305/143705.426804591/03.webp\" alt=\"03.webp\"><img src=\"//kasina.cdn-nhncommerce.com/Mall-No-CwNc/20260305/143705.427016419/04.webp\" alt=\"04.webp\"><br></p>",
+        "content": "<p>편안함과 내구성, 그리고 유행을 타지 않는 스타일까지. 1번 모델이 된 데는 그만한 이유가 있습니다. 과감한 디테일이 적용된 클래식한 80년대 디자인으로 코트에서도, 일상 속에서도 멋진 스타일을 선사합니다.</p><p><br></p><p><br></p>",
+        "contentFooter": "",
+        "dutyInfo": "{\"categoryNo\":2,\"categoryName\":\"구두/신발\",\"contents\":[{\"제품 주소재\":\"정보 수급 진행 중에 있습니다. 정확한 제품 소재는 배송 받으신 제품에 부착된 라벨을 참고하시기 바랍니다.\"},{\"색상\":\"STADIUM GREEN/BRT CRIMSON\"},{\"치수\":\"235-290\"},{\"제조자\":\"Nike. Inc / (유)나이키코리아\"},{\"제조국\":\"상품상세 참조\"},{\"취급시 주의사항\":\"상품상세 참조\"},{\"품질보증기준\":\"섬유 및 일반 소재 구입 후 6개월 / 가죽소재 구입 후 1년, 유통 중 손상되었거나 품질에 이상이 있는 제품에 한하여 소비자피해보상규정에 의거 보상하여 드립니다. 단, 제품에 부착되어 있는 사용방법 및 취급 시 주의사항에 따라 제품을 관리해 주시고, 소비자 부주의로 인한 품질 이상 및 변형에 대해서는 책임을 지지 않습니다.\"},{\"A/S 책임자와 전화번호\":\"(유)나이키스포츠 온라인 스토어 고객센터 / 080-022-0182\"}]}",
+        "stickerLabels": [
+            "NEW"
+        ],
+        "stickerInfos": [
+            {
+                "no": 130544,
+                "type": "TEXT",
+                "label": "NEW",
+                "name": "FLAG"
+            }
+        ],
+        "optionImageViewable": false,
+        "productManagementCd": "IB6834-300",
+        "purchaseGuide": null,
+        "accumulationUseYn": "Y",
+        "accumulationUseLimitInfo": {
+            "unitType": "PERCENT",
+            "limitValue": 10
+        },
+        "deliveryCustomerInfo": "",
+        "certificationType": "DETAIL_PAGE",
+        "certifications": [],
+        "productGroup": "DELIVERY",
+        "hsCode": "STADIUM GREEN/BRT CRIMSON",
+        "usableRestockNoti": false,
+        "productType": "DEFAULT",
+        "productClassType": "DEFAULT",
+        "mappingType": "SINGLE",
+        "customPropertise": [
+            {
+                "propNo": 123,
+                "propValueNo": 1831,
+                "propType": "STRING",
+                "propName": "성별정보",
+                "propValue": "공용",
+                "multipleSelectionYn": "N"
+            }
+        ],
+        "couponUseYn": "N",
+        "minorPurchaseYn": "Y",
+        "urlDirectDisplayYn": "N",
+        "imageUrlInfo": [
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_main.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_1.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260303/132379/40/387979796/IB6834-300_add_2.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_3.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_4.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_5.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_6.webp",
+                "type": "IMAGE_URL"
+            },
+            {
+                "url": "//kasina.cdn-nhncommerce.com/Mall-No-CwNc/SERVICE/bulkUpload/20260227/132379/51/734242227/IB6834-300_add_7.webp",
+                "type": "IMAGE_URL"
+            }
+        ],
+        "paymentMeans": [
+            "CREDIT",
+            "POINT",
+            "MOBILE",
+            "PAYCO_POINT",
+            "HAPPY_VOUCHER",
+            "NAVER_PAY",
+            "ESCROW_VIRTUAL_ACCOUNT",
+            "PAYCO",
+            "GIFT",
+            "KAKAO_PAY",
+            "REALTIME_TRANSFER",
+            "TOSS_PAY",
+            "DEPOSIT",
+            "ESCROW_REALTIME_TRANSFER",
+            "ATM",
+            "RENTAL",
+            "CHAI"
+        ]
+    },
+    "deliveryDate": null,
+    "stock": {
+        "saleCnt": -999,
+        "stockCnt": -999,
+        "mainStockCnt": -999
+    },
+    "price": {
+        "salePrice": 169000.00,
+        "immediateDiscountAmt": 0,
+        "immediateDiscountUnitType": "WON",
+        "immediateDiscountStartYmdt": null,
+        "immediateDiscountEndYmdt": null,
+        "additionDiscountAmt": 0,
+        "additionDiscountUnitType": "RATE",
+        "additionDiscountValue": null,
+        "minSalePrice": 0,
+        "maxSalePrice": 0,
+        "maxAdditionDiscountAmt": 0,
+        "maxDiscountAmount": 0,
+        "unitName": null,
+        "unitNameType": null,
+        "unitPrice": null,
+        "maxCouponAmt": 0,
+        "couponDiscountAmt": 0,
+        "couponDiscountUnitType": null,
+        "accumulationAmtWhenBuyConfirm": 0.0,
+        "accumulationRate": 0.0,
+        "accumulationRateOfMember": 0.0,
+        "photoReviewAccumulationAmt": 0,
+        "contentsIfPausing": ""
+    },
+    "deliveryFee": {
+        "deliveryConditionType": "CONDITIONAL",
+        "deliveryAmt": 3000.0,
+        "aboveDeliveryAmt": 50000.0,
+        "returnDeliveryAmt": 3000.0,
+        "deliveryType": "PARCEL_DELIVERY",
+        "deliveryCompanyType": "ETC",
+        "perOrderCnt": 0,
+        "defaultDeliveryConditionLabel": "배송비 3,000원, 50,000원 이상 무료 배송",
+        "deliveryAmtLabels": null,
+        "deliveryCompanyTypeLabel": "기타",
+        "deliveryConditionDetails": [],
+        "remoteDeliveryAreaFees": [
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 암태면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 상화리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 옹진군 백령면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라북도 군산시 옥도면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 압해읍 가란리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "충청남도 보령시 오천면 외연도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 흑산면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 완도군 소안면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 강화군 서도면"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "부산광역시 강서구 동선동"
+            },
+            {
+                "extraDeliveryAmt": 7000.0,
+                "address": "제주특별자치도 제주시 추자면"
+            },
+            {
+                "extraDeliveryAmt": 7000.0,
+                "address": "충청남도 서산시 지곡면 중왕리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "충청남도 태안군 근흥면 가의도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 욕지면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 월호리"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "경상남도 통영시 사량면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "충청남도 보령시 오천면 삽시도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 압해읍 매화리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상북도 울릉군 울릉읍"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 하화리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 옹진군 덕적면"
+            },
+            {
+                "extraDeliveryAmt": 1000.0,
+                "address": "경상남도 사천시 신수동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 개도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 조발리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상북도 울릉군 북면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 비금면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 삼산면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "충청남도 보령시 오천면 녹도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 옹진군 대청면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 압해읍 고이리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 적금리"
+            },
+            {
+                "extraDeliveryAmt": 6000.0,
+                "address": "충청남도 당진시 신평면 매산리"
+            },
+            {
+                "extraDeliveryAmt": 3000.0,
+                "address": "제주특별자치도 제주시"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 도초면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 완도군 노화읍"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상북도 울릉군 서면"
+            },
+            {
+                "extraDeliveryAmt": 1000.0,
+                "address": "경상남도 사천시 마도동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 제도리"
+            },
+            {
+                "extraDeliveryAmt": 7000.0,
+                "address": "전라남도 완도군 금일읍"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 옹진군 자월면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 지도읍 선도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 증도면 병풍리"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "충청남도 당진시 석문면 난지도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 목포시 달동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 강화군 삼산면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 안좌면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 옹진군 연평면"
+            },
+            {
+                "extraDeliveryAmt": 7000.0,
+                "address": "전라남도 완도군 금당면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 고흥군 도양읍 득량리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 신의면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 완도군 보길면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "충청남도 보령시 오천면 원산도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 낭도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 산양읍 추도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 산양읍 저림리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 고흥군 도양읍 시산리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 목포시 율도동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 완도군 청산면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 고흥군 도화면 지죽리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 중구 무의동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 고흥군 봉래면 사양리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라북도 부안군 위도면"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "경상남도 거제시 둔덕면 술역리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "충청남도 보령시 오천면 효자도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "인천광역시 옹진군 북도면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 화정면 여자리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 한산면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 하의면"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "경상남도 통영시 산양읍 연곡리"
+            },
+            {
+                "extraDeliveryAmt": 6000.0,
+                "address": "제주특별자치도 제주시 우도면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 여수시 남면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 영광군 낙월면"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "부산광역시 강서구 대항동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 용남면 어의리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 팔금면"
+            },
+            {
+                "extraDeliveryAmt": 7000.0,
+                "address": "전라남도 진도군 조도면"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "부산광역시 강서구 눌차동"
+            },
+            {
+                "extraDeliveryAmt": 3000.0,
+                "address": "제주특별자치도 서귀포시"
+            },
+            {
+                "extraDeliveryAmt": 4000.0,
+                "address": "부산광역시 강서구 천성동"
+            },
+            {
+                "extraDeliveryAmt": 8000.0,
+                "address": "전라남도 여수시 경호동"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 용남면 지도리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 신안군 지도읍 어의리"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "전라남도 완도군 생일면"
+            },
+            {
+                "extraDeliveryAmt": 5000.0,
+                "address": "경상남도 통영시 산양읍 곤리리"
+            }
+        ],
+        "deliveryPrePayment": true,
+        "returnWarehouse": {
+            "warehouseNo": 936355,
+            "warehouseName": "카시나 온라인",
+            "defaultReleaseWarehouseYn": "Y",
+            "defaultReturnWarehouseYn": "Y",
+            "partnerNo": 111439,
+            "address": "서울특별시 강남구 압구정로42길 27(신사동)",
+            "detailAddress": "카시나 도산점 3층",
+            "zipCd": "06017",
+            "overseaAddress1": null,
+            "overseaAddress2": null,
+            "overseaCity": null,
+            "overseaRegion": null,
+            "countryCd": "KR",
+            "warehouseAddressType": "ADDRESS",
+            "deleteYn": "N",
+            "registerAdminNo": 1,
+            "updateYmdt": "2026-03-05 15:33:28",
+            "updateAdminNo": 1,
+            "addressStr": "서울특별시 강남구 압구정로42길 27(신사동) 카시나 도산점 3층"
+        },
+        "deliveryCustomerInfo": "",
+        "totalWeight": 0.000,
+        "deliveryTemplateName": "기본 - 고정배송비"
+    },
+    "limitations": {
+        "minBuyCnt": 0,
+        "maxBuyPersonCnt": 1,
+        "maxBuyTimeCnt": 0,
+        "maxBuyDays": 0,
+        "maxBuyPeriodCnt": 0,
+        "memberOnly": false,
+        "canAddToCart": true,
+        "refundable": true,
+        "nonRefundTypes": [],
+        "naverPayHandling": true
+    },
+    "counter": {
+        "likeCnt": 5,
+        "reviewCnt": 0,
+        "inquiryCnt": 0,
+        "myInquiryCnt": 0
+    },
+    "categories": [
+        {
+            "fullCategoryLabel": "FOOTWEAR>SNEAKERS>LOW",
+            "representativeYn": "N",
+            "categories": [
+                {
+                    "label": "FOOTWEAR",
+                    "depth": 1,
+                    "categoryNo": 489577
+                },
+                {
+                    "label": "SNEAKERS",
+                    "depth": 2,
+                    "categoryNo": 489579
+                },
+                {
+                    "label": "LOW",
+                    "depth": 3,
+                    "categoryNo": 489581
+                }
+            ]
+        },
+        {
+            "fullCategoryLabel": "1인1족",
+            "representativeYn": "N",
+            "categories": [
+                {
+                    "label": "1인1족",
+                    "depth": 1,
+                    "categoryNo": 754850
+                }
+            ]
+        },
+        {
+            "fullCategoryLabel": "ERP-SHOPBY",
+            "representativeYn": "N",
+            "categories": [
+                {
+                    "label": "ERP-SHOPBY",
+                    "depth": 1,
+                    "categoryNo": 1084230
+                }
+            ]
+        },
+        {
+            "fullCategoryLabel": "NEW>LATEST FOOTWEAR",
+            "representativeYn": "N",
+            "categories": [
+                {
+                    "label": "NEW",
+                    "depth": 1,
+                    "categoryNo": 1084234
+                },
+                {
+                    "label": "LATEST FOOTWEAR",
+                    "depth": 2,
+                    "categoryNo": 1084236
+                }
+            ]
+        },
+        {
+            "fullCategoryLabel": "2026>SP",
+            "representativeYn": "N",
+            "categories": [
+                {
+                    "label": "2026",
+                    "depth": 1,
+                    "categoryNo": 1106318
+                },
+                {
+                    "label": "SP",
+                    "depth": 2,
+                    "categoryNo": 1106319
+                }
+            ]
+        }
+    ],
+    "brand": {
+        "brandNo": 40331479,
+        "name": "NIKE",
+        "nameKo": "NIKE",
+        "nameEn": "",
+        "nameType": "NAME_KO",
+        "logoImageUrl": ""
+    },
+    "liked": false,
+    "partner": {
+        "partnerNo": 111439,
+        "partnerName": "쇼핑몰 자체 상품",
+        "businessRegistrationNo": "211-87-21265",
+        "companyName": "(주)카시나",
+        "onlineMarketingBusinessDeclarationNo": "강남-05242호",
+        "ownerName": "이은혁",
+        "officeAddressLabel": "(06017) 서울특별시 강남구 압구정로42길 27(신사동) 카시나<br/>서울특별시 강남구 신사동 643-22 카시나",
+        "phoneNo": "0234438144",
+        "faxNo": "",
+        "email": "contact@kasina.co.kr"
+    },
+    "status": {
+        "saleStatusType": "ONSALE",
+        "soldout": false,
+        "display": true,
+        "productClassType": "DEFAULT"
+    },
+    "partnerNotice": null,
+    "reservationData": null,
+    "deliveryGuide": null,
+    "afterServiceGuide": null,
+    "refundGuide": null,
+    "exchangeGuide": null,
+    "liquorDelegationGuide": null,
+    "relatedProductNos": [
+        132892419,
+        132892418,
+        132892417,
+        132892416,
+        132892415,
+        132892414,
+        132892413,
+        132892412,
+        132892411,
+        132892410,
+        132892409,
+        132892408,
+        132892407,
+        132892406,
+        132892405,
+        132892404,
+        132892403,
+        132892402,
+        132892401,
+        132892400
+    ],
+    "shippingInfo": {
+        "shippingAvailable": true,
+        "shippingConfig": {
+            "shippingAreaType": "MALL_SHIPPING_AREA",
+            "shippingAreaPartnerNo": 111439,
+            "combinable": true,
+            "internationalShippingAvailable": false,
+            "templateNo": 472155
+        }
+    },
+    "groupManagementCode": null,
+    "groupManagementCodeName": null,
+    "regularDelivery": null,
+    "rentalInfos": [],
+    "displayableStock": false,
+    "saleMethodType": "PURCHASE",
+    "reviewAvailable": true,
+    "reviewRate": 0.00,
+    "mainBestProductYn": false
+}

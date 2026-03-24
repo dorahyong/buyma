@@ -44,6 +44,10 @@ wheels/
 *.swo
 *~
 
+# Claude Code
+.claude/
+*/.claude/
+
 # OS
 .DS_Store
 Thumbs.db
@@ -68,5 +72,18 @@ htmlcov/
 # Buyma 민감 파일
 okmall/buyma_cookies.json
 okmall/get_token.py
+
+# Buyma 런타임 데이터 파일 (실행 시 생성되는 파일)
+okmall/*.json
+!okmall/package.json
+okmall/buyma_*.csv
+okmall/r2_data.csv
+okmall/size_details.csv
+
+# 임시/테스트 파일
+commit_msg.txt
+okmall/*.html
+okmall/*.txt
+okmall/*.docx
 
 nul
