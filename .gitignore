@@ -81,6 +81,9 @@ okmall/buyma_*.csv
 okmall/r2_data.csv
 okmall/size_details.csv
 
+# 브라우저 프로필 (캐시, 쿠키 등)
+smartstore/smartstore_profile/
+
 # 임시/테스트 파일
 commit_msg.txt
 okmall/*.html
