@@ -39,6 +39,8 @@ run_daily.py (진입점)
 | `../.env` | DB, API 키, R2 인증 등 환경변수 |
 | `colors.csv` | 색상명 → 바이마 색상 매핑 |
 | `ace_tables_create.sql` | DB 스키마 정의 (초기 설정용) |
+| `buyma_master_data_20260226/` | 바이마 API 마스터 데이터 (categories, brands, sizes 등). converter/synchronizer에서 참조 |
+| `buyma_master_data_csv_to_md_translator_20260226.py` | 마스터 데이터 CSV를 Gemini로 일→한 번역하여 md/ 생성. 1회성 유틸 (실행 완료) |
 | `logs/{batch_id}.log` | orchestrator 실행 로그 (런타임 생성) |
 
 ---
@@ -61,6 +63,19 @@ run_daily.py (진입점)
 | `stock_price_synchronizer_v2.py` | 등록 상품 재고/가격 동기화 멀티소스 버전 | 미완성 (S-1~S-4 코딩 필요) |
 | `stock_merge.py` | MERGE 단계: 멀티소스 재고를 마진 기준 통합 | stock_utils 의존 |
 | `stock_utils.py` | 공통 모듈: 마진 계산, variants 파싱, merge 로직 | 핵심 모듈 |
+
+## okmall_reference/ (참고 자료)
+- 운영 중 참고하는 문서, DB 스키마, 유틸 서버 등 모음
+
+| 파일 | 설명 |
+|---|---|
+| `README.md` | 프로젝트 전체 설명 문서 |
+| `REFERENCE.md` | API/DB 참고 문서 |
+| `ace_tables_create.sql` | DB 전체 스키마 정의 (실제 DB와 일치, 2026-03-24 기준) |
+| `DB_미사용_분석.md` | DB 테이블/컬럼 사용 여부 분석 메모 |
+| `buyma_fail.md` | 바이마 등록 실패 케이스 디버깅 메모 |
+| `issue_image.md` | 이미지 관련 이슈 메모 |
+| `server.py` | 독립 실행 서버 (파이프라인과 무관, 수동 실행) |
 
 ## buyma_cleaners/ (정리 스크립트)
 
