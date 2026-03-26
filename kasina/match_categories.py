@@ -33,7 +33,7 @@ GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
 # categories.md 경로
-CATEGORIES_MD = Path(__file__).resolve().parent / "buyma_master_data_20260226" / "md" / "categories.md"
+CATEGORIES_MD = Path(__file__).resolve().parent.parent / "okmall" / "buyma_master_data_20260226" / "md" / "categories.md"
 
 
 def log(message: str, level: str = "INFO") -> None:

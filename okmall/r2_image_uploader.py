@@ -201,7 +201,7 @@ class R2ImageUploader:
             )
         )
 
-    def fetch_pending_images(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None) -> List[ImageRecord]:
+    def fetch_pending_images(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None, source_site: str = None) -> List[ImageRecord]:
         """
         업로드 대기 중인 이미지 조회
 
@@ -248,6 +248,10 @@ class R2ImageUploader:
             if brand:
                 query += " AND UPPER(ap.brand_name) LIKE :brand"
                 params['brand'] = f"%{brand.upper()}%"
+
+            if source_site:
+                query += " AND ap.source_site = :source_site"
+                params['source_site'] = source_site.lower()
 
             query += " ORDER BY api.ace_product_id, api.position"
 
@@ -445,7 +449,7 @@ class R2ImageUploader:
             result.error_message = str(e)
             return result
 
-    def run(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None, workers: int = DEFAULT_WORKERS) -> Dict:
+    def run(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None, workers: int = DEFAULT_WORKERS, source_site: str = None) -> Dict:
         """
         전체 실행 (병렬 처리)
 
@@ -476,7 +480,7 @@ class R2ImageUploader:
             log(f"최대 처리: {limit}건")
 
         # 대기 중인 이미지 조회
-        images = self.fetch_pending_images(limit=limit, retry_failed=retry_failed, ace_product_id=ace_product_id, brand=brand)
+        images = self.fetch_pending_images(limit=limit, retry_failed=retry_failed, ace_product_id=ace_product_id, brand=brand, source_site=source_site)
 
         if not images:
             log("업로드할 이미지가 없습니다.")
@@ -549,6 +553,7 @@ def main():
     parser.add_argument('--retry-failed', action='store_true', help='실패한 이미지만 재시도')
     parser.add_argument('--ace-product-id', type=int, default=None, help='특정 상품 ID만 처리')
     parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')
+    parser.add_argument('--source', type=str, default=None, help='특정 source_site만 처리 (예: okmall, kasina, nextzennpack)')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'병렬 처리 스레드 수 (기본: {DEFAULT_WORKERS})')
 
     args = parser.parse_args()
@@ -560,7 +565,8 @@ def main():
             retry_failed=args.retry_failed,
             ace_product_id=args.ace_product_id,
             brand=args.brand,
-            workers=args.workers
+            workers=args.workers,
+            source_site=args.source
         )
 
         if stats.get('failed', 0) > 0:

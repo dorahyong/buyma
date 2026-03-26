@@ -717,13 +717,15 @@ def generate_product_comments(raw_data: Dict, options: List[Dict]) -> str:
 class RawToAceConverter:
     """raw_scraped_data를 ace 테이블로 변환하는 클래스"""
 
-    def __init__(self, db_url: str):
+    def __init__(self, db_url: str, source_site: str = 'kasina'):
         """
         Args:
             db_url: SQLAlchemy DB 연결 URL
+            source_site: 수집처 이름 ('kasina', 'nextzennpack' 등)
         """
         self.engine = create_engine(db_url)
         self.Session = sessionmaker(bind=self.engine)
+        self.source_site = source_site
 
         # 매핑 데이터 캐시
         self._brand_mapping_cache = {}
@@ -869,8 +871,8 @@ class RawToAceConverter:
             result = conn.execute(text("""
                 SELECT mall_brand_name_en, mall_brand_name_ko, buyma_brand_id, buyma_brand_name
                 FROM mall_brands
-                WHERE mall_name = 'kasina' AND is_active = 1
-            """))
+                WHERE mall_name = :source_site AND is_active = 1
+            """), {'source_site': self.source_site})
 
             for row in result:
                 key = row[0].upper() if row[0] else ""
@@ -896,8 +898,8 @@ class RawToAceConverter:
                        bmcd.expected_shipping_fee
                 FROM mall_categories mc
                 LEFT JOIN buyma_master_categories_data bmcd ON mc.buyma_category_id = bmcd.buyma_category_id
-                WHERE mc.mall_name = 'kasina' AND mc.is_active = 1
-            """))
+                WHERE mc.mall_name = :source_site AND mc.is_active = 1
+            """), {'source_site': self.source_site})
 
             for row in result:
                 key = row[0] if row[0] else ""
@@ -994,15 +996,16 @@ class RawToAceConverter:
         try:
             with self.engine.connect() as conn:
                 existing = conn.execute(text(
-                    "SELECT id FROM mall_categories WHERE full_path = :path AND mall_name = 'kasina'"
-                ), {'path': category_path}).fetchone()
+                    "SELECT id FROM mall_categories WHERE full_path = :path AND mall_name = :source_site"
+                ), {'path': category_path, 'source_site': self.source_site}).fetchone()
 
                 if not existing:
                     conn.execute(text("""
                         INSERT INTO mall_categories
                         (mall_name, category_id, gender, depth1, depth2, depth3, full_path, buyma_category_id, is_active)
-                        VALUES ('kasina', :path, :gender, :d1, :d2, :d3, :path, NULL, 1)
+                        VALUES (:source_site, :path, :gender, :d1, :d2, :d3, :path, NULL, 1)
                     """), {
+                        'source_site': self.source_site,
                         'path': category_path, 'gender': gender,
                         'd1': depth1, 'd2': depth2, 'd3': depth3
                     })
@@ -1027,9 +1030,9 @@ class RawToAceConverter:
                        r.raw_json_data, r.product_url, r.created_at, r.updated_at
                 FROM raw_scraped_data r
                 LEFT JOIN ace_products a ON r.id = a.raw_data_id
-                WHERE r.source_site = 'kasina'
+                WHERE r.source_site = :source_site
             """
-            params = {}
+            params = {'source_site': self.source_site}
             if raw_id:
                 query += " AND r.id = :raw_id"
                 params['raw_id'] = raw_id
@@ -1146,11 +1149,10 @@ class RawToAceConverter:
                         colorsize_comments_parts.append("  " + " / ".join(measurement_items))
         
         if composition:
-            colorsize_comments_parts.append("\n【혼용률】")
-            if composition.get('outer'): colorsize_comments_parts.append(f"겉감: {composition['outer']}")
-            if composition.get('lining'): colorsize_comments_parts.append(f"안감: {composition['lining']}")
-            if composition.get('padding'): colorsize_comments_parts.append(f"충전재: {composition['padding']}")
-            if composition.get('material'): colorsize_comments_parts.append(f"소재: {composition['material']}")
+            colorsize_comments_parts.append("\n【素材・構成情報】")
+            for key, value in composition.items():
+                if value:
+                    colorsize_comments_parts.append(f"{key}: {value}")
         
         colorsize_comments = "\n".join(colorsize_comments_parts) if colorsize_comments_parts else None
 
@@ -1158,7 +1160,7 @@ class RawToAceConverter:
         colorsize_comments_jp = None
 
         ace_product = {
-            'raw_data_id': raw_data['id'], 'source_site': raw_data.get('source_site', 'okmall'),
+            'raw_data_id': raw_data['id'], 'source_site': raw_data['source_site'],
             'reference_number': generate_reference_number(), 'control': 'publish', 'name': buyma_name,
             'comments': comments, 'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
             'category_id': category_info.get('buyma_category_id', 0), 
@@ -1580,7 +1582,7 @@ class RawToAceConverter:
                         """), {'brand': brand})
                         row = result.fetchone()
                         buyma_brand = row[0] if row else None
-                run_batch_translation(brand=buyma_brand, limit=None, dry_run=False)
+                run_batch_translation(brand=buyma_brand, limit=None, dry_run=False, source=self.source_site)
             except Exception as e:
                 log(f"배치 번역 실패: {e}", "ERROR")
 
@@ -1597,15 +1599,16 @@ def main():
     parser.add_argument('--raw-id', type=int, help='특정 raw_scraped_data ID 처리')
     parser.add_argument('--upsert', action='store_true', help='이미 변환된 데이터도 업데이트 (colorsize_comments, options, variants)')
     parser.add_argument('--skip-translation', action='store_true', help='배치 번역 건너뛰기 (파이프라인 분리용)')
+    parser.add_argument('--source-site', type=str, default='kasina', help='수집처 (kasina, nextzennpack 등)')
     args = parser.parse_args()
 
     log("=" * 60)
     log("raw_to_ace_converter 시작")
-    log(f"  옵션: brand={args.brand}, limit={args.limit}, dry_run={args.dry_run}, raw_id={args.raw_id}, upsert={args.upsert}")
+    log(f"  옵션: source_site={args.source_site}, brand={args.brand}, limit={args.limit}, dry_run={args.dry_run}, raw_id={args.raw_id}, upsert={args.upsert}")
     log("=" * 60)
 
     try:
-        converter = RawToAceConverter(DB_URL)
+        converter = RawToAceConverter(DB_URL, source_site=args.source_site)
         result = converter.run_conversion(limit=args.limit, brand=args.brand, dry_run=args.dry_run, raw_id=args.raw_id, upsert=args.upsert, skip_translation=args.skip_translation)
 
         log("=" * 60)

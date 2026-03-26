@@ -805,7 +805,7 @@ class RawToAceConverter:
         except Exception as e:
             log(f"미매핑 카테고리 등록 실패: {category_path} - {e}", "WARNING")
 
-    def fetch_raw_data(self, limit: int = None, brand: str = None, raw_id: int = None, upsert: bool = False) -> List[Dict]:
+    def fetch_raw_data(self, limit: int = None, brand: str = None, raw_id: int = None, upsert: bool = False, source_site: str = None) -> List[Dict]:
         with self.engine.connect() as conn:
             query = """
                 SELECT r.id, r.source_site, r.mall_product_id, r.brand_name_en,
@@ -830,6 +830,9 @@ class RawToAceConverter:
             if brand:
                 query += " AND UPPER(r.brand_name_en) = :brand"
                 params['brand'] = brand.upper()
+            if source_site:
+                query += " AND r.source_site = :source_site"
+                params['source_site'] = source_site.lower()
             query += " ORDER BY r.id"
             if limit:
                 query += " LIMIT :limit"
@@ -943,7 +946,7 @@ class RawToAceConverter:
         colorsize_comments_jp = None
 
         ace_product = {
-            'raw_data_id': raw_data['id'], 'source_site': raw_data.get('source_site', 'okmall'),
+            'raw_data_id': raw_data['id'], 'source_site': raw_data['source_site'],
             'reference_number': generate_reference_number(), 'control': 'publish', 'name': buyma_name,
             'comments': comments, 'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
             'category_id': category_info.get('buyma_category_id', 0), 
@@ -1230,13 +1233,13 @@ class RawToAceConverter:
             conn.commit()
             return ace_product_id
 
-    def run_conversion(self, limit: int = None, brand: str = None, dry_run: bool = False, raw_id: int = None, upsert: bool = False, skip_translation: bool = False) -> Dict:
+    def run_conversion(self, limit: int = None, brand: str = None, dry_run: bool = False, raw_id: int = None, upsert: bool = False, skip_translation: bool = False, source_site: str = None) -> Dict:
         self.load_brand_mapping()
         self.load_category_mapping()
         self.load_shipping_config()
         self.load_color_master_id_mapping()
         self.load_category_size_keys_mapping()  # 카테고리별 사이즈 키 매핑 로드
-        raw_data_list = self.fetch_raw_data(limit=limit, brand=brand, raw_id=raw_id, upsert=upsert)
+        raw_data_list = self.fetch_raw_data(limit=limit, brand=brand, raw_id=raw_id, upsert=upsert, source_site=source_site)
         if not raw_data_list: return {'total': 0, 'success': 0, 'failed': 0, 'skipped': 0, 'updated': 0}
         success, failed, skipped, updated = 0, 0, 0, 0
         for idx, raw_data in enumerate(raw_data_list):
@@ -1283,7 +1286,7 @@ class RawToAceConverter:
                         """), {'brand': brand})
                         row = result.fetchone()
                         buyma_brand = row[0] if row else None
-                run_batch_translation(brand=buyma_brand, limit=None, dry_run=False)
+                run_batch_translation(brand=buyma_brand, limit=None, dry_run=False, source=source_site)
             except Exception as e:
                 log(f"배치 번역 실패: {e}", "ERROR")
 
@@ -1297,6 +1300,7 @@ def main():
     parser.add_argument('--raw-id', type=int, help='특정 raw_scraped_data ID 처리')
     parser.add_argument('--upsert', action='store_true', help='이미 변환된 데이터도 업데이트 (colorsize_comments, options, variants)')
     parser.add_argument('--skip-translation', action='store_true', help='배치 번역 건너뛰기 (파이프라인 분리용)')
+    parser.add_argument('--source', type=str, default=None, help='특정 source_site만 처리 (예: okmall, kasina, nextzennpack)')
     args = parser.parse_args()
 
     log("=" * 60)
@@ -1306,7 +1310,7 @@ def main():
 
     try:
         converter = RawToAceConverter(DB_URL)
-        result = converter.run_conversion(limit=args.limit, brand=args.brand, dry_run=args.dry_run, raw_id=args.raw_id, upsert=args.upsert, skip_translation=args.skip_translation)
+        result = converter.run_conversion(limit=args.limit, brand=args.brand, dry_run=args.dry_run, raw_id=args.raw_id, upsert=args.upsert, skip_translation=args.skip_translation, source_site=args.source)
 
         log("=" * 60)
         log("변환 완료!")

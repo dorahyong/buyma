@@ -478,7 +478,7 @@ class WconceptImageCollectorParallel:
 
         log(f"WconceptImageCollectorParallel 초기화 (headless={headless}, workers={num_workers})", "INFO")
 
-    def fetch_target_products(self, brand: str = None, model_no: str = None, limit: int = None, price_checked_only: bool = False) -> List[Dict]:
+    def fetch_target_products(self, brand: str = None, model_no: str = None, limit: int = None, price_checked_only: bool = False, source_site: str = None) -> List[Dict]:
         """대상 상품 조회"""
         with self.engine.connect() as conn:
             query = """
@@ -503,6 +503,10 @@ class WconceptImageCollectorParallel:
             if model_no:
                 query += " AND UPPER(ap.model_no) LIKE :model_no"
                 params['model_no'] = f"%{model_no.upper()}%"
+
+            if source_site:
+                query += " AND ap.source_site = :source_site"
+                params['source_site'] = source_site.lower()
 
             query += " GROUP BY ap.id ORDER BY ap.id"
 
@@ -579,7 +583,7 @@ class WconceptImageCollectorParallel:
         log(f"DB 저장 완료: {stats['total_images']}개 이미지", "DB")
         return stats
 
-    def run(self, brand: str = None, model_no: str = None, limit: int = None, dry_run: bool = False, price_checked_only: bool = False) -> Dict:
+    def run(self, brand: str = None, model_no: str = None, limit: int = None, dry_run: bool = False, price_checked_only: bool = False, source_site: str = None) -> Dict:
         """전체 실행"""
         log("=" * 60)
         log("W컨셉 이미지 수집 시작 (멀티프로세싱)")
@@ -597,7 +601,7 @@ class WconceptImageCollectorParallel:
             log("*** DRY RUN 모드 - DB 저장 안함 ***", "WARNING")
 
         # 대상 상품 조회
-        products = self.fetch_target_products(brand=brand, model_no=model_no, limit=limit, price_checked_only=price_checked_only)
+        products = self.fetch_target_products(brand=brand, model_no=model_no, limit=limit, price_checked_only=price_checked_only, source_site=source_site)
 
         if not products:
             log("수집 대상 상품이 없습니다.")
@@ -691,6 +695,7 @@ def main():
     parser.add_argument('--headless', type=str, default='true', help='브라우저 숨김 여부')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'동시 처리 워커 수 (기본 {DEFAULT_WORKERS})')
     parser.add_argument('--price-checked-only', action='store_true', help='최저가 확인된 상품만 이미지 수집')
+    parser.add_argument('--source', type=str, default=None, help='특정 source_site만 처리 (예: okmall, kasina, nextzennpack)')
 
     args = parser.parse_args()
     headless = args.headless.lower() != 'false'
@@ -706,7 +711,8 @@ def main():
             model_no=args.model_no,
             limit=args.limit,
             dry_run=args.dry_run,
-            price_checked_only=args.price_checked_only
+            price_checked_only=args.price_checked_only,
+            source_site=args.source
         )
 
         if stats.get('error', 0) > 0:

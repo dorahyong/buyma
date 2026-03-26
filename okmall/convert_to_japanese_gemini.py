@@ -460,38 +460,52 @@ def translate_batch_with_gemini(texts: Dict[str, str], max_retries: int = 3) -> 
 
 def translate_all_texts(unique_texts: Dict[str, str]) -> Dict[str, str]:
     """
-    모든 유니크 텍스트를 배치로 번역
+    모든 유니크 텍스트를 배치로 병렬 번역
 
     Returns:
         {original_text: translated_text}
     """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     if not unique_texts:
         return {}
 
     all_translations = {}
     text_items = list(unique_texts.items())
     total_batches = (len(text_items) + MAX_TEXTS_PER_REQUEST - 1) // MAX_TEXTS_PER_REQUEST
+    max_workers = min(5, total_batches)  # 최대 5개 동시 요청
 
-    log(f"총 {len(text_items)}개 텍스트를 {total_batches}개 배치로 번역 시작...")
+    log(f"총 {len(text_items)}개 텍스트를 {total_batches}개 배치로 번역 시작... (병렬 {max_workers}개)")
 
+    # 배치 준비
+    batches = []
     for i in range(0, len(text_items), MAX_TEXTS_PER_REQUEST):
         batch_num = i // MAX_TEXTS_PER_REQUEST + 1
         batch = dict(text_items[i:i + MAX_TEXTS_PER_REQUEST])
+        batches.append((batch_num, batch))
 
-        log(f"[배치 {batch_num}/{total_batches}] {len(batch)}개 텍스트 번역 중...")
+    # 병렬 실행
+    completed = 0
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+        for batch_num, batch in batches:
+            future = executor.submit(translate_batch_with_gemini, batch)
+            futures[future] = (batch_num, batch)
 
-        translations = translate_batch_with_gemini(batch)
+        for future in as_completed(futures):
+            batch_num, batch = futures[future]
+            completed += 1
+            try:
+                translations = future.result()
+                for text_id, translated in translations.items():
+                    if text_id in unique_texts:
+                        original = unique_texts[text_id]
+                        all_translations[original] = translated
+                log(f"  → 배치 {batch_num} 완료 ({completed}/{total_batches})")
+            except Exception as e:
+                log(f"  → 배치 {batch_num} 실패: {e} ({completed}/{total_batches})", "ERROR")
 
-        # text_id -> 번역결과를 original_text -> 번역결과로 변환
-        for text_id, translated in translations.items():
-            if text_id in unique_texts:
-                original = unique_texts[text_id]
-                all_translations[original] = translated
-
-        # 배치 간 간격
-        if i + MAX_TEXTS_PER_REQUEST < len(text_items):
-            time.sleep(1)
-
+    log(f"  → 번역 완료: {len(all_translations)}개")
     return all_translations
 
 

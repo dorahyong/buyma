@@ -137,8 +137,8 @@ BROWSER_PROFILES = [
 ]
 
 # 딜레이 설정
-REQUEST_DELAY_MIN = 1.2  # 오케이몰 요청 간 최소 딜레이
-REQUEST_DELAY_MAX = 2.2  # 오케이몰 요청 간 최대 딜레이
+REQUEST_DELAY_MIN = 0.8  # 오케이몰 요청 간 최소 딜레이
+REQUEST_DELAY_MAX = 1.8  # 오케이몰 요청 간 최대 딜레이
 
 # 세션 관리 설정
 SESSION_REFRESH_INTERVAL = 30  # 30개마다 세션 교체 + 메인 페이지 방문

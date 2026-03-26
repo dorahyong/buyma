@@ -342,29 +342,48 @@ class Orchestrator:
         # 단계별 명령어 구성
         commands = []
         
+        # --source 옵션 (mall_filter가 있으면 전달)
+        source_args = ['--source', mall] if self.mall_filter else []
+
         if stage == 'COLLECT':
-            commands.append([
-                sys.executable, 
-                'okmall_all_brands_collector.py', 
-                '--brand', target_brand_name,
-                '--skip-existing'
-            ])
-        
+            # 소스별 collector 분기
+            if mall == 'nextzennpack':
+                commands.append([
+                    sys.executable,
+                    os.path.join('..', 'nextzennpack', 'nextzennpack_collector.py'),
+                    '--brand', target_brand_name,
+                    '--skip-existing'
+                ])
+            elif mall == 'kasina':
+                commands.append([
+                    sys.executable,
+                    os.path.join('..', 'kasina', 'kasina_collector.py'),
+                    '--brand', target_brand_name,
+                    '--skip-existing'
+                ])
+            else:
+                commands.append([
+                    sys.executable,
+                    'okmall_all_brands_collector.py',
+                    '--brand', target_brand_name,
+                    '--skip-existing'
+                ])
+
         elif stage == 'CONVERT':
             commands.append([
                 sys.executable,
                 'raw_to_ace_converter.py',
                 '--brand', target_brand_name,
                 '--skip-translation'
-            ])
-        
+            ] + source_args)
+
         elif stage == 'TRANSLATE':
             commands.append([
                 sys.executable,
                 'convert_to_japanese_gemini.py',
                 '--brand', target_brand_name,
                 '--price-checked-only'
-            ])
+            ] + source_args)
 
         elif stage == 'IMAGE':
             commands.append([
@@ -372,26 +391,26 @@ class Orchestrator:
                 'image_collector_parallel.py',
                 '--brand', target_brand_name,
                 '--price-checked-only'
-            ])
+            ] + source_args)
             commands.append([
                 sys.executable,
                 'r2_image_uploader.py',
                 '--brand', target_brand_name
-            ])
-        
+            ] + source_args)
+
         elif stage == 'PRICE':
             commands.append([
-                sys.executable, 
-                'buyma_lowest_price_collector.py', 
+                sys.executable,
+                'buyma_lowest_price_collector.py',
                 '--brand', target_brand_name
-            ])
-        
+            ] + source_args)
+
         elif stage == 'REGISTER':
             commands.append([
-                sys.executable, 
-                'buyma_new_product_register.py', 
+                sys.executable,
+                'buyma_new_product_register.py',
                 '--brand', target_brand_name
-            ])
+            ] + source_args)
         
         # 명령어 순차 실행
         for cmd in commands:
@@ -516,9 +535,9 @@ def main():
                        default='FULL',
                        help='실행 모드 (FULL: 전체, PARTIAL: CONVERT/IMAGE 스킵)')
     
-    parser.add_argument('--mall', 
+    parser.add_argument('--source',
                        type=str,
-                       help='특정 쇼핑몰만 지정 (예: okmall)')
+                       help='특정 소스 사이트만 지정 (예: okmall, kasina, nextzennpack)')
     
     parser.add_argument('--brand', 
                        type=str,
@@ -542,7 +561,7 @@ def main():
 
     orchestrator = Orchestrator(
         run_mode=args.mode,
-        mall_filter=args.mall,
+        mall_filter=args.source,
         brand_filter=args.brand,
         exclude_brands=args.exclude,
         until_stage=args.until
