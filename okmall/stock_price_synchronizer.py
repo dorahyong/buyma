@@ -617,9 +617,9 @@ class StockPriceSynchronizer:
                         if ld_data.get('@type') == 'Product':
                             offers = ld_data.get('offers', {})
                             if offers.get('@type') == 'AggregateOffer':
-                                result['sale_price'] = int(offers.get('lowPrice', 0))
+                                result['sale_price'] = int(offers.get('lowPrice') or 0)
                             else:
-                                result['sale_price'] = int(offers.get('price', 0))
+                                result['sale_price'] = int(offers.get('price') or 0)
                             break
                     except (json.JSONDecodeError, ValueError):
                         pass
@@ -676,7 +676,7 @@ class StockPriceSynchronizer:
                     except json.JSONDecodeError:
                         pass
 
-            # 단일 상품
+            # 단일 상품 또는 일시품절 (옵션 테이블이 없는 경우)
             if not result['options']:
                 for script in scripts:
                     if script.string:
@@ -684,8 +684,15 @@ class StockPriceSynchronizer:
                             ld_data = json.loads(script.string)
                             if ld_data.get('@type') == 'Product':
                                 offers = ld_data.get('offers', {})
-                                availability = offers.get('availability', '')
-                                status = 'out_of_stock' if 'OutOfStock' in availability else 'in_stock'
+                                if offers.get('@type') == 'AggregateOffer':
+                                    offer_list = offers.get('offers', [])
+                                    if offer_list and all('OutOfStock' in o.get('availability', '') for o in offer_list):
+                                        status = 'out_of_stock'
+                                    else:
+                                        status = 'in_stock'
+                                else:
+                                    availability = offers.get('availability', '')
+                                    status = 'out_of_stock' if 'OutOfStock' in availability else 'in_stock'
                                 result['options'].append({
                                     'color': '', 'size': 'ONE SIZE',
                                     'option_code': '', 'status': status
