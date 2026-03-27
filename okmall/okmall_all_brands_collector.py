@@ -280,6 +280,32 @@ def extract_brand_info(product_data: Dict, soup: BeautifulSoup) -> Tuple[str, st
             brand_en = brand_elem.get_text(strip=True)
     return brand_en, brand_kr
 
+_COLOR_WORDS = {'BLACK', 'WHITE', 'NAVY', 'GREY', 'GRAY', 'RED', 'BLUE', 'GREEN', 'BROWN',
+                'BEIGE', 'PINK', 'CREAM', 'KHAKI', 'ORANGE', 'YELLOW', 'IVORY', 'CAMEL',
+                'CHARCOAL', 'SILVER', 'GOLD', 'BURGUNDY', 'OLIVE', 'TAN', 'SAND', 'NATURAL',
+                'DARK', 'LIGHT', 'MOSS', 'INK', 'FOG'}
+
+def _is_valid_model_id(candidate: str) -> bool:
+    """model_id 후보가 유효한지 검증 (색상명, 한글, 짧은 문자열 제외)"""
+    c = candidate.strip()
+    # 1. 3자 이하
+    if len(c) <= 3:
+        return False
+    # 2. 한글 포함
+    if re.search(r'[가-힣ㄱ-ㅎㅏ-ㅣ]', c):
+        return False
+    # 3. 색상 관련
+    parts = re.split(r'[\s/\-]+', c.upper())
+    non_empty = [p for p in parts if p]
+    # 3-1. 전부 색상
+    if non_empty and all(p in _COLOR_WORDS for p in non_empty):
+        return False
+    # 3-3. 색상 제거 후 3자 이하
+    non_color = [p for p in non_empty if p not in _COLOR_WORDS]
+    if len(''.join(non_color)) <= 3:
+        return False
+    return True
+
 def extract_product_name(soup: BeautifulSoup) -> Tuple[str, str, str, str]:
     """상품명 및 모델번호 추출"""
     name_area = soup.select_one('h3#ProductNameArea')
@@ -289,9 +315,22 @@ def extract_product_name(soup: BeautifulSoup) -> Tuple[str, str, str, str]:
     prd_name_elem = soup.select_one('.prd_name')
     prd_name_text = prd_name_elem.get_text(strip=True) if prd_name_elem else ''
     model_id = ''
-    model_match = re.search(r'\(([^)]+)\)', prd_name_text)
-    if model_match:
-        model_id = model_match.group(1).strip()
+    # 모든 괄호에서 유효한 model_id 찾기 (첫 번째 유효한 것 사용)
+    all_matches = re.findall(r'\(([^)]+)\)', prd_name_text)
+    for candidate in all_matches:
+        if _is_valid_model_id(candidate):
+            model_id = candidate.strip()
+            break
+    # fallback: 괄호가 깨진 경우 (예: "(한글 설명 (KCK385TJE 68H)")
+    if not model_id and all_matches:
+        for candidate in all_matches:
+            inner = re.findall(r'\(([^)]+)', candidate)
+            for inner_candidate in inner:
+                if _is_valid_model_id(inner_candidate):
+                    model_id = inner_candidate.strip()
+                    break
+            if model_id:
+                break
     product_name = prd_name_text.split('(')[0].strip()
     return product_name, full_name, model_id, season
 
