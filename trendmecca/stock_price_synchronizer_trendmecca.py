@@ -281,7 +281,7 @@ def generate_model_no_variants(model_no: str) -> List[str]:
     if not model_no:
         return []
 
-    model_no = model_no.strip()
+    model_no = re.sub(r'\s*\([^)]*\)', '', model_no).strip()
     variants = [model_no]  # 1. 원본
 
     # 2. 특수문자를 공백으로 바꾼 버전 (하이픈, 언더스코어 등)
@@ -650,6 +650,10 @@ class StockPriceSynchronizer:
                 stock_data = json.loads(raw_stock)
 
                 for opt_code, opt_info in stock_data.items():
+                    # 단일 상품은 {"use_stock": false, ...} 형태 → dict가 아닌 값이면 스킵
+                    if not isinstance(opt_info, dict):
+                        continue
+
                     opt_value = opt_info.get('option_value', '').strip()
                     is_selling = opt_info.get('is_selling', 'F') == 'T'
                     is_display = opt_info.get('is_display', 'F') == 'T'

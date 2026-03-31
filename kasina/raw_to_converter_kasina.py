@@ -1187,7 +1187,7 @@ class RawToAceConverter:
             color = color_raw
 
             # 2. 사이즈 (한국어 원본 저장, 배치 번역에서 처리) - 단일사이즈만 FREE로 변환
-            if size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈']:
+            if size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI']:
                 size = 'FREE'
             else:
                 size = size_raw
@@ -1229,7 +1229,7 @@ class RawToAceConverter:
                     continue
 
                 # 사이즈 (한국어 원본 저장, 배치 번역에서 처리) - 단일사이즈만 FREE로 변환
-                if measurement_size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈']:
+                if measurement_size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI']:
                     measurement_size = 'FREE'
                 else:
                     measurement_size = measurement_size_raw
@@ -1276,7 +1276,7 @@ class RawToAceConverter:
 
             # 색상/사이즈 (한국어 원본 저장, 배치 번역에서 처리)
             color_val = color_raw
-            if size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈']:
+            if size_raw in ['단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI']:
                 size_val = 'FREE'
             else:
                 size_val = size_raw.replace('품절 임박', '').replace('품절임박', '').strip()
