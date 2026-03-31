@@ -79,6 +79,54 @@ def truncate_buyma_name(text, max_limit=60):
         
     return result
 
+def truncate_option_value(text, max_limit=26):
+    """
+    バイマ옵션명 제한(반각 26자/전각 13자)에 맞춰 자르는 함수
+    1. + 구분자가 있으면 → 첫 번째 색상 + ' 外N色'
+    2. 그래도 초과면 → '...' 포함하여 max_limit 이내로 truncate
+    """
+    if not text:
+        return ""
+
+    def buyma_width(s):
+        w = 0
+        for c in s:
+            eaw = unicodedata.east_asian_width(c)
+            w += 2 if eaw in ('F', 'W', 'A') else 1
+        return w
+
+    # max_limit 이내면 그대로
+    if buyma_width(text) <= max_limit:
+        return text
+
+    # 1. + 구분자가 있으면 첫 번째 색상 + 外N色
+    if '+' in text:
+        parts = [p.strip() for p in text.split('+') if p.strip()]
+        if len(parts) > 1:
+            first = parts[0]
+            suffix = f' 外{len(parts) - 1}色'
+            combined = first + suffix
+            if buyma_width(combined) <= max_limit:
+                return combined
+
+    # 2. truncate with ...
+    result = ""
+    current_length = 0
+    dots = "..."
+    dots_width = 3  # 반각 3자
+    limit = max_limit - dots_width
+
+    for char in text:
+        eaw = unicodedata.east_asian_width(char)
+        char_width = 2 if eaw in ('F', 'W', 'A') else 1
+        if current_length + char_width > limit:
+            break
+        result += char
+        current_length += char_width
+
+    return result + dots
+
+
 def clean_text(text: str) -> str:
     """한국어 및 허용되지 않는 특수문자 제거 (안전장치)"""
     if not text: return ""
@@ -422,7 +470,7 @@ def build_options_array(option_rows: List[Dict], valid_sizes: set = None, valid_
 
         option = {
             "type": row['option_type'],
-            "value": row['value'],
+            "value": truncate_option_value(row['value']),
             "position": row['position'],
             "master_id": row['master_id'] or 0
         }
@@ -462,9 +510,9 @@ def build_variants_array(variant_rows: List[Dict]) -> List[Dict]:
         # purchase_for_order일 때는 개별 stocks를 보내면 에러가 나므로 제외합니다. (바이마 API 필수 규칙)
         
         if row['color_value']:
-            variant["options"].append({"type": "color", "value": row['color_value']})
+            variant["options"].append({"type": "color", "value": truncate_option_value(row['color_value'])})
         if row['size_value']:
-            variant["options"].append({"type": "size", "value": row['size_value']})
+            variant["options"].append({"type": "size", "value": truncate_option_value(row['size_value'])})
         variants.append(variant)
     return variants
 
