@@ -750,15 +750,6 @@ class RawToAceConverter:
                 result['buyma_category_id'] = 0
             return result
 
-        path_parts = category_path.split(' > ') if category_path else []
-        for i in range(len(path_parts), 0, -1):
-            partial_path = ' > '.join(path_parts[:i])
-            if partial_path in category_mapping:
-                result = category_mapping[partial_path]
-                if result.get('buyma_category_id') is None or result.get('buyma_category_id') == 0:
-                    result['buyma_category_id'] = 0
-                return result
-
         # mall_categories에 없는 새 경로 → buyma_category_id=NULL로 INSERT (수동 매핑 대기)
         if category_path:
             self._register_unmapped_category(category_path)
@@ -769,10 +760,10 @@ class RawToAceConverter:
         """미매핑 카테고리 경로를 mall_categories에 등록 (buyma_category_id=NULL)"""
         parts = [p.strip() for p in category_path.split(' > ')]
         gender = 'unisex'
-        if any(k in category_path for k in ['남성', 'MEN']):
-            gender = 'male'
-        elif any(k in category_path for k in ['여성', 'WOMEN']):
+        if any(k in category_path for k in ['여성', 'WOMEN']):
             gender = 'female'
+        elif any(k in category_path for k in ['남성', 'MEN']):
+            gender = 'male'
 
         depth1 = parts[1] if len(parts) > 1 else ''
         depth2 = parts[2] if len(parts) > 2 else ''

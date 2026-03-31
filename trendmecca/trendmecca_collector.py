@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-라벨루쏘(labellusso.com) 상품 수집 스크립트
+트렌드메카(trendmecca.co.kr) 상품 수집 스크립트
 - Cafe24 기반 쇼핑몰 → HTML 스크래핑
 - 리스트 페이지: /product/list.html?cate_no={mall_brand_no}&page={n}
-- 상세 페이지: /product/detail.html?product_no={no}&cate_no={cate_no}
-- raw_scraped_data 테이블에 source_site='labellusso'로 저장
+- 상세 페이지: /product/{slug}/{product_no}/category/{cate_no}/display/1/
+- raw_scraped_data 테이블에 source_site='trendmecca'로 저장
 
 사용법:
-    python labellusso_collector.py                        # 전체 실행
-    python labellusso_collector.py --brand "A.P.C"        # 특정 브랜드만
-    python labellusso_collector.py --limit 10             # 브랜드당 최대 10개
-    python labellusso_collector.py --dry-run              # DB 저장 없이 테스트
-    python labellusso_collector.py --skip-existing        # 등록 완료 상품 스킵
+    python trendmecca_collector.py                        # 전체 실행
+    python trendmecca_collector.py --brand "AMI"          # 특정 브랜드만
+    python trendmecca_collector.py --limit 10             # 브랜드당 최대 10개
+    python trendmecca_collector.py --dry-run              # DB 저장 없이 테스트
+    python trendmecca_collector.py --skip-existing        # 등록 완료 상품 스킵
 
 ★ 봇 감지 방지:
 - 30개마다 세션 교체 + 메인 페이지 방문
@@ -54,8 +54,8 @@ engine = create_engine(DATABASE_URL, echo=False)
 # 상수
 # ===========================================
 
-BASE_URL = 'https://www.labellusso.com'
-SOURCE_SITE = 'labellusso'
+BASE_URL = 'https://trendmecca.co.kr'
+SOURCE_SITE = 'trendmecca'
 SESSION_REFRESH_INTERVAL = 30
 MAX_CONSECUTIVE_TIMEOUTS = 5
 REQUEST_DELAY_MIN = 0.3
@@ -139,7 +139,7 @@ class SessionManager:
             self.session.headers.update(main_headers)
 
             logger.info(f"  [세션] 새 세션 시작 - 메인 페이지 방문 중...")
-            response = self.session.get(f'{BASE_URL}/index.html', timeout=15)
+            response = self.session.get(f'{BASE_URL}/index_time.html', timeout=15)
 
             if response.status_code != 200:
                 return False, f"메인 페이지 접속 실패: {response.status_code}"
@@ -204,11 +204,12 @@ class SessionManager:
 def get_product_list_from_page(html: str, cate_no: str) -> List[Dict]:
     """리스트 페이지 HTML에서 상품 기본 정보 추출
 
-    labellusso 리스트 구조:
+    트렌드메카 리스트 구조:
     - <li id="anchorBoxId_{product_no}">
-    - 상품명: <strong class="name"><a> 내부 (br 태그로 구분)
-    - 가격: data-prod-custom (소비자가), data-prod-price (판매가)
-    - 이미지: <img class="thumb">
+    - 상품명: div.name > a > span (displaynone 제거)
+    - 가격: div.description 속성 ec-data-custom (소비자가), ec-data-price (판매가)
+    - 이미지: div.thumbnail > a > img
+    - 상품 URL: div.name > a href
     """
     soup = BeautifulSoup(html, 'html.parser')
     products = []
@@ -222,61 +223,54 @@ def get_product_list_from_page(html: str, cate_no: str) -> List[Dict]:
             if not product_no:
                 continue
 
-            # 상품명 — [BRAND]<br>시즌 설명<br>MODEL_NO 형태
-            name_elem = item.select_one('strong.name a')
-            if not name_elem:
-                name_elem = item.select_one('p.name a span')
+            # 상품명
+            name_elem = item.select_one('div.name a')
             raw_name = ''
             if name_elem:
-                # displaynone 요소 제거 (숨겨진 "상품명 :" 라벨)
                 for hidden in name_elem.select('.displaynone'):
                     hidden.decompose()
-                # br 태그를 공백으로 치환하여 텍스트 추출
-                for br in name_elem.find_all('br'):
-                    br.replace_with(' ')
                 raw_name = name_elem.get_text(strip=True)
 
-            # [브랜드명] 접두어 제거
-            product_name = re.sub(r'^\[.*?\]\s*', '', raw_name).strip()
+            # "타임메카" / "트렌드메카" 접미어 제거
+            product_name = re.sub(r'\s*(타임메카|트렌드메카)\s*$', '', raw_name).strip()
 
-            # 가격 — data 속성에서 추출
-            discount_elem = item.select_one('span.discount_rate')
+            # 상품 상세 URL (slug 포함된 원본 href)
+            detail_href = ''
+            link_elem = item.select_one('div.name a')
+            if link_elem:
+                detail_href = link_elem.get('href', '')
+
+            # 가격 — div.description 속성에서 추출
+            desc_elem = item.select_one('div.description')
             original_price = 0
             sale_price = 0
-            if discount_elem:
-                custom = discount_elem.get('data-prod-custom', '')
-                price = discount_elem.get('data-prod-price', '')
+            if desc_elem:
+                custom = desc_elem.get('ec-data-custom', '')
+                price = desc_elem.get('ec-data-price', '')
                 if custom:
                     original_price = int(re.sub(r'[^0-9]', '', custom) or 0)
                 if price:
                     sale_price = int(re.sub(r'[^0-9]', '', price) or 0)
 
-            # fallback: p.price, p.sale
-            if not original_price:
-                price_elem = item.select_one('p.price')
-                if price_elem:
-                    price_text = re.sub(r'[^0-9]', '', price_elem.get_text(strip=True))
-                    if price_text:
-                        original_price = int(price_text)
+            # fallback: li.price01 (판매가), li.price02 (정가)
             if not sale_price:
-                sale_elem = item.select_one('p.sale')
-                if sale_elem:
-                    sale_text = sale_elem.contents[0] if sale_elem.contents else ''
-                    if hasattr(sale_text, 'get_text'):
-                        sale_text = sale_text.get_text(strip=True)
-                    else:
-                        sale_text = str(sale_text).strip()
-                    price_match = re.sub(r'[^0-9]', '', sale_text)
-                    if price_match:
-                        sale_price = int(price_match)
+                price01 = item.select_one('li.price01')
+                if price01:
+                    p_text = re.sub(r'[^0-9]', '', price01.get_text(strip=True))
+                    if p_text:
+                        sale_price = int(p_text)
+            if not original_price:
+                price02 = item.select_one('li.price02')
+                if price02:
+                    p_text = re.sub(r'[^0-9]', '', price02.get_text(strip=True))
+                    if p_text:
+                        original_price = int(p_text)
 
             # 이미지
-            img_elem = item.select_one('img.thumb')
-            if not img_elem:
-                img_elem = item.select_one('a.prdImg img')
+            img_elem = item.select_one('div.thumbnail a img')
             image_url = ''
             if img_elem:
-                image_url = img_elem.get('src', '') or img_elem.get('data-original', '')
+                image_url = img_elem.get('src', '')
                 if image_url.startswith('//'):
                     image_url = 'https:' + image_url
 
@@ -286,6 +280,7 @@ def get_product_list_from_page(html: str, cate_no: str) -> List[Dict]:
                 'original_price': original_price,
                 'sale_price': sale_price,
                 'image_url': image_url,
+                'detail_href': detail_href,
                 'cate_no': cate_no,
             })
         except Exception as e:
@@ -295,58 +290,19 @@ def get_product_list_from_page(html: str, cate_no: str) -> List[Dict]:
     return products
 
 
-def extract_subcategories(html: str) -> List[Dict]:
-    """브랜드 리스트 페이지의 사이드바에서 서브카테고리 추출
-
-    labellusso 구조: ul.menuCategory > li.xans-product-displaycategory
-    [여성] 가방 하위에 크로스, 토트 등
-    [여성] → WOMEN, [남성] → MEN, [공용] → WOMEN 으로 변환
-    수집처 데이터 기준 그대로 저장
-    """
-    soup = BeautifulSoup(html, 'html.parser')
-    menu = soup.select_one('ul.menuCategory')
-    if not menu:
-        return []
-
-    gender_map = {'여성': 'WOMEN', '남성': 'MEN', '공용': 'WOMEN'}
-    categories = []
-
-    for top_li in menu.select('li.xans-product-displaycategory'):
-        top_a = top_li.find('a', recursive=False)
-        if not top_a:
-            continue
-        top_text = top_a.get_text(strip=True)
-        m = re.match(r'\[(.+?)\]\s*(.+?)(?:\s*\(\d+\))?$', top_text)
-        if not m:
-            continue
-        gender_prefix = gender_map.get(m.group(1).strip(), 'WOMEN')
-        depth1 = m.group(2).strip()
-
-        children_ul = top_li.find('ul', class_='xans-product-children')
-        if children_ul:
-            for child_li in children_ul.find_all('li', recursive=False):
-                child_a = child_li.find('a')
-                if child_a:
-                    child_text = child_a.get_text(strip=True)
-                    depth2 = re.sub(r'\s*\(\d+\)$', '', child_text).strip()
-                    url = child_a.get('href', '')
-                    categories.append({
-                        'name': f"{gender_prefix} > {depth1} > {depth2}",
-                        'url': url,
-                    })
-        else:
-            url = top_a.get('href', '')
-            categories.append({
-                'name': f"{gender_prefix} > {depth1}",
-                'url': url,
-            })
-
-    return categories
-
-
 def get_last_page(html: str) -> int:
     """페이지네이션에서 마지막 페이지 번호 추출"""
     soup = BeautifulSoup(html, 'html.parser')
+
+    # .last 링크에서 마지막 페이지 추출
+    last_link = soup.select_one('.xans-product-normalpaging a.last')
+    if last_link:
+        href = last_link.get('href', '')
+        match = re.search(r'page=(\d+)', href)
+        if match:
+            return int(match.group(1))
+
+    # fallback: 모든 페이지 링크에서 최대값
     paging = soup.select('.xans-product-normalpaging ol li a')
     max_page = 1
     for a in paging:
@@ -363,151 +319,102 @@ def get_last_page(html: str) -> int:
 # 상세 페이지 파싱
 # ===========================================
 
-def extract_detail_info(html: str) -> Dict[str, Any]:
-    """상세 페이지에서 모델번호, 브랜드, 옵션, 이미지 등 추출
+def extract_size_from_option_value(option_value: str) -> str:
+    """option_value에서 사이즈 추출
+    "USW247 730 0951 (M)" → "M"
+    "단일사이즈" → "FREE"
+    """
+    # 괄호 안의 값 추출
+    match = re.search(r'\(([^)]+)\)\s*$', option_value)
+    if match:
+        size = match.group(1).strip()
+    else:
+        size = option_value.strip()
 
-    labellusso 상세 페이지 특징:
-    - 모델명: prd_model_css 클래스 또는 상품코드 영역
-    - 브랜드: prd_brand_css 클래스
+    # 단일사이즈 → FREE
+    if size in ['단일사이즈', '단일 사이즈', 'ONE SIZE', 'ONESIZE', '원사이즈']:
+        size = 'FREE'
+
+    return size
+
+
+def extract_detail_info(html: str) -> Dict[str, Any]:
+    """상세 페이지에서 모델번호, 옵션, 이미지 등 추출
+
+    트렌드메카 상세 페이지 특징:
+    - 상품 정보 테이블: tr[rel="모델명"], tr[rel="브랜드"], tr[rel="제조국"]
     - 옵션: option_stock_data JS 변수 (JSON)
-    - 이미지: xans-product-addimage 영역
+    - 이미지: xans-product-addimage 영역 ThumbImage
+    - 실측정보/소재 없음
     """
     soup = BeautifulSoup(html, 'html.parser')
     info = {
         'model_id': '',
-        'brand_name': '',
-        'item_type': '',
         'origin': '',
-        'material': '',
         'color': '',
-        'set': '',
         'options': [],
-        'measurements': {},
         'images': [],
     }
 
-    # 브랜드 — prd_brand_css (item_cont에서 값만 추출)
-    brand_elem = soup.select_one('.prd_brand_css .item_cont')
-    if not brand_elem:
-        brand_elem = soup.select_one('tr.prd_brand_css td')
-    if brand_elem:
-        info['brand_name'] = brand_elem.get_text(strip=True)
-
-    # 모델명 — prd_model_css (item_cont에서 값만 추출)
-    model_elem = soup.select_one('.prd_model_css .item_cont')
-    if not model_elem:
-        model_elem = soup.select_one('tr.prd_model_css td')
-    if model_elem:
-        info['model_id'] = model_elem.get_text(strip=True)
-
-    # 상품 정보 테이블 (grp_product_price 영역)
-    for row in soup.select('.xans-product-detaildesign tr, table.detail tr'):
-        th = row.select_one('th')
+    # 상품 정보 테이블 파싱 (tr[rel="..."] 구조)
+    # td > span 텍스트만 추출 (카드혜택 모달 등 하위 요소 오염 방지)
+    for row in soup.select('.xans-product-detaildesign tr'):
+        rel = row.get('rel', '')
         td = row.select_one('td')
-        if not th or not td:
+        if not rel or not td:
             continue
-        header = th.get_text(strip=True).replace(' ', '')
-        value = td.get_text(strip=True)
+        span = td.select_one('span')
+        value = span.get_text(strip=True) if span else td.get_text(strip=True)
 
-        if not info['model_id'] and ('모델명' in header or header.upper() in ('MODEL',)):
+        if rel == '모델명' and value:
             info['model_id'] = value
-        elif '종류' in header or 'ITEM' in header.upper():
-            info['item_type'] = value
-        elif '원산지' in header or 'ORIGN' in header.upper():
+        elif rel == '제조국' and value:
             info['origin'] = value
-        elif '소재' in header or 'MATERIAL' in header.upper():
-            info['material'] = value
-        elif '색상' in header or 'COLOR' in header.upper():
-            info['color'] = value
-        elif '구성' in header or 'SET' in header.upper():
-            info['set'] = value
 
-    # #desctable에서 색상, 사이즈, 모델명 추출 (없으면 수집 스킵 대상)
-    desctable = soup.select_one('#desctable')
-    desctable_sizes = []
-    if desctable:
-        for row in desctable.select('tr'):
-            tds = row.select('td')
-            if len(tds) < 2:
+    # model_id fallback: 모든 tr에서 th 텍스트 기반 검색
+    if not info['model_id']:
+        for row in soup.select('tr'):
+            th = row.select_one('th')
+            td = row.select_one('td')
+            if not th or not td:
                 continue
-            header = tds[0].get_text(strip=True).replace(' ', '')
-            value = tds[1].get_text(strip=True)
-
-            if '모델명' in header and not info['model_id']:
-                info['model_id'] = value
-            elif '색상' in header and value:
-                info['color'] = value
-            elif '사이즈' in header and value:
-                # "XXS,XS,S,M,L,XL,XXL,XXXL" → 리스트로 분리
-                desctable_sizes = [s.strip() for s in value.split(',') if s.strip()]
+            header = th.get_text(strip=True).replace(' ', '')
+            if '모델명' in header or header == '모델':
+                value = td.get_text(strip=True)
+                if value:
+                    info['model_id'] = value
+                    break
 
     # option_stock_data JS 변수 파싱 (재고 정보)
-    stock_data = {}
     stock_match = re.search(r"option_stock_data\s*=\s*'(.*?)'", html, re.DOTALL)
     if stock_match:
         try:
-            # \" → " 치환 (HTML 내 JS 이스케이프)
             raw_stock = stock_match.group(1).replace('\\"', '"')
             stock_data = json.loads(raw_stock)
+
+            for opt_code, opt_info in stock_data.items():
+                opt_value = opt_info.get('option_value', '').strip()
+                is_selling = opt_info.get('is_selling', 'F') == 'T'
+                is_display = opt_info.get('is_display', 'F') == 'T'
+                stock_num = opt_info.get('stock_number', 0)
+
+                tag_size = extract_size_from_option_value(opt_value)
+                in_stock = is_selling and is_display and stock_num > 0
+
+                info['options'].append({
+                    'color': '',
+                    'tag_size': tag_size,
+                    'option_code': opt_code,
+                    'status': 'in_stock' if in_stock else 'out_of_stock',
+                })
         except (json.JSONDecodeError, AttributeError):
             pass
-
-    # 옵션 생성: desctable 사이즈 기준 + option_stock_data 재고 매칭
-    if desctable_sizes:
-        # option_stock_data에서 option_value → 재고 상태 매핑
-        stock_by_size = {}
-        for opt_code, opt_info in stock_data.items():
-            opt_value = opt_info.get('option_value', '').strip()
-            is_selling = opt_info.get('is_selling', 'F') == 'T'
-            is_display = opt_info.get('is_display', 'F') == 'T'
-            stock_num = opt_info.get('stock_number', 0)
-            in_stock = is_selling and is_display and stock_num > 0
-            stock_by_size[opt_value] = {
-                'status': 'in_stock' if in_stock else 'out_of_stock',
-                'option_code': opt_code,
-            }
-
-        for size in desctable_sizes:
-            norm_size = size.strip()
-            if norm_size in ['단일사이즈', '단일 사이즈', 'ONE SIZE', 'ONESIZE', '원사이즈']:
-                norm_size = 'FREE'
-
-            # option_stock_data에서 매칭 (정확 매칭 우선, 없으면 포함 매칭)
-            matched = stock_by_size.get(norm_size)
-            if not matched:
-                for k, v in stock_by_size.items():
-                    if norm_size in k or k in norm_size:
-                        matched = v
-                        break
-
-            info['options'].append({
-                'color': info.get('color', ''),
-                'tag_size': norm_size,
-                'option_code': matched['option_code'] if matched else '',
-                'status': matched['status'] if matched else 'in_stock',
-            })
-    elif stock_data:
-        # desctable에 사이즈 없으면 option_stock_data만으로 옵션 생성
-        for opt_code, opt_info in stock_data.items():
-            opt_value = opt_info.get('option_value', '')
-            is_selling = opt_info.get('is_selling', 'F') == 'T'
-            is_display = opt_info.get('is_display', 'F') == 'T'
-            stock_num = opt_info.get('stock_number', 0)
-
-            if opt_value in ['단일사이즈', '단일 사이즈', 'ONE SIZE', 'ONESIZE', '원사이즈']:
-                opt_value = 'FREE'
-
-            status = 'in_stock' if (is_selling and is_display and stock_num > 0) else 'out_of_stock'
-            info['options'].append({
-                'color': info.get('color', ''),
-                'tag_size': opt_value,
-                'option_code': opt_code,
-                'status': status,
-            })
 
     # fallback: select 옵션
     if not info['options']:
         option_select = soup.select_one('select[option_title]')
+        if not option_select:
+            option_select = soup.select_one('select#product_option_id1')
         if option_select:
             for opt in option_select.select('option'):
                 opt_value = opt.get('value', '')
@@ -519,44 +426,16 @@ def extract_detail_info(html: str) -> Dict[str, Any]:
 
                 is_soldout = '품절' in opt_text or opt.get('disabled') is not None
                 clean_size = re.sub(r'\s*\[품절\]\s*', '', opt_text).strip()
-                if clean_size in ['단일사이즈', '단일 사이즈', 'ONE SIZE', 'ONESIZE', '원사이즈']:
-                    clean_size = 'FREE'
+                clean_size = extract_size_from_option_value(clean_size)
 
                 info['options'].append({
-                    'color': info.get('color', ''),
+                    'color': '',
                     'tag_size': clean_size,
                     'option_code': opt_value,
                     'status': 'out_of_stock' if is_soldout else 'in_stock',
                 })
 
-    # 실측 사이즈 (table.size)
-    size_table = soup.select_one('table.size')
-    if size_table:
-        headers = []
-        header_row = size_table.select_one('tr')
-        if header_row:
-            for th in header_row.select('th'):
-                headers.append(th.get_text(strip=True))
-
-        data_rows = size_table.select('tr')[1:]
-        for row in data_rows:
-            cells = row.select('td')
-            if not cells:
-                continue
-            size_name = cells[0].get_text(strip=True)
-            size_name = re.sub(r'^EU\s*/\s*IT\s+', '', size_name).strip()
-            size_data = {}
-            for i, header in enumerate(headers[1:], 1):
-                if i < len(cells):
-                    val = cells[i].get_text(strip=True)
-                    if val and val != '-':
-                        size_data[header] = val
-            if size_data:
-                info['measurements'][size_name] = size_data
-
-    # 상품 이미지 — ThumbImage (small URL 그대로 사용)
-    # labellusso는 /big/ 경로가 404, /small/이 이미 870x870px이므로 변환 불필요
-    # extra/small → extra/big는 존재하지만 해상도 동일(870x870)이므로 변환 불필요
+    # 상품 이미지 — ThumbImage
     thumb_area = soup.select_one('.xans-product-addimage')
     if thumb_area:
         for img in thumb_area.select('img.ThumbImage'):
@@ -567,35 +446,14 @@ def extract_detail_info(html: str) -> Dict[str, Any]:
                 if src not in info['images']:
                     info['images'].append(src)
 
-    # fallback: JSON-LD에서 이미지
-    if not info['images']:
-        for script in soup.select('script[type="application/ld+json"]'):
-            try:
-                ld = json.loads(script.string)
-                if ld.get('@type') == 'Product' and 'image' in ld:
-                    imgs = ld['image'] if isinstance(ld['image'], list) else [ld['image']]
-                    info['images'] = imgs
-                    break
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-    # 가격 추출
-    # product_price = 판매가 (raw_price)
-    price_match = re.search(r"product_price\s*=\s*'(\d+)'", html)
-    if price_match:
-        info['sale_price_js'] = int(price_match.group(1))
-
-    # product_sale_price가 별도로 있으면 그것이 판매가
+    # JS 변수에서 가격 추출
     sale_match = re.search(r"product_sale_price\s*=\s*(\d+)", html)
-    if sale_match and int(sale_match.group(1)) > 0:
+    if sale_match:
         info['sale_price_js'] = int(sale_match.group(1))
 
-    # 소비자가 = #span_product_price_custom (정가/소비자가)
-    custom_elem = soup.select_one('#span_product_price_custom')
-    if custom_elem:
-        custom_text = re.sub(r'[^0-9]', '', custom_elem.get_text(strip=True))
-        if custom_text:
-            info['original_price_js'] = int(custom_text)
+    original_match = re.search(r"product_price\s*=\s*'(\d+)'", html)
+    if original_match:
+        info['original_price_js'] = int(original_match.group(1))
 
     return info
 
@@ -604,35 +462,20 @@ def extract_detail_info(html: str) -> Dict[str, Any]:
 # 데이터 변환
 # ===========================================
 
-def extract_model_id_from_name(product_name: str) -> str:
-    """상품명에서 모델번호 추출
-
-    labellusso 상품명 형식: FW25 여성 데미 룬 숄더백 PXCAX F61997 LZZ
-    → 마지막 대문자+숫자 패턴이 모델번호일 가능성
-    """
-    # 상품명 뒤쪽에서 영문+숫자 모델번호 패턴 추출
-    match = re.search(r'([A-Z][A-Z0-9][\w\s\-\.]*[0-9][\w\s\-\.]*)\s*$', product_name)
-    if match:
-        return match.group(1).strip()
-    return ''
-
-
 def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str, brand_name_ko: str, category_path: str = '') -> Optional[Dict]:
     """리스트 + 상세 데이터를 raw_scraped_data 형식으로 변환"""
 
     product_no = list_item['product_no']
     product_name = list_item.get('product_name', '')
 
-    # 모델번호: 상세 페이지 prd_model_css 우선, 없으면 상품명에서 추출
+    # 모델번호: 상세 페이지 테이블 우선
     model_id = detail_info.get('model_id', '')
-    if not model_id:
-        model_id = extract_model_id_from_name(product_name)
 
     # model_id 없으면 스킵
     if not model_id:
         return None
 
-    # 가격: 상세 페이지 JS 변수 우선
+    # 가격: 상세 페이지 JS 변수 우선, fallback으로 리스트 페이지 값
     original_price = detail_info.get('original_price_js', list_item.get('original_price', 0))
     sale_price = detail_info.get('sale_price_js', list_item.get('sale_price', 0))
     if not sale_price:
@@ -646,30 +489,24 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str, 
     elif not options:
         stock_status = 'in_stock'
 
-    # composition
-    composition = {}
-    if detail_info.get('origin'):
-        composition['원산지'] = detail_info['origin']
-    if detail_info.get('material'):
-        composition['소재'] = detail_info['material']
-    if detail_info.get('set'):
-        composition['구성품'] = detail_info['set']
-
     # raw_json_data
     raw_json = {
-        'color': detail_info.get('color', ''),
-        'item_type': detail_info.get('item_type', ''),
         'origin': detail_info.get('origin', ''),
-        'material': detail_info.get('material', ''),
-        'composition': composition,
         'options': options,
-        'measurements': detail_info.get('measurements', {}),
         'images': detail_info.get('images', []),
         'cate_no': list_item.get('cate_no', ''),
         'scraped_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
     }
 
-    product_url = f"{BASE_URL}/product/detail.html?product_no={product_no}&cate_no={list_item.get('cate_no', '')}"
+    # product_url: 리스트에서 가져온 slug URL 우선, 없으면 detail.html 형식
+    detail_href = list_item.get('detail_href', '')
+    if detail_href:
+        if detail_href.startswith('/'):
+            product_url = f"{BASE_URL}{detail_href}"
+        else:
+            product_url = detail_href
+    else:
+        product_url = f"{BASE_URL}/product/detail.html?product_no={product_no}&cate_no={list_item.get('cate_no', '')}"
 
     return {
         'source_site': SOURCE_SITE,
@@ -694,8 +531,8 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str, 
 
 def get_brands_from_database(brand_filter: str = None) -> List[Dict]:
     with engine.connect() as conn:
-        query = "SELECT mall_brand_name_en, mall_brand_name_ko, mall_brand_no FROM mall_brands WHERE mall_name = :site AND is_active = 1"
-        params = {'site': SOURCE_SITE}
+        query = "SELECT mall_brand_name_en, mall_brand_name_ko, mall_brand_no FROM mall_brands WHERE mall_name = 'trendmecca' AND is_active = 1"
+        params = {}
         if brand_filter:
             query += " AND UPPER(mall_brand_name_en) = :brand"
             params['brand'] = brand_filter.upper()
@@ -703,21 +540,107 @@ def get_brands_from_database(brand_filter: str = None) -> List[Dict]:
         return [{'name_en': r[0], 'name_ko': r[1], 'cate_no': r[2]} for r in result]
 
 
+def get_categories_from_database() -> List[Dict]:
+    """mall_categories에서 trendmecca 카테고리 목록 조회"""
+    with engine.connect() as conn:
+        result = conn.execute(text(
+            "SELECT category_id, full_path FROM mall_categories WHERE mall_name = 'trendmecca' AND is_active = 1"
+        ))
+        return [{'cate_no': r[0], 'full_path': r[1]} for r in result]
+
+
+def build_category_map(session_mgr: 'SessionManager') -> Dict[str, str]:
+    """카테고리 페이지를 순회하여 {product_no: full_path} 매핑 구축"""
+    categories = get_categories_from_database()
+    logger.info(f"카테고리 매핑 시작: {len(categories)}개 카테고리")
+
+    category_map = {}  # {product_no: full_path}
+
+    for cat_idx, cat in enumerate(categories, 1):
+        if session_mgr.is_blocked:
+            logger.error("  차단 감지됨 — 카테고리 매핑 중단")
+            break
+
+        cate_no = cat['cate_no']
+        full_path = cat['full_path']
+
+        # 첫 페이지
+        url = f"{BASE_URL}/product/list.html?cate_no={cate_no}&page=1"
+        html, error = session_mgr.fetch_page(url)
+        if error:
+            logger.warning(f"  [{cat_idx}/{len(categories)}] {full_path} 수집 실패: {error}")
+            continue
+        if not html:
+            continue
+
+        last_page = get_last_page(html)
+        items = get_product_list_from_page(html, cate_no)
+        product_nos = [item['product_no'] for item in items]
+
+        # 나머지 페이지
+        for page in range(2, last_page + 1):
+            if session_mgr.is_blocked:
+                break
+            page_url = f"{BASE_URL}/product/list.html?cate_no={cate_no}&page={page}"
+            page_html, error = session_mgr.fetch_page(page_url)
+            if error:
+                continue
+            if not page_html:
+                break
+            items = get_product_list_from_page(page_html, cate_no)
+            if not items:
+                break
+            product_nos.extend(item['product_no'] for item in items)
+            time.sleep(random.uniform(0.2, 0.5))
+
+        # 매핑 등록 (이미 있으면 덮어쓰지 않음 — 첫 매칭 우선)
+        new_count = 0
+        for pno in product_nos:
+            if pno not in category_map:
+                category_map[pno] = full_path
+                new_count += 1
+
+        logger.info(f"  [{cat_idx}/{len(categories)}] {full_path} | {len(product_nos)}개 상품, 신규 매핑 {new_count}개")
+        time.sleep(random.uniform(0.2, 0.5))
+
+    logger.info(f"카테고리 매핑 완료: 총 {len(category_map)}개 상품 매핑됨")
+    return category_map
+
+
+def update_categories_in_db(category_map: Dict[str, str]):
+    """기존 raw_scraped_data의 category_path를 업데이트"""
+    if not category_map:
+        return
+
+    updated = 0
+    with engine.connect() as conn:
+        for product_no, full_path in category_map.items():
+            result = conn.execute(text("""
+                UPDATE raw_scraped_data
+                SET category_path = :path
+                WHERE source_site = 'trendmecca' AND mall_product_id = :pid AND (category_path IS NULL OR category_path = '')
+            """), {'path': full_path, 'pid': product_no})
+            if result.rowcount > 0:
+                updated += result.rowcount
+        conn.commit()
+    logger.info(f"기존 데이터 category_path 업데이트: {updated}건")
+
+
 def get_published_product_ids(brand_name: str = None) -> set:
     """등록 완료된 상품의 mall_product_id 목록 조회"""
     with engine.connect() as conn:
-        query = f"""
+        query = """
             SELECT r.mall_product_id
             FROM raw_scraped_data r
             INNER JOIN ace_products a ON r.id = a.raw_data_id
-            WHERE r.source_site = :site
+            WHERE r.source_site = 'trendmecca'
             AND a.is_published = 1
         """
-        params = {'site': SOURCE_SITE}
         if brand_name:
             query += " AND (UPPER(r.brand_name_en) = :brand OR UPPER(r.brand_name_kr) = :brand)"
-            params['brand'] = brand_name.upper()
-        result = conn.execute(text(query), params)
+            result = conn.execute(text(query), {"brand": brand_name.upper()})
+        else:
+            result = conn.execute(text(query))
         return {str(r[0]) for r in result}
 
 
@@ -758,27 +681,50 @@ def save_to_database(data_list: List[Dict]):
 # ===========================================
 
 def main():
-    parser = argparse.ArgumentParser(description='라벨루쏘 상품 수집기')
+    parser = argparse.ArgumentParser(description='트렌드메카 상품 수집기')
     parser.add_argument('--brand', type=str, help='특정 브랜드만 처리')
     parser.add_argument('--limit', type=int, help='브랜드당 최대 수집 상품 수')
     parser.add_argument('--dry-run', action='store_true', help='DB 저장 없이 테스트')
     parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품 스킵')
+    parser.add_argument('--update-categories', action='store_true', help='기존 데이터의 category_path만 업데이트')
     args = parser.parse_args()
 
     logger.info("=" * 60)
-    logger.info(f"라벨루쏘 수집 시작 (Mode: {'DRY-RUN' if args.dry_run else 'NORMAL'})")
+
+    session_mgr = SessionManager()
+
+    # --update-categories: 카테고리 매핑만 수행 후 종료
+    if args.update_categories:
+        logger.info("트렌드메카 카테고리 업데이트 모드")
+        logger.info("=" * 60)
+        try:
+            category_map = build_category_map(session_mgr)
+            update_categories_in_db(category_map)
+        finally:
+            session_mgr.close()
+        logger.info("=" * 60)
+        return
+
+    logger.info(f"트렌드메카 수집 시작 (Mode: {'DRY-RUN' if args.dry_run else 'NORMAL'})")
     if args.skip_existing:
         logger.info("  신규+미등록 상품 수집 모드 (--skip-existing)")
     logger.info("=" * 60)
+
+    # 카테고리 맵 먼저 구축
+    try:
+        category_map = build_category_map(session_mgr)
+    except Exception as e:
+        logger.warning(f"카테고리 맵 구축 실패: {e} — category_path 빈 값으로 진행")
+        category_map = {}
 
     brands = get_brands_from_database(args.brand)
     logger.info(f"대상 브랜드: {len(brands)}개")
 
     if not brands:
         logger.info("수집할 브랜드가 없습니다.")
+        session_mgr.close()
         return
 
-    session_mgr = SessionManager()
     total_collected = 0
     total_skipped_no_model = 0
 
@@ -794,8 +740,8 @@ def main():
                 logger.error("  차단 감지됨 — 수집 중단")
                 break
 
-            # 1) 브랜드 리스트 페이지 방문 → 서브카테고리 추출
-            brand_url = f"{BASE_URL}/product/list.html?cate_no={cate_no}"
+            # 1) 브랜드 리스트 첫 페이지
+            brand_url = f"{BASE_URL}/product/list.html?cate_no={cate_no}&page=1"
             html, error = session_mgr.fetch_page(brand_url)
             if error:
                 logger.warning(f"  브랜드 페이지 수집 실패: {error}")
@@ -803,72 +749,35 @@ def main():
             if not html:
                 continue
 
-            subcategories = extract_subcategories(html)
-            if not subcategories:
-                logger.info(f"  서브카테고리 없음 — 브랜드 전체 페이지로 수집")
-                subcategories = [{'name': '', 'url': f'/product/list.html?cate_no={cate_no}'}]
+            last_page = get_last_page(html)
+            all_list_items = get_product_list_from_page(html, cate_no)
 
-            logger.info(f"  서브카테고리 {len(subcategories)}개: {[s['name'] for s in subcategories[:5]]}{'...' if len(subcategories) > 5 else ''}")
-
-            # 2) 서브카테고리별 리스트 수집 (product_no 기준 dedup)
-            all_list_items = []
-            seen_product_nos = set()
-
-            for subcat in subcategories:
+            # 나머지 페이지
+            for page in range(2, last_page + 1):
                 if session_mgr.is_blocked:
                     break
-
-                cat_name = subcat['name']
-                cat_url = subcat['url']
-                cat_no_match = re.search(r'/(\d+)/?$', cat_url)
-                cat_no = cat_no_match.group(1) if cat_no_match else cate_no
-
-                first_url = f"{BASE_URL}{cat_url}" if cat_url.startswith('/') else cat_url
-                if '?' in first_url:
-                    first_page_url = f"{first_url}&page=1"
-                else:
-                    first_page_url = f"{first_url}?page=1"
-
-                page_html, error = session_mgr.fetch_page(first_page_url)
+                page_url = f"{BASE_URL}/product/list.html?cate_no={cate_no}&page={page}"
+                page_html, error = session_mgr.fetch_page(page_url)
                 if error:
-                    logger.warning(f"    [{cat_name}] 수집 실패: {error}")
                     continue
                 if not page_html:
-                    continue
-
-                last_page = get_last_page(page_html)
-                items = get_product_list_from_page(page_html, cat_no)
-                cat_items = list(items)
-
-                for page in range(2, last_page + 1):
-                    if session_mgr.is_blocked:
-                        break
-                    if '?' in first_url:
-                        page_url = f"{first_url}&page={page}"
-                    else:
-                        page_url = f"{first_url}?page={page}"
-                    page_html, error = session_mgr.fetch_page(page_url)
-                    if error:
-                        continue
-                    if not page_html:
-                        break
-                    items = get_product_list_from_page(page_html, cat_no)
-                    if not items:
-                        break
-                    cat_items.extend(items)
-                    time.sleep(random.uniform(0.3, 0.8))
-
-                new_count = 0
-                for item in cat_items:
-                    if item['product_no'] not in seen_product_nos:
-                        seen_product_nos.add(item['product_no'])
-                        all_list_items.append((item, cat_name))
-                        new_count += 1
-
-                logger.info(f"    [{cat_name}] {len(cat_items)}개 수집, 신규 {new_count}개 (누적: {len(all_list_items)}개)")
+                    break
+                items = get_product_list_from_page(page_html, cate_no)
+                if not items:
+                    break
+                all_list_items.extend(items)
                 time.sleep(random.uniform(0.3, 0.8))
 
-            logger.info(f"  리스트 수집 완료: {len(all_list_items)}개 (중복 제거됨)")
+            # product_no 기준 dedup
+            seen = set()
+            deduped = []
+            for item in all_list_items:
+                if item['product_no'] not in seen:
+                    seen.add(item['product_no'])
+                    deduped.append(item)
+            all_list_items = deduped
+
+            logger.info(f"  리스트 수집 완료: {len(all_list_items)}개 ({last_page}페이지)")
 
             if not all_list_items:
                 continue
@@ -881,23 +790,32 @@ def main():
             if args.skip_existing:
                 published_ids = get_published_product_ids(brand_name_en)
                 before = len(all_list_items)
-                all_list_items = [(item, cat) for item, cat in all_list_items if item['product_no'] not in published_ids]
+                all_list_items = [item for item in all_list_items if item['product_no'] not in published_ids]
                 skipped = before - len(all_list_items)
                 if skipped > 0:
                     logger.info(f"  등록 완료 스킵: {skipped}개, 수집 대상: {len(all_list_items)}개")
 
-            # 3) 상세 페이지 수집 + 변환 + 저장
+            # 2) 상세 페이지 수집 + 변환 + 저장
             batch_data = []
             skipped_no_model = 0
             total = len(all_list_items)
 
-            for idx, (list_item, category_path) in enumerate(all_list_items, 1):
+            for idx, list_item in enumerate(all_list_items, 1):
                 if session_mgr.is_blocked:
                     logger.error("  차단 감지됨 — 상세 수집 중단")
                     break
 
                 product_no = list_item['product_no']
-                detail_url = f"{BASE_URL}/product/detail.html?product_no={product_no}&cate_no={cate_no}&display_group=1"
+
+                # 상세 URL: 리스트에서 가져온 slug URL 우선
+                detail_href = list_item.get('detail_href', '')
+                if detail_href:
+                    if detail_href.startswith('/'):
+                        detail_url = f"{BASE_URL}{detail_href}"
+                    else:
+                        detail_url = detail_href
+                else:
+                    detail_url = f"{BASE_URL}/product/detail.html?product_no={product_no}&cate_no={cate_no}&display_group=1"
 
                 detail_html, error = session_mgr.fetch_page(detail_url)
                 if error:
@@ -907,6 +825,7 @@ def main():
 
                 detail_info = extract_detail_info(detail_html) if detail_html else {}
 
+                category_path = category_map.get(product_no, '')
                 data = convert_to_raw_data(list_item, detail_info, brand_name_en, brand_name_ko, category_path)
                 if not data:
                     skipped_no_model += 1
@@ -914,12 +833,13 @@ def main():
                     time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
                     continue
 
-                logger.info(f"  [{idx}/{total}] {data['model_id']} | {data['raw_price']:>12,}원 | {category_path} | {data['product_name'][:40]}")
+                logger.info(f"  [{idx}/{total}] {data['model_id']} | {data['raw_price']:>12,}원 | {data['product_name'][:40]}")
                 total_collected += 1
 
                 if not args.dry_run:
                     batch_data.append(data)
 
+                # 10개 단위 배치 저장
                 if len(batch_data) >= 10:
                     save_to_database(batch_data)
                     logger.info(f"  DB 저장: {len(batch_data)}개")
@@ -939,7 +859,7 @@ def main():
         session_mgr.close()
 
     logger.info("\n" + "=" * 60)
-    logger.info(f"라벨루쏘 수집 완료")
+    logger.info(f"트렌드메카 수집 완료")
     logger.info(f"  총 수집: {total_collected}개")
     logger.info(f"  model_id 없어서 스킵: {total_skipped_no_model}개")
     if not args.dry_run:
@@ -947,7 +867,7 @@ def main():
             count = conn.execute(text(
                 "SELECT COUNT(*) FROM raw_scraped_data WHERE source_site = :site"
             ), {'site': SOURCE_SITE}).scalar()
-            logger.info(f"  DB 총 labellusso 상품: {count}개")
+            logger.info(f"  DB 총 trendmecca 상품: {count}개")
     logger.info("=" * 60)
 
 

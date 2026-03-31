@@ -480,18 +480,22 @@ def extract_detail_info(html: str) -> Dict[str, Any]:
             if size_data:
                 info['measurements'][size_name] = size_data
 
-    # 상품 이미지 (ThumbImage → small을 big으로 변환)
-    thumb_area = soup.select_one('.xans-product-addimage')
-    if thumb_area:
-        for img in thumb_area.select('img.ThumbImage'):
-            src = img.get('src', '')
-            if src:
-                if src.startswith('//'):
-                    src = 'https:' + src
-                # small → big 변환
-                big_src = src.replace('/small/', '/big/').replace('/extra/small/', '/extra/big/')
-                if big_src not in info['images']:
-                    info['images'].append(big_src)
+    # 상품 이미지 (본문 #prdDetail에서 wisacdn.com/brand/ 이미지 추출)
+    # ThumbImage는 poxo 프록시 URL로 /big/ 404 → 본문 wisacdn CDN 이미지 사용
+    # Cafe24 lazy loading: 실제 URL은 ec-data-src 속성에 있음 (src는 비어있음)
+    detail_area = soup.select_one('#prdDetail')
+    if detail_area:
+        for img in detail_area.select('img'):
+            src = img.get('ec-data-src', '') or img.get('src', '')
+            if not src:
+                continue
+            # wisacdn.com/brand/ 경로만 사용 (info/ 등 공통 배너 제외)
+            if 'wisacdn.com/brand/' not in src:
+                continue
+            if src.startswith('//'):
+                src = 'https:' + src
+            if src not in info['images']:
+                info['images'].append(src)
 
     # JS 변수에서 가격 추출 (더 정확함)
     price_match = re.search(r"product_sale_price\s*=\s*(\d+)", html)

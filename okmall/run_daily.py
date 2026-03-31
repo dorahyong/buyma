@@ -38,6 +38,7 @@ def run_script(script_name: str, extra_args: list = None) -> int:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description='일일 자동화 실행')
+    parser.add_argument('--source', type=str, help='특정 소스 사이트만 (예: okmall, kasina)')
     parser.add_argument('--brand', type=str, help='특정 브랜드만')
     parser.add_argument('--sync-only', action='store_true', help='동기화만 실행')
     parser.add_argument('--register-only', action='store_true', help='등록만 실행')
@@ -51,6 +52,8 @@ def main():
     if not args.sync_only:
         log("[1/2] 신규 상품 등록 파이프라인 시작")
         orch_args = []
+        if args.source:
+            orch_args += ['--source', args.source]
         if args.brand:
             orch_args += ['--brand', args.brand]
         orch_args += unknown

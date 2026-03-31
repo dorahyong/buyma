@@ -1,3 +1,59 @@
+# 트렌드메카 수집기 (trendmecca_collector.py)
+
+## 실행 옵션
+```
+python trendmecca_collector.py                        # 전체 브랜드 수집
+python trendmecca_collector.py --brand "AMI"          # 특정 브랜드만
+python trendmecca_collector.py --limit 10             # 브랜드당 최대 N개
+python trendmecca_collector.py --dry-run              # DB 저장 없이 테스트
+python trendmecca_collector.py --skip-existing        # 등록 완료(is_published=1) 상품 스킵
+python trendmecca_collector.py --update-categories    # 기존 데이터의 category_path만 업데이트 (수집 안 함)
+```
+
+## 수집 흐름
+1. `mall_brands` (mall_name='trendmecca', is_active=1)에서 브랜드 목록 조회
+2. `mall_categories` (mall_name='trendmecca')에서 카테고리 맵 구축 — 각 카테고리 페이지 순회하여 {product_no: full_path} 매핑
+3. 브랜드별 리스트 페이지 순회: `/product/list.html?cate_no={mall_brand_no}&page={n}`
+4. 각 상품 상세 페이지에서 model_id, 옵션(사이즈/재고), 이미지, 가격 추출
+5. `raw_scraped_data`에 UPSERT (`ON DUPLICATE KEY UPDATE`)
+6. model_id 없는 상품은 스킵 (dead row 방지)
+
+## 파싱 포인트
+| 항목 | 리스트 페이지 | 상세 페이지 |
+|------|-------------|------------|
+| product_no | `li[id^="anchorBoxId_"]` | - |
+| 상품명 | `div.name > a > span` (.displaynone 제거, 타임메카/트렌드메카 접미어 제거) | - |
+| 가격 | `div.description` 속성 ec-data-custom(소비자가), ec-data-price(판매가) | JS 변수 `product_sale_price`, `product_price` (우선) |
+| 이미지 | `div.thumbnail > a > img` | `.xans-product-addimage img.ThumbImage` |
+| 모델명 | - | `tr[rel="모델명"] td > span` (fallback: th 텍스트 검색) |
+| 제조국 | - | `tr[rel="제조국"] td > span` |
+| 옵션/재고 | - | JS 변수 `option_stock_data` (JSON) → 사이즈/재고 (fallback: select 옵션) |
+| 상품 URL | `div.name > a` href (slug 포함) | - |
+
+## 카테고리 매핑
+- `mall_categories` 테이블에서 trendmecca 카테고리 목록 조회 (category_id = cate_no, full_path = "MEN > 의류 > 상의 > 반팔티" 형태)
+- 각 카테고리 리스트 페이지를 순회하여 product_no 수집 → {product_no: full_path} 매핑
+- 첫 매칭 우선 (한 상품이 여러 카테고리에 있을 경우)
+- `--update-categories`: `category_path IS NULL OR ''`인 기존 행만 업데이트
+
+## 봇 감지 방지
+- 30개 요청마다 세션 교체 + 메인 페이지(`/index_time.html`) 재방문 (쿠키 갱신)
+- 랜덤 브라우저 프로필 3종 (Chrome 120/121 Windows, Chrome 120 macOS)
+- 요청 간 0.3~0.8초 랜덤 딜레이
+- 타임아웃 연속 5회 시 차단 감지 → 자동 중지
+- 403 응답 시 즉시 중지
+
+## 현재 상태 (2026-03-27)
+- 등록 브랜드: 197개 (전체 활성)
+- A.P.C 검증 완료: 162개 전량 category_path, model_id, price, url 정상
+- DB 저장: `raw_scraped_data` (source_site='trendmecca')
+- 자체 이미지 보유 (`mall_sites.has_own_images=1`)
+- converter: `kasina/raw_to_converter_kasina.py` 공용 (`--source-site trendmecca`)
+
+---
+
+# API/HTML 레퍼런스
+
 # 인덱스 페이지
 
 ## Genaral

@@ -200,6 +200,80 @@ python r2_orphan_cleaner.py --file=삭제대상.csv
 
 ---
 
+### 6. category_cleaner.py (반복 유지보수)
+
+mall_categories ↔ ace_products 간 카테고리 매핑을 관리하는 도구.
+4가지 서브커맨드로 구성되며, 일반적으로 `register → match(또는 import) → apply` 순서로 사용한다.
+
+#### 서브커맨드 상세
+
+**register** — 미등록 경로를 mall_categories에 등록
+
+| 항목 | 내용 |
+|------|------|
+| 대상 조건 | `raw_scraped_data.category_path`가 같은 `source_site`의 `mall_categories.full_path`에 없는 경로 |
+| 처리 | mall_categories에 INSERT (`buyma_category_id=NULL`, `is_active=NULL`) |
+| gender | 경로에서 자동 추출 (MEN→male, WOMEN→female, KIDS→kids, 그 외→unisex) |
+| depth1/2/3 | `>` 기준 분리 (parts[1], [2], [3]) |
+| 옵션 | `--mall` (특정 수집처만) |
+
+**match** — Gemini API로 buyma_category_id 자동 매칭
+
+| 항목 | 내용 |
+|------|------|
+| 대상 조건 | `mall_categories`에서 `buyma_category_id IS NULL` AND (`is_active=1` OR `is_active IS NULL`) |
+| 제외 | `is_active=0` (명시적 비활성화)은 대상 아님 |
+| 처리 | categories.md(buyma 마스터 599개)를 로드, 100건씩 배치로 Gemini에 전송, `buyma_category_id` UPDATE (is_active는 변경 안 함) |
+| 옵션 | `--mall`, `--dry-run` (UPDATE 없이 미리보기) |
+
+**apply** — ace_products.category_id=0에 매핑 반영
+
+| 항목 | 내용 |
+|------|------|
+| 대상 조건 | `ace_products.category_id=0` AND `mall_categories.buyma_category_id IS NOT NULL` AND (`is_active=1` OR `is_active IS NULL`) |
+| 조인 경로 | `ace_products.raw_data_id` → `raw_scraped_data.id` → `category_path` = `mall_categories.full_path` (같은 source_site) |
+| 처리 | `ace_products.category_id = mall_categories.buyma_category_id` |
+| 결과 출력 | source_site별 category_id=0 잔여/매핑완료/전체 건수 |
+| 옵션 | `--mall` |
+
+**import** — CSV로 mall_categories 일괄 업데이트
+
+| 항목 | 내용 |
+|------|------|
+| 대상 조건 | CSV의 `id` = `mall_categories.id` |
+| CSV 형식 | 헤더 필수: `id,buyma_category_id`. 빈 값이면 `buyma_category_id=NULL, is_active=0` |
+| 처리 | 값이 있으면 `buyma_category_id=값, is_active=1` / 비어있으면 `buyma_category_id=NULL, is_active=0` |
+| 옵션 | `--csv 파일경로` (필수) |
+
+#### is_active 상태 의미
+
+| is_active | 의미 | match 대상 | apply 대상 |
+|-----------|------|-----------|-----------|
+| NULL | 신규 등록 (미검증) | O | O |
+| 1 | 활성 (검증 완료) | O | O |
+| 0 | 명시적 비활성화 (체어 등 매핑 불가) | X | X |
+
+```bash
+cd buyma_cleaners
+
+# 1. 미등록 경로 등록
+python category_cleaner.py register                         # 전체
+python category_cleaner.py register --mall labellusso       # 특정 수집처
+
+# 2-A. Gemini 자동 매칭
+python category_cleaner.py match --dry-run                  # 미리보기
+python category_cleaner.py match --mall labellusso          # 실행
+
+# 2-B. CSV 수동 매핑 (match 대신 사용 가능)
+python category_cleaner.py import --csv mappings.csv
+
+# 3. ace_products 반영
+python category_cleaner.py apply                            # 전체
+python category_cleaner.py apply --mall labellusso          # 특정 수집처
+```
+
+---
+
 ### 권장 실행 순서
 
 데이터 정합성을 전체적으로 점검할 때는 아래 순서로 실행:

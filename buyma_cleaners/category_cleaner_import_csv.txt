@@ -1,0 +1,2 @@
+id	mall_name	category_id	gender	depth1	depth2	depth3	depth4	full_path	buyma_category_id	is_active
+1559	labellusso	WOMEN > 가방 > 숄더/버킷 쇼퍼백	female	가방	숄더/버킷 쇼퍼백		\N	WOMEN > 가방 > 숄더/버킷 쇼퍼백	3100	1
