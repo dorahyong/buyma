@@ -1,5 +1,16 @@
 # 파일 설명
 
+## 루트 디렉토리 스크립트
+
+| 파일 | 역할 |
+|---|---|
+| `fast_price_updater.py` | 빠른 최저가 업데이트. source mall 접근 없이 바이마 최저가 크롤링 + DB의 purchase_price_krw만으로 가격 인하/삭제. `run_fast_price_loop.bat`으로 반복 실행 |
+| `fast_price_updater.md` | fast_price_updater 설계 문서 (배경, 처리 흐름, 마진 계산 등) |
+| `run_fast_price_loop.bat` | fast_price_updater.py를 무한 반복 실행하는 Windows 배치 |
+| `run_daily_multisource.py` | 멀티소스(kasina, nextzennpack, labellusso, trendmecca) 일일 자동화. 4Phase: Collect(병렬) → Convert+Dedup → Price+Image+Stock(3트랙 병렬) → Register |
+
+---
+
 ## okmall/ 파이프라인 스크립트 (운영)
 
 일일 자동화 흐름: `run_daily.py` → `orchestrator.py` + `stock_price_synchronizer.py`
@@ -274,11 +285,42 @@ python category_cleaner.py apply --mall labellusso          # 특정 수집처
 
 ---
 
+### 7. buyma_suspended_cleaner.py (반복 유지보수)
+
+바이마에서 '출품정지중' 또는 '비승인' 상태인 상품을 크롤링하여 DB에서 비활성화 처리한다.
+
+**정리 대상:**
+- 출품정지: 바이마 심사에서 정지된 상품 → `status='suspended', is_active=0`
+- 비승인: 바이마 심사에서 거부된 상품 → `status='not_approved', is_active=0`
+
+**언제 사용?**
+- 바이마에서 출품정지/비승인 알림을 받았을 때
+- 정기적으로 (주 1회 등) 상태 동기화
+
+```bash
+cd buyma_cleaners
+# 로그인 (orphan_cleaner와 쿠키 공유)
+python buyma_suspended_cleaner.py --login
+
+# 크롤링 + 매칭 결과 확인
+python buyma_suspended_cleaner.py --scan
+
+# 실제 DB 업데이트
+python buyma_suspended_cleaner.py --scan --apply
+
+# 특정 상태만
+python buyma_suspended_cleaner.py --scan --type suspended
+python buyma_suspended_cleaner.py --scan --type not_approved
+```
+
+---
+
 ### 권장 실행 순서
 
 데이터 정합성을 전체적으로 점검할 때는 아래 순서로 실행:
 
 1. `cleanup_duplicates.py` — DB 내부 중복 먼저 제거
 2. `buyma_orphan_cleaner.py` — 바이마↔DB 불일치 정리
-3. `buyma_unpublished_cleaner.py` — 미등록 잔여 상품 정리
-4. (필요 시) `r2_orphan_cleaner.py` — R2 고아 이미지 정리
+3. `buyma_suspended_cleaner.py` — 출품정지/비승인 상품 비활성화
+4. `buyma_unpublished_cleaner.py` — 미등록 잔여 상품 정리
+5. (필요 시) `r2_orphan_cleaner.py` — R2 고아 이미지 정리

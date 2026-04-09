@@ -45,7 +45,19 @@ def update_db_with_webhook(event, data):
         with conn.cursor() as cursor:
             if event in ['product/create', 'product/update']:
                 buyma_id = data.get('id') or (data.get('product', {}).get('id'))
-                if buyma_id:
+                status = data.get('status', '')
+
+                # delete 성공: status=buyer_deleted → is_published=0
+                if status == 'buyer_deleted':
+                    cursor.execute("""
+                        UPDATE ace_products
+                        SET is_published = 0,
+                            status = 'deleted',
+                            updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
+                    print(f"[WEBHOOK] 삭제 성공: {ref_num} → is_published=0")
+                elif buyma_id:
                     cursor.execute("""
                         UPDATE ace_products
                         SET buyma_product_id = %s,

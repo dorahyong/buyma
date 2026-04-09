@@ -678,6 +678,13 @@ def run_batch_translation(brand: str = None, limit: int = None, dry_run: bool = 
 # CLI 실행
 # =====================================================
 
+def _update_max_texts(value):
+    global MAX_TEXTS_PER_REQUEST
+    if value is not None:
+        MAX_TEXTS_PER_REQUEST = value
+        log(f"MAX_TEXTS_PER_REQUEST = {value} (CLI 옵션)")
+
+
 def main():
     parser = argparse.ArgumentParser(description='배치 번역 (Gemini)')
     parser.add_argument('--brand', type=str, help='특정 브랜드만 처리')
@@ -686,7 +693,10 @@ def main():
     parser.add_argument('--price-checked-only', action='store_true', help='최저가 확인된 상품만 번역')
     parser.add_argument('--with-images', action='store_true', help='이미지 업로드 완료된 상품만 번역')
     parser.add_argument('--source', type=str, default=None, help='수집처 필터 (예: okmall, kasina)')
+    parser.add_argument('--max-texts', type=int, default=None, help=f'API 요청당 최대 텍스트 수 (기본: {MAX_TEXTS_PER_REQUEST})')
     args = parser.parse_args()
+
+    _update_max_texts(args.max_texts)
 
     run_batch_translation(brand=args.brand, limit=args.limit, dry_run=args.dry_run, price_checked_only=args.price_checked_only, with_images=args.with_images, source=args.source)
 

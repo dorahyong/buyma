@@ -44,7 +44,8 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 # 로그 파일 설정
-LOG_DIR = os.path.join(os.path.dirname(__file__), 'logs')
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(SCRIPT_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
 _log_file = None
 _log_lock = threading.Lock()
@@ -350,21 +351,21 @@ class Orchestrator:
             if mall == 'nextzennpack':
                 commands.append([
                     sys.executable,
-                    os.path.join('..', 'nextzennpack', 'nextzennpack_collector.py'),
+                    os.path.join(SCRIPT_DIR, '..', 'nextzennpack', 'nextzennpack_collector.py'),
                     '--brand', target_brand_name,
                     '--skip-existing'
                 ])
             elif mall == 'kasina':
                 commands.append([
                     sys.executable,
-                    os.path.join('..', 'kasina', 'kasina_collector.py'),
+                    os.path.join(SCRIPT_DIR, '..', 'kasina', 'kasina_collector.py'),
                     '--brand', target_brand_name,
                     '--skip-existing'
                 ])
             else:
                 commands.append([
                     sys.executable,
-                    'okmall_all_brands_collector.py',
+                    os.path.join(SCRIPT_DIR, 'okmall_all_brands_collector.py'),
                     '--brand', target_brand_name,
                     '--skip-existing'
                 ])
@@ -372,7 +373,7 @@ class Orchestrator:
         elif stage == 'CONVERT':
             commands.append([
                 sys.executable,
-                'raw_to_ace_converter.py',
+                os.path.join(SCRIPT_DIR, 'raw_to_ace_converter.py'),
                 '--brand', target_brand_name,
                 '--skip-translation'
             ] + source_args)
@@ -380,7 +381,7 @@ class Orchestrator:
         elif stage == 'TRANSLATE':
             commands.append([
                 sys.executable,
-                'convert_to_japanese_gemini.py',
+                os.path.join(SCRIPT_DIR, 'convert_to_japanese_gemini.py'),
                 '--brand', target_brand_name,
                 '--price-checked-only'
             ] + source_args)
@@ -388,27 +389,27 @@ class Orchestrator:
         elif stage == 'IMAGE':
             commands.append([
                 sys.executable,
-                'image_collector_parallel.py',
+                os.path.join(SCRIPT_DIR, 'image_collector_parallel.py'),
                 '--brand', target_brand_name,
                 '--price-checked-only'
             ] + source_args)
             commands.append([
                 sys.executable,
-                'r2_image_uploader.py',
+                os.path.join(SCRIPT_DIR, 'r2_image_uploader.py'),
                 '--brand', target_brand_name
             ] + source_args)
 
         elif stage == 'PRICE':
             commands.append([
                 sys.executable,
-                'buyma_lowest_price_collector.py',
+                os.path.join(SCRIPT_DIR, 'buyma_lowest_price_collector.py'),
                 '--brand', target_brand_name
             ] + source_args)
 
         elif stage == 'REGISTER':
             commands.append([
                 sys.executable,
-                'buyma_new_product_register.py',
+                os.path.join(SCRIPT_DIR, 'buyma_new_product_register.py'),
                 '--brand', target_brand_name
             ] + source_args)
         

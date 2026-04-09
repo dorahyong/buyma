@@ -57,6 +57,46 @@ engine = create_engine(DATABASE_URL, echo=False)
 BASE_URL = 'https://trendmecca.co.kr'
 SOURCE_SITE = 'trendmecca'
 SESSION_REFRESH_INTERVAL = 30
+
+# 색상 단어 사전 (model_id 검증용)
+_COLOR_WORDS = {'BLACK', 'WHITE', 'NAVY', 'GREY', 'GRAY', 'RED', 'BLUE', 'GREEN', 'BROWN',
+                'BEIGE', 'PINK', 'CREAM', 'KHAKI', 'ORANGE', 'YELLOW', 'IVORY', 'CAMEL',
+                'CHARCOAL', 'SILVER', 'GOLD', 'BURGUNDY', 'OLIVE', 'TAN', 'SAND', 'NATURAL',
+                'DARK', 'LIGHT', 'MOSS', 'INK', 'FOG'}
+
+
+def _is_valid_model_id(candidate: str) -> bool:
+    """model_id 후보가 유효한지 검증 (한글, 색상명, 짧은 문자열 제외)"""
+    c = candidate.strip()
+    if len(c) <= 3:
+        return False
+    if re.search(r'[가-힣ㄱ-ㅎㅏ-ㅣ]', c):
+        return False
+    # 순수 숫자+단위만인 것 제외 (18x22mm, 43mm 등)
+    if re.match(r'^[\d]+[x]?[\d]*mm$', c, re.IGNORECASE):
+        return False
+    parts = re.split(r'[\s/\-]+', c.upper())
+    non_empty = [p for p in parts if p]
+    if non_empty and all(p in _COLOR_WORDS for p in non_empty):
+        return False
+    non_color = [p for p in non_empty if p not in _COLOR_WORDS]
+    if len(''.join(non_color)) <= 3:
+        return False
+    return True
+
+
+def _extract_model_from_product_name(product_name: str) -> str:
+    """product_name에서 영문+숫자+특수문자 조합의 모델번호 추출 (fallback용)"""
+    if not product_name:
+        return ''
+    # 영문/숫자로 시작하고, 영문+숫자+특수문자(_-/.) 조합으로 5자 이상인 토큰 추출
+    candidates = re.findall(r'[A-Za-z0-9][A-Za-z0-9_\-/.]{3,}[A-Za-z0-9]', product_name)
+    for c in candidates:
+        if _is_valid_model_id(c):
+            return c
+    return ''
+
+
 MAX_CONSECUTIVE_TIMEOUTS = 5
 REQUEST_DELAY_MIN = 0.3
 REQUEST_DELAY_MAX = 0.8
@@ -470,6 +510,16 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str, 
 
     # 모델번호: 상세 페이지 테이블 우선
     model_id = detail_info.get('model_id', '')
+
+    # model_id 검증: 한글 등 유효하지 않으면 product_name에서 재추출
+    if model_id and not _is_valid_model_id(model_id):
+        fallback = _extract_model_from_product_name(product_name)
+        if fallback:
+            logger.debug(f"  model_id fallback: '{model_id}' → '{fallback}' (from product_name)")
+            model_id = fallback
+        else:
+            logger.debug(f"  model_id 한글+fallback 실패: '{model_id}' | product_name: {product_name}")
+            model_id = ''
 
     # model_id 없으면 스킵
     if not model_id:

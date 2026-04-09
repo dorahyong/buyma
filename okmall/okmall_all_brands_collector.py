@@ -315,12 +315,12 @@ def extract_product_name(soup: BeautifulSoup) -> Tuple[str, str, str, str]:
     prd_name_elem = soup.select_one('.prd_name')
     prd_name_text = prd_name_elem.get_text(strip=True) if prd_name_elem else ''
     model_id = ''
-    # 모든 괄호에서 유효한 model_id 찾기 (첫 번째 유효한 것 사용)
+    # 모든 괄호에서 유효한 model_id 찾기 (숫자/하이픈/언더스코어 포함 후보 우선)
     all_matches = re.findall(r'\(([^)]+)\)', prd_name_text)
-    for candidate in all_matches:
-        if _is_valid_model_id(candidate):
-            model_id = candidate.strip()
-            break
+    valid_candidates = [c.strip() for c in all_matches if _is_valid_model_id(c)]
+    if valid_candidates:
+        model_like = [c for c in valid_candidates if re.search(r'[0-9\-_]', c)]
+        model_id = model_like[0] if model_like else valid_candidates[0]
     # fallback: 괄호가 깨진 경우 (예: "(한글 설명 (KCK385TJE 68H)")
     if not model_id and all_matches:
         for candidate in all_matches:

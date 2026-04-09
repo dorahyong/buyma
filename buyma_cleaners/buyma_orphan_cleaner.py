@@ -95,7 +95,7 @@ GHOST_CSV_FILE = "buyma_ghost_products.csv"
 # 속도 설정
 CRAWL_DELAY = 1.0         # 리스트 페이지 간 대기
 API_DETAIL_DELAY = 0.5    # 내부 API 호출 간 대기
-DELETE_DELAY = 1.5         # 삭제 API 호출 간 대기
+DELETE_DELAY = 0.2        # 삭제 API 호출 간 대기
 
 
 def log(msg: str, level: str = "INFO") -> None:

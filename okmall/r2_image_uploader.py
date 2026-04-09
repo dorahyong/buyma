@@ -68,10 +68,10 @@ R2_PUBLIC_URL = os.getenv("R2_PUBLIC_URL", "")  # https://pub-xxxxx.r2.dev
 # 업로드 설정
 UPLOAD_PREFIX = "upload"  # R2 버킷 내 폴더 경로 (소스별 구분)
 REQUEST_TIMEOUT = 30  # 이미지 다운로드 타임아웃 (초)
-RETRY_COUNT = 3  # 실패 시 재시도 횟수
-RETRY_DELAY = 2  # 재시도 간 대기 시간 (초)
+RETRY_COUNT = 2  # 실패 시 재시도 횟수
+RETRY_DELAY = 0.5  # 재시도 간 대기 시간 (초)
 # 병렬 처리 설정
-DEFAULT_WORKERS = 5
+DEFAULT_WORKERS = 10
 
 # NOT FOUND 표시
 NOT_FOUND_VALUE = "not found"
