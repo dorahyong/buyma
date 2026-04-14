@@ -403,7 +403,8 @@ class Orchestrator:
             commands.append([
                 sys.executable,
                 os.path.join(SCRIPT_DIR, 'buyma_lowest_price_collector.py'),
-                '--brand', target_brand_name
+                '--brand', target_brand_name,
+                '--new-only'
             ] + source_args)
 
         elif stage == 'REGISTER':

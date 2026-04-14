@@ -182,7 +182,7 @@ def phase3_price_image_stock(dry_run: bool = False):
     log("=" * 60)
 
     def run_price(src, dry_run):
-        return run_script(PRICE_SCRIPT, ['--source', src], dry_run=dry_run)
+        return run_script(PRICE_SCRIPT, ['--source', src, '--new-only'], dry_run=dry_run)
 
     def run_image(src, dry_run):
         return run_script(IMAGE_SCRIPT, ['--source', src], dry_run=dry_run)
