@@ -38,6 +38,18 @@ SOURCE_PRIORITY = {
     'labellusso': 2,
     'trendmecca': 3,
     'kasina': 4,
+    'loutique': 5,
+    'vvano': 6,
+    'veroshopmall': 7,
+    'fabstyle': 8,
+    'premiumsneakers': 9,
+    't1global': 10,
+    'carpi': 11,
+    'dmont': 12,
+    'tuttobene': 13,
+    'joharistore': 14,
+    'thefactor2': 15,
+    '9tems': 16,
 }
 
 # 이미지 우선순위 (okmall 제외, 낮을수록 우선)
@@ -46,6 +58,18 @@ IMAGE_PRIORITY = {
     'labellusso': 1,
     'trendmecca': 2,
     'kasina': 3,
+    'loutique': 4,
+    'vvano': 5,
+    'premiumsneakers': 6,
+    'veroshopmall': 7,
+    'fabstyle': 8,
+    't1global': 9,
+    'carpi': 10,
+    'dmont': 11,
+    'tuttobene': 12,
+    'joharistore': 13,
+    'thefactor2': 14,
+    '9tems': 15,
 }
 
 
@@ -99,7 +123,9 @@ def load_raw_model_ids(conn):
         SELECT DISTINCT source_site, brand_name_en, model_id
         FROM raw_scraped_data
         WHERE model_id IS NOT NULL AND model_id != ''
-        AND source_site IN ('okmall', 'kasina', 'nextzennpack', 'labellusso', 'trendmecca')
+        AND source_site IN ('okmall', 'kasina', 'nextzennpack', 'labellusso', 'trendmecca',
+                            'loutique', 'vvano', 'veroshopmall', 'fabstyle', 'premiumsneakers', 't1global',
+                            'carpi', 'dmont', 'tuttobene', 'joharistore', 'thefactor2', '9tems')
     """)
     rows = cur.fetchall()
     logger.info(f"raw_scraped_data에서 {len(rows)}개 (source, brand, model_id) 로드")

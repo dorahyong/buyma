@@ -59,6 +59,7 @@ is_active 상태 의미:
 """
 
 import os
+import re
 import sys
 import csv
 import json
@@ -250,15 +251,27 @@ def match_with_gemini(unmapped: list, buyma_categories: list) -> dict:
             raw = resp.json()['candidates'][0]['content']['parts'][0]['text']
             result = json.loads(raw)
 
+            def _to_int(v):
+                """Gemini가 가끔 '라이프스타일... (id: 3551)' 같은 설명문을 반환 → 숫자만 추출"""
+                if v is None:
+                    return None
+                if isinstance(v, int):
+                    return v
+                s = str(v).strip()
+                if s.isdigit():
+                    return int(s)
+                m = re.search(r'\d+', s)
+                return int(m.group()) if m else None
+
             if isinstance(result, list):
                 converted = {}
                 for item in result:
                     if isinstance(item, dict):
                         for k, v in item.items():
-                            converted[k] = int(v) if v is not None and str(v).isdigit() else v
+                            converted[k] = _to_int(v)
                 return converted
 
-            return {k: (int(v) if v is not None and str(v).isdigit() else v) for k, v in result.items()}
+            return {k: _to_int(v) for k, v in result.items()}
         except requests.exceptions.Timeout:
             log(f"API 타임아웃, 재시도... ({attempt+1}/3)", "WARNING")
             time.sleep(5)
@@ -314,6 +327,10 @@ def cmd_match(args):
         for cat in batch:
             cat_id = str(cat['id'])
             buyma_id = matched.get(cat_id)
+            # 타입 방어선: int 아니면 스킵 (파싱 실패 보호)
+            if buyma_id is not None and not isinstance(buyma_id, int):
+                log(f"  잘못된 값 {buyma_id!r} → 스킵", "WARNING")
+                buyma_id = None
             buyma_name = id_to_name.get(buyma_id, "매칭 실패") if buyma_id else "매칭 실패"
 
             status = "OK" if buyma_id else "FAIL"
@@ -326,6 +343,10 @@ def cmd_match(args):
                     (buyma_id, cat['id']),
                 )
                 total_updated += 1
+
+        # 배치별 commit: 중간에 에러 나도 지금까지 매칭된 건 보존
+        if not args.dry_run:
+            conn.commit()
 
         if batch_start + BATCH_SIZE < len(unmapped):
             time.sleep(2)

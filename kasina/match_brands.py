@@ -10,13 +10,17 @@ mall_brands 테이블에서 buyma brands.csv를 매칭하여 buyma_brand_id를 �
 
 import csv
 import re
+import sys
+import io
 import pymysql
 import os
 from dotenv import load_dotenv
 
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
 load_dotenv("C:/Users/hyong/OneDrive/원블록스/buyma/.env")
 
-BRANDS_CSV = "buyma_master_data_20260226/brands.csv"
+BRANDS_CSV = os.path.join(os.path.dirname(__file__), "..", "okmall", "buyma_master_data_20260226", "brands.csv")
 
 
 def remove_special_chars(s):
@@ -116,19 +120,26 @@ def main():
         brand_id, brand_name, level = match_brand(mall_brand_en, buyma_brands)
         stats[level] += 1
 
+        if mall_brand_url:
+            url_cond = "AND mall_brand_url=%s"
+            url_param = (mall_name, mall_brand_url)
+        else:
+            url_cond = "AND mall_brand_url IS NULL AND mall_brand_name_en=%s"
+            url_param = (mall_name, mall_brand_en)
+
         if level > 0:
             cur.execute(
                 "UPDATE mall_brands SET buyma_brand_id=%s, buyma_brand_name=%s, "
                 "mapping_level=%s, is_mapped=1 "
-                "WHERE mall_name=%s AND mall_brand_url=%s",
-                (brand_id, brand_name, level, mall_name, mall_brand_url),
+                f"WHERE mall_name=%s {url_cond}",
+                (brand_id, brand_name, level) + url_param,
             )
             print(f"[{mall_name}][L{level}] {mall_brand_en} -> {brand_name} (id={brand_id})")
         else:
             cur.execute(
                 "UPDATE mall_brands SET mapping_level=0, is_mapped=0 "
-                "WHERE mall_name=%s AND mall_brand_url=%s",
-                (mall_name, mall_brand_url),
+                f"WHERE mall_name=%s {url_cond}",
+                url_param,
             )
             print(f"[{mall_name}][L0] {mall_brand_en} -> 매칭 없음")
 
