@@ -1,0 +1,443 @@
+{
+    "optimalDiscount": {
+        "totalDiscountResult": {
+            "summary": {
+                "sellerImmediateDiscountAmount": 31000,
+                "managerImmediateDiscountAmount": 0,
+                "multiPurchaseDiscountAmount": 0,
+                "productDiscountAmount": 13950,
+                "productDuplicationDiscountAmount": 26510,
+                "storeDiscountAmount": 1000,
+                "totalPayAmount": 237540,
+                "couponDiscountAmount": 41460,
+                "immediateDiscountAmount": 31000,
+                "cardPromotionDiscountAmount": 0
+            },
+            "discounts": {
+                "sellerImmediateDiscountSummary": {
+                    "policyUniqueId": "SE_12680257642",
+                    "discountAmount": 31000,
+                    "selectedItems": [
+                        {
+                            "itemId": "12737425539",
+                            "productClassType": "SINGLE",
+                            "itemDiscountAmount": 31000
+                        }
+                    ],
+                    "discountPolicyType": "IMMEDIATE",
+                    "benefitValue": 10,
+                    "benefitUnitType": "PERCENT",
+                    "couponKindType": "IMMEDIATE",
+                    "policySeq": "SE_12680257642"
+                },
+                "productDiscountSummaries": [
+                    {
+                        "policyUniqueId": "SS_1776313243557159",
+                        "discountAmount": 13950,
+                        "selectedItems": [
+                            {
+                                "itemId": "12737425539",
+                                "productClassType": "SINGLE",
+                                "itemDiscountAmount": 13950
+                            }
+                        ],
+                        "discountPolicyType": "COUPON",
+                        "benefitValue": 5,
+                        "benefitUnitType": "PERCENT",
+                        "benefitPolicyName": "글로벌셀렉샵",
+                        "benefitStartDate": "2026-04-16T15:00:00Z",
+                        "benefitEndDate": "2026-04-17T14:59:59.999Z",
+                        "customerManageBenefitType": "ADMIN_COUPON",
+                        "couponKindType": "PRODUCT_NO_DUP",
+                        "couponIssueCount": 0,
+                        "couponIssueStatusType": "NOT_ISSUE",
+                        "couponPublicationNo": "SS_1776313243557159",
+                        "discountProviderType": "MANAGER",
+                        "isIssuable": true,
+                        "multiIssueCount": 2,
+                        "maxDiscountAmount": 50000,
+                        "minOrderAmount": 10000,
+                        "useObjectType": "ACCOUNT",
+                        "validPeriodStartDate": "2026-04-16T15:00:00Z",
+                        "validPeriodEndDate": "2026-04-17T14:59:59.999Z",
+                        "couponValidPeriodType": "PERIOD",
+                        "usageConditionType": "ALL",
+                        "additionalCouponTypes": []
+                    }
+                ],
+                "productDuplicationDiscountSummaries": [
+                    {
+                        "policyUniqueId": "SS_1776313212238248",
+                        "discountAmount": 26510,
+                        "selectedItems": [
+                            {
+                                "itemId": "12737425539",
+                                "productClassType": "SINGLE",
+                                "itemDiscountAmount": 26510
+                            }
+                        ],
+                        "discountPolicyType": "COUPON",
+                        "benefitValue": 10,
+                        "benefitUnitType": "PERCENT",
+                        "benefitPolicyName": "글로벌셀렉샵",
+                        "benefitStartDate": "2026-04-16T15:00:00Z",
+                        "benefitEndDate": "2026-04-17T14:59:59.999Z",
+                        "customerManageBenefitType": "ADMIN_COUPON",
+                        "couponKindType": "PRODUCT",
+                        "couponIssueCount": 0,
+                        "couponIssueStatusType": "NOT_ISSUE",
+                        "couponPublicationNo": "SS_1776313212238248",
+                        "discountProviderType": "MANAGER",
+                        "isIssuable": true,
+                        "multiIssueCount": 2,
+                        "maxDiscountAmount": 200000,
+                        "minOrderAmount": 10000,
+                        "useObjectType": "ACCOUNT",
+                        "validPeriodStartDate": "2026-04-16T15:00:00Z",
+                        "validPeriodEndDate": "2026-04-17T14:59:59.999Z",
+                        "couponValidPeriodType": "PERIOD",
+                        "usageConditionType": "ALL",
+                        "additionalCouponTypes": []
+                    }
+                ],
+                "storeDiscountSummary": {
+                    "policyUniqueId": "9539571571217",
+                    "discountAmount": 1000,
+                    "discountPolicyType": "COUPON",
+                    "benefitValue": 1000,
+                    "benefitUnitType": "FIX",
+                    "benefitStartDate": "2025-04-28T01:00:00Z",
+                    "benefitEndDate": "2026-04-28T00:59:59.999Z",
+                    "customerManageBenefitType": "NEWS",
+                    "couponKindType": "ORDER",
+                    "couponIssueCount": 0,
+                    "couponIssueStatusType": "NOT_ISSUE",
+                    "couponPublicationNo": "9539571571217",
+                    "discountProviderType": "SELLER",
+                    "isIssuable": true,
+                    "interestTypes": [
+                        "TALK_TALK"
+                    ],
+                    "minOrderAmount": 10000,
+                    "useObjectType": "ACCOUNT",
+                    "validPeriodStartDate": "2025-04-28T01:00:00Z",
+                    "validPeriodEndDate": "2026-04-28T00:59:59.999Z",
+                    "couponValidPeriodType": "PERIOD",
+                    "usageConditionType": "ALL",
+                    "additionalCouponTypes": []
+                }
+            }
+        },
+        "applicablePolicies": {
+            "sellerImmediateDiscount": {
+                "discountPolicyType": "IMMEDIATE",
+                "benefitValue": 10,
+                "benefitUnitType": "PERCENT",
+                "couponKindType": "IMMEDIATE",
+                "policySeq": "SE_12680257642"
+            },
+            "productCouponPolicies": [
+                {
+                    "discountPolicyType": "COUPON",
+                    "benefitValue": 5,
+                    "benefitUnitType": "PERCENT",
+                    "benefitPolicyName": "글로벌셀렉샵",
+                    "benefitStartDate": "2026-04-16T15:00:00Z",
+                    "benefitEndDate": "2026-04-17T14:59:59.999Z",
+                    "customerManageBenefitType": "ADMIN_COUPON",
+                    "couponKindType": "PRODUCT_NO_DUP",
+                    "couponIssueCount": 0,
+                    "couponIssueStatusType": "NOT_ISSUE",
+                    "couponPublicationNo": "SS_1776313243557159",
+                    "discountProviderType": "MANAGER",
+                    "isIssuable": true,
+                    "multiIssueCount": 2,
+                    "maxDiscountAmount": 50000,
+                    "minOrderAmount": 10000,
+                    "useObjectType": "ACCOUNT",
+                    "validPeriodStartDate": "2026-04-16T15:00:00Z",
+                    "validPeriodEndDate": "2026-04-17T14:59:59.999Z",
+                    "couponValidPeriodType": "PERIOD",
+                    "usageConditionType": "ALL",
+                    "additionalCouponTypes": []
+                },
+                {
+                    "discountPolicyType": "COUPON",
+                    "benefitValue": 5,
+                    "benefitUnitType": "PERCENT",
+                    "benefitPolicyName": "글로벌셀렉샵",
+                    "benefitStartDate": "2026-04-14T09:40:00Z",
+                    "benefitEndDate": "2026-04-19T14:59:59.999Z",
+                    "customerManageBenefitType": "ADMIN_COUPON",
+                    "couponKindType": "PRODUCT_NO_DUP",
+                    "couponIssueCount": 0,
+                    "couponIssueStatusType": "NOT_ISSUE",
+                    "couponPublicationNo": "SS_1776159490302013",
+                    "discountProviderType": "MANAGER",
+                    "isIssuable": true,
+                    "multiIssueCount": 2,
+                    "maxDiscountAmount": 50000,
+                    "minOrderAmount": 10000,
+                    "useObjectType": "ACCOUNT",
+                    "validPeriodStartDate": "2026-04-14T09:40:00Z",
+                    "validPeriodEndDate": "2026-04-19T14:59:59.999Z",
+                    "couponValidPeriodType": "PERIOD",
+                    "usageConditionType": "ALL",
+                    "additionalCouponTypes": []
+                }
+            ],
+            "productDuplicationCouponPolicies": [
+                {
+                    "discountPolicyType": "COUPON",
+                    "benefitValue": 10,
+                    "benefitUnitType": "PERCENT",
+                    "benefitPolicyName": "글로벌셀렉샵",
+                    "benefitStartDate": "2026-04-16T15:00:00Z",
+                    "benefitEndDate": "2026-04-17T14:59:59.999Z",
+                    "customerManageBenefitType": "ADMIN_COUPON",
+                    "couponKindType": "PRODUCT",
+                    "couponIssueCount": 0,
+                    "couponIssueStatusType": "NOT_ISSUE",
+                    "couponPublicationNo": "SS_1776313212238248",
+                    "discountProviderType": "MANAGER",
+                    "isIssuable": true,
+                    "multiIssueCount": 2,
+                    "maxDiscountAmount": 200000,
+                    "minOrderAmount": 10000,
+                    "useObjectType": "ACCOUNT",
+                    "validPeriodStartDate": "2026-04-16T15:00:00Z",
+                    "validPeriodEndDate": "2026-04-17T14:59:59.999Z",
+                    "couponValidPeriodType": "PERIOD",
+                    "usageConditionType": "ALL",
+                    "additionalCouponTypes": []
+                },
+                {
+                    "discountPolicyType": "COUPON",
+                    "benefitValue": 10,
+                    "benefitUnitType": "PERCENT",
+                    "benefitPolicyName": "글로벌셀렉샵",
+                    "benefitStartDate": "2026-04-14T09:40:00Z",
+                    "benefitEndDate": "2026-04-19T14:59:59.999Z",
+                    "customerManageBenefitType": "ADMIN_COUPON",
+                    "couponKindType": "PRODUCT",
+                    "couponIssueCount": 0,
+                    "couponIssueStatusType": "NOT_ISSUE",
+                    "couponPublicationNo": "SS_1776159450613505",
+                    "discountProviderType": "MANAGER",
+                    "isIssuable": true,
+                    "multiIssueCount": 2,
+                    "maxDiscountAmount": 200000,
+                    "minOrderAmount": 10000,
+                    "useObjectType": "ACCOUNT",
+                    "validPeriodStartDate": "2026-04-14T09:40:00Z",
+                    "validPeriodEndDate": "2026-04-19T14:59:59.999Z",
+                    "couponValidPeriodType": "PERIOD",
+                    "usageConditionType": "ALL",
+                    "additionalCouponTypes": []
+                }
+            ],
+            "storeCouponPolicies": [
+                {
+                    "discountPolicyType": "COUPON",
+                    "benefitValue": 1000,
+                    "benefitUnitType": "FIX",
+                    "benefitStartDate": "2025-04-28T01:00:00Z",
+                    "benefitEndDate": "2026-04-28T00:59:59.999Z",
+                    "customerManageBenefitType": "NEWS",
+                    "couponKindType": "ORDER",
+                    "couponIssueCount": 0,
+                    "couponIssueStatusType": "NOT_ISSUE",
+                    "couponPublicationNo": "9539571571217",
+                    "discountProviderType": "SELLER",
+                    "isIssuable": true,
+                    "interestTypes": [
+                        "TALK_TALK"
+                    ],
+                    "minOrderAmount": 10000,
+                    "useObjectType": "ACCOUNT",
+                    "validPeriodStartDate": "2025-04-28T01:00:00Z",
+                    "validPeriodEndDate": "2026-04-28T00:59:59.999Z",
+                    "couponValidPeriodType": "PERIOD",
+                    "usageConditionType": "ALL",
+                    "additionalCouponTypes": []
+                }
+            ]
+        },
+        "productInfo": {
+            "channelProductNo": 12737425539,
+            "branchMultiProductYn": false,
+            "accountNo": 101708786,
+            "salePrice": 310000,
+            "totalOrderAmount": 310000,
+            "deliveryFeeType": "FREE",
+            "baseFee": 0,
+            "productDeliveryDetailResponse": {},
+            "exceptionalCategoryCodes": [],
+            "items": [
+                {
+                    "id": "12737425539",
+                    "price": 0,
+                    "quantity": 1,
+                    "orderAmount": 310000,
+                    "productClassType": "SINGLE"
+                }
+            ],
+            "isSimulatePossible": true
+        },
+        "cardBenefitDisplay": {
+            "layer1": {
+                "text": "라인프렌즈 카드 최대 9,501원 추가 적립(4%)",
+                "type": "ACM",
+                "promotionUrl": "https://mkt.naver.com/event/npay-shinhanassociated"
+            },
+            "layer2": {
+                "text": "최대 {N}개월 무이자 할부 • 60개월 특별금리",
+                "type": "INTEREST_FREE",
+                "promotionUrl": ""
+            },
+            "promotionList": [
+                {
+                    "text": "최대 {N}개월 무이자 할부 • 60개월 특별금리",
+                    "type": "INTEREST_FREE",
+                    "promotionUrl": ""
+                },
+                {
+                    "text": "최대 60개월 특별금리 할부",
+                    "type": "CARD_INTEREST_FREE",
+                    "promotionUrl": "https://campaign2.naver.com/npay/specialhalbu/"
+                },
+                {
+                    "text": "네이버페이 쇼핑엔로카 12개월 무이자 할부",
+                    "type": "CARD_INTEREST_FREE",
+                    "promotionUrl": "http://mkt.naver.com/event/npay-loca"
+                }
+            ]
+        },
+        "userInfo": {
+            "isUserMembership": true,
+            "isShoppingJoin": false
+        }
+    },
+    "productBenefit": {
+        "benefitsPolicy": {
+            "sellerImmediateDiscountPolicyNo": "SE_12680257642",
+            "sellerImmediateDiscountValueUnit": "PERCENT",
+            "sellerImmediateDiscountValue": 10,
+            "sellerImmediateDiscountStartDate": "2026-04-14T09:00:00.000+00:00",
+            "sellerImmediateDiscountEndDate": "2026-04-19T14:59:59.999+00:00",
+            "managerPurchasePointPolicyNo": 10511031105304,
+            "managerPurchasePointValueUnit": "PERCENT",
+            "managerPurchasePointValue": 1,
+            "managerMaxPurchasePointAmount": 100000,
+            "managerPaymoneyAccumulatePolicyNo": 439583905,
+            "managerPaymoneyAccumulateValueUnit": "PERCENT",
+            "managerPaymoneyAccumulateValue": 1.5,
+            "managerMaxPaymoneyAccumulateAmount": 30000,
+            "managerBankbookAccumulatePolicyNo": 13927943816488,
+            "managerBankbookAccumulateValueUnit": "PERCENT",
+            "managerBankbookAccumulateValue": 0.5,
+            "managerMaxBankbookAccumulateAmount": 10000,
+            "sellerReviewPointPolicyNo": 30115783927,
+            "sellerGeneralPurchaseReviewPoint": 200,
+            "sellerPremiumReviewPoint": 500,
+            "sellerTextReviewPoint": 200,
+            "sellerPhotoVideoReviewPoint": 500,
+            "sellerAfterUseTextReviewPoint": 200,
+            "sellerAfterUsePhotoVideoReviewPoint": 500,
+            "givePresent": false
+        },
+        "benefitsView": {
+            "discountedSalePrice": 279000,
+            "mobileDiscountedSalePrice": 279000,
+            "dispDiscountedSalePrice": 279000,
+            "sellerImmediateDiscountAmount": 31000,
+            "mobileSellerImmediateDiscountAmount": 31000,
+            "managerImmediateDiscountAmount": 0,
+            "mobileManagerImmediateDiscountAmount": 0,
+            "specialDiscountAmount": {},
+            "discountedRatio": 10,
+            "mobileDiscountedRatio": 10,
+            "dispDiscountedRatio": 10,
+            "sellerPurchasePoint": 0,
+            "mobileSellerPurchasePoint": 0,
+            "sellerCustomerManagementPoint": 0,
+            "mobileSellerCustomerManagementPoint": 0,
+            "managerPurchasePoint": 2375,
+            "mobileManagerPurchasePoint": 2375,
+            "managerPurchaseExtraPoint": 0,
+            "mobileManagerPurchaseExtraPoint": 0,
+            "managerPaymoneyAccumulatePoint": 3563,
+            "mobileManagerPaymoneyAccumulatePoint": 3563,
+            "managerBankbookAccumulatePoint": 1187,
+            "mobileManagerBankbookAccumulatePoint": 1187,
+            "managerArrivalGuaranteePoint": 0,
+            "mobileManagerArrivalGuaranteePoint": 0,
+            "managerMembershipArrivalGuaranteePoint": 0,
+            "mobileManagerMembershipArrivalGuaranteePoint": 0,
+            "generalPurchaseReviewPoint": 200,
+            "premiumPurchaseReviewPoint": 500,
+            "managerGeneralPurchaseReviewPoint": 50,
+            "managerPremiumPurchaseReviewPoint": 150,
+            "textReviewPoint": 200,
+            "photoVideoReviewPoint": 500,
+            "afterUseTextReviewPoint": 200,
+            "afterUsePhotoVideoReviewPoint": 500,
+            "storeMemberReviewPoint": 0,
+            "managerTextReviewPoint": 50,
+            "managerPhotoVideoReviewPoint": 150,
+            "managerAfterUseTextReviewPoint": 0,
+            "managerAfterUsePhotoVideoReviewPoint": 0,
+            "givePresent": false
+        }
+    },
+    "verticalPromotionTypes": [],
+    "exposurePoints": {
+        "managerPurchasePoint": 2375,
+        "managerPurchaseExtraPoint": 0,
+        "normalInflowBenefitPoints": [],
+        "membershipInflowBenefitPoints": [],
+        "normalInflowBenefitPoint": 0,
+        "membershipInflowBenefitPoint": 0,
+        "totalInflowBenefitPoint": 0,
+        "regularMembershipInflowBenefitPoints": [],
+        "superPoint": 0,
+        "membershipSuperPoint": -7126,
+        "petVoucherPoint": 0,
+        "babyVoucherPoint": 0,
+        "sellerPurchasePoint": 0,
+        "sellerCustomerManagementPoint": 0,
+        "textReviewPoint": 250,
+        "photoVideoReviewPoint": 650,
+        "afterUseTextReviewPoint": 200,
+        "afterUsePhotoVideoReviewPoint": 500,
+        "storeMemberReviewPoint": 0,
+        "managerReviewPoint": 150,
+        "totalReviewPoint": 1150,
+        "membershipMaxPoint": 20000,
+        "membershipInitialPaymentPoint": 6065,
+        "membershipExtraPaymentPoint": 0,
+        "membershipJoinExpectPoint": 0,
+        "membershipJoinedPoint": 6065,
+        "membershipCardExpectPoint": 0,
+        "payChargeExpectPoint": 4750,
+        "rentalManagerPurchasePoint": 0,
+        "rentalManagerPurchaseExtraPoint": 0,
+        "rentalSellerGiftPoint": 0,
+        "rentalSellerScheduledExtraPoint": 0,
+        "totalRentalPoint": 0,
+        "totalManagerAdmittedPoint": 2375,
+        "totalSellerAdmittedPoint": 0,
+        "totalMembershipAdmittedPoint": 6065,
+        "totalPaymentAdmittedPoint": 4750,
+        "totalMembershipAndPaymentAdmittedPoint": 10815,
+        "initialPaymentFee": 237540,
+        "monthlyPaymentFees": [],
+        "totalPaymentFee": 237540
+    },
+    "membershipBenefit": {
+        "memberEventPointExposureName": null,
+        "nonMemberEventPointExposureName": null,
+        "isNaverMembershipPointExcluded": false,
+        "isNaverMembershipBannerExcluded": false
+    }
+}

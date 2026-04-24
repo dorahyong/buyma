@@ -1,0 +1,129 @@
+																							
+																							
+																							
+																							
+																							
+	사이트 이름	주소	비고			크롤링 순번	사이트 이름	진행상황	네이버/카페24 여부														
+	라프리마	https://laprima.co.kr/	모델명기입(상품명 끝부분 , 상세페이지의 상세설명), 이미지 사용 가능			1	오케이몰	완료															
+	루티크	https://smartstore.naver.com/loutique/category/0e9301cda7034537a5dad6c3697f5397?cp=2	모델명기입(상품명 끝부분, 간혹 없는경우도 있음), 이미지 사용 가능			2	카시나	완료															
+	라벨루쏘	https://www.labellusso.com/?NaPm=ct%3Dmi4atcwn%7Cci%3Dcheckout%7Ctr%3Dds%7Ctrx%3Dnull%7Chk%3Da3e87dd8b5f03d43bc3c658a8897d3fcda1bf828	모델명기입(상품명 끝부분), 이미지사용 가능			3	넥스트젠팩	완료															
+	아르떼모아	https://www.artemoa.com/goods/goods_main.php?sno=9	모델명기입(상품명의 브랜드이름 바로 뒤, 상품정보), 이미지사용 가능			4	라벨루쏘	완료															
+	럭스보이	https://brand.naver.com/luxboy/category/e581717b184943e3a1146575e1d5d5c0?cp=1	모델명기입(상품명 끝부분, 상품정보), 이미지사용 가능			5	트렌드메카	완료															
+	넥스트젠팩	https://nextzennpack.com/index.html	모델명기입(상품명 괄호안), 이미지사용 가능			6	프리미엄스니커즈	완료	n			SC											
+	팹스타일	https://smartstore.naver.com/fabstyle/category/aaf690091df04bef832e91a99451400f?cp=1	모델명기입(상품명 끝, 상품정보), 이미지 사용 가능			7	팹스타일	완료	n			- 오케이몰 안올라간 제품들 											
+	까르피	https://brand.naver.com/carpi/category/2362d4c605db44b8b757c05c0b6bc8d2?st=POPULAR&dt=IMAGE&page=1&size=40	모델명기입(상품명 끝, 상품정보), 이미지 사용 가능			8	루티크	완료	n			- 상세사이즈, 제품 소재같은 정보 : 이미지를 텍스트화											
+	트렌드메카	https://trendmecca.co.kr/index_time.html	모델명기입(상품명중간, 제품 상세설명( 훨씬 정확도가 높을듯)), 이미지 사용 가능			9	까르피	완료	n														
+	올아이원트	https://smartstore.naver.com/aint/category/ALL?cp=1	중고, 스크래치 제외해야함. 모델명기입(상품명 끝, 상품정보), 이미지 사용 가능			10	디몬트	완료	n														
+	디몬트	https://smartstore.naver.com/dmont/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=40	"모델명기입(상품명 끝, 상품정보), 이미지 사용 가능, 
+브랜드이름이 상품명에서 축약되어있는 경우가 있음 예 : 스톤아일랜드 -> 스톤
+상품정보의 제조사에는 브랜드명이 축약되어있지 않고 풀네임으로 기입 되어있음.
+상품명의 '디몬트'는 제외 후 바이마에 업로드 해야함
+할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임
+썸네일의 사진이 단 1개 인데 상세페이지의 제품 이미지도 함께 사용할 수 있게 크롤링이 가능하면 좋겠음"			11	티원글로벌	완료	n														
+	무신사부티크	https://www.musinsa.com/main/boutique/recommend?gf=A	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용 가능			12	뚜또베네	완료	n														
+	구템즈	https://www.9tems.com/product/list.html?cate_no=228	모델명기입(상품명의 끝부분), 이미지 사용 가능			13	조하리스토어	완료	n														
+	밀라니즈	https://milaneez.com	모델명기입(상품명의 브랜드명 옆), 이미지 사용 가능			14	논현더팩토리	완료	n														
+	블리에이	https://smartstore.naver.com/vely_a	모델명기입(상품명의 끝부분), 이미지 사용 가능, 모음전 제외해야함 (옵션의 갯수로 필터링이 가능할까요?)			15	비비아노	완료	n														
+	오케이몰	https://www.okmall.com				16	베로샵	완료	n														
+	카시나	https://www.kasina.co.kr				17	매니아온																
+	비블루	https://smartstore.naver.com/bblue	"모델명기입(상품명의 괄호), 이미지 사용 가능할지 모르겠음(우선 사용해보는 걸로!), 
+모음전 제외해야함(상품명에 품번이 없음 예시 : https://smartstore.naver.com/bblue/products/2390961872)"			18	비블루																
+	브릭맨션	https://brickmansion.co.kr	모델명기입(상품명의 끝부분괄호), 이미지 사용 가능, 상품명의 이벤트성 키워드 제외해야 함			19	브릭맨션					SC의 의의											
+	티원글로벌	https://smartstore.naver.com/t1global	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용 가능, 모음전 제외해야함(상품명에 품번이 없음)			20	메종파르코					A상품과 B상품이 동일한 상품인지를 판별해낼 수 있다											
+	베이지그	https://bazig.com				21	유로라인																
+	더마	https://smartstore.naver.com/nilsenco/category/ALL?cp=1	모델명기입(상품명에 랜덤 기입, 상품정보가 더 정확할듯!), 이미지 사용 가능			22	유니코																
+	비비아노	https://smartstore.naver.com/vvano/category/64429aa6ad904d6c844e1bb5967654b8?cp=1	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용 가능, 할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임			23	코메타 LX					2026-04-20 회의 내용											
+	세토프(트렉시)	https://smartstore.naver.com/set-of	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용 불가, 			24	러브그란데					희영님께서 카페24 네이버스마트스토어를 표기해주시고 우선순위를 수정하고나면 단톡방에 종원 호출해주시고 호출받으면 종원은 남은 업체들 우선순위순서대로 재나열하는걸로 하겠습니다											
+	웍스아웃	https://worksout.co.kr				25	로로모다																
+	메종파르코	https://www.maisonparco.com	모델명기입(상품명의 끝부분), 이미지 사용  가능			26	랄라슈즈																
+	꼬르소밀라노	https://www.corsomilano.com	 			27	더그란데																
+	뚜또베네	https://smartstore.naver.com/tutto-bene	"모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 상품명의 [국내배송][15%중복쿠폰] 은 바이마 상품명에서 제외해야함
+할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임"			28	BOBU																
+	DLC스토어	https://smartstore.naver.com/dlc	 			29	업셋																
+	하하몰	https://hahamall.co.kr				30	럭스리밋																
+	굿앤굿	https://smartstore.naver.com/goodngood				31	파노																
+	조하리 스토어	https://brand.naver.com/joharistore/category/09e8af730b6c47a1970a3ea4e0f65d0d?st=POPULAR&dt=GALLERY&page=1&size=40	"모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 모음전 제외해야함(상품명에 품번이 없음)
+할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임"			32	밀라니즈																
+	엠톤	https://smartstore.naver.com/mton	 			33	럭스보이																
+	프리미엄스니커즈	https://smartstore.naver.com/premiumsneakers	"모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 
+할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임"			34	아르떼모아																
+						35	구템즈																
+	로로모다	https://loromoda.net/	모델명기입(상품명의 끝부분), 이미지 사용  가능, 			36	무신사부티크																
+	바이스트	https://brand.naver.com/buyest?NaPm=ct%3Dmni9wf61%7Cci%3Dcheckout%7Ctr%3Dds%7Ctrx%3Dnull%7Chk%3D3f6f69448e6effa9e2f39fcc44b2d4b9a07bd11a	"모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 
+할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임"			37	라프리마																
+	매니아온	"https://www.maniaon.com
+https://smartstore.naver.com/maniaon"	"모델명기입(상품명의 끝부분)
+이미지 사용  가능 - 
+공홈 : 썸네일이미지 1개 / 스스 : 썸네일이미지 여러개 -> 수집은 공홈에서 하고 사진은 스스에서 가져오는 게 가능하다면 좋을듯! (가격이 공홈이 더 저렴)
+상품명의 [국내배송]은 바이마 업로드시 삭제해야함"																				
+	라스트센스	https://smartstore.naver.com/lastsense?NaPm=ct%3Dmny0lfe1%7Cci%3Dshopn%7Ctr%3Dslsl%7Chk%3D1423ce3ac331e9681195bd369d68c9cd27ec3c0d%7Ctrx%3Dundefined																					
+																							
+	갤러리아백화점	https://smartstore.naver.com/galleria																					
+	주식회사 울산명품관	https://smartstore.naver.com/ulsanluxury	모델명기입(상품정보), 이미지 사용 가능( 썸네일의 첫번째 사진에는 워터마크가 없지만 두번째 사진부터는 있어서 첫번째 사진만 사용해야함)																				
+	롯데 청주 럭셔리에비뉴	https://smartstore.naver.com/lottej127																					
+	유로라인	https://smartstore.naver.com/euroline	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능																				
+	신세계백화점	https://smartstore.naver.com/ssg01																					
+	유니코	https://smartstore.naver.com/unicoselectshop/category/dadd1b52a9714c3fbf697ac8237f9285?cp=1	"모델명기입(상품명의 끝부분 - 6F00002 M7726 772 26S 이런식으로 모델명이 기입되어 있는데 26S는 삭제처리 해야함), 
+이미지 사용  가능, 할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임"																				
+	코메타LX	https://smartstore.naver.com/shinsegaejeju01	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 																				
+	아르마디오	https://smartstore.naver.com/lottegh94																					
+	더그란데	https://smartstore.naver.com/thegrande	모델명기입(상품명의 끝부분), 이미지 사용  가능 																				
+																							
+	롯데탑스 파주점	https://smartstore.naver.com/lottepaju120																					
+	BOBU	https://smartstore.naver.com/comteforest	"모델명기입(상품명의 끝부분, 상품정보의 모델명, 품번란), 이미지 사용  가능
+썸네일의 마지막 사진 1장 제외해야함 가끔 동영상이 추가되어있는 경우도 있는데 이것도 제외해야함
+예시1 동영상 https://smartstore.naver.com/contemforest/products/13360726196
+예시2 사진 https://smartstore.naver.com/contemforest/products/12737971931"																				
+	논현 더 팩토리	https://smartstore.naver.com/thefactor2/category/0802efb236ac45b9bdd736ee3c31152d?cp=1	"모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 
+썸네일 이미지가 많으나 안올라갔으면 하는 이미지들이 같이 크롤링 될 것 같음! 
+-> 뒤에서 3번째 이미지 까지는 제외하는 로직 필요해 보임"																				
+																							
+																							
+	업셋	https://smartstore.naver.com/upset/category/43565b8658a8424ead3abf5a6f2b323e?st=POPULAR&dt=IMAGE&page=1&size=40	모델명기입(상품명의 끝, 상품정보의 품번, 모델명란), 이미지 사용  가능																				
+	베로샵	https://smartstore.naver.com/veroshopmall	모델명기입(상품명의 중앙, 상품정보), 이미지 사용  가능																				
+	우아맘의 신발가게	https://smartstore.naver.com/lvshoesz																					
+	럭스리밋	https://smartstore.naver.com/luxlimit/category/618b4b385c0b41f7a81f8c0bd16e32e4?st=POPULAR&dt=BIG_IMAGE&page=1&size=40&filters=oa	"모델명기입(상품명의 끝부분), 이미지 사용  가능, 향수 카테고리 제외
+상푸명의 [국내당일]은 제외해야함"																				
+	파노	https://smartstore.naver.com/panokorea	모델명기입(상품명의 끝부분, 상품정보), 이미지 사용  가능, 																				
+	랄라슈즈	https://smartstore.naver.com/larlashoes/category/ALL?st=RECENT&dt=BIG_IMAGE&page=1&size=40	모델명기입(상품명의 끝부분, 상품정보의 품번란), 이미지 사용  가능, 상품명의 (국내매장판)삭제 해야함																				
+	러브그란데	https://smartstore.naver.com/fsrs/category/2sWDwiTbo5sxFgR2EEnww_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=40&filters=oa	"모델명기입(상품명의 끝부분, 상품정보의 모델란), 이미지 사용  가능
+할인쿠폰이 자주 생김 DB수집시 쿠폰적용 가격으로 수집이 좋아보임
+상푸명의 [국내신상]은 제외해야함"																				
+																							
+																							
+																							
+																							
+																							
+																							
+																							
+	델보	https://kr.delvaux.com/ko	"[브랜드 공식] 이미지사용 가능한지 모르겠음 (일단 사용해보는 걸로)
+컬러, 치수 상세정보, 품번(참조사항), 상세설명 모두 워드로 적혀있어서 
+업로드시에 모두 올라갔으면 좋겠음!
+- 갑자기 바이마 내에서 인기가 높아지는 브랜드. 한국 공식도 있어서 시도해봐도 좋을 듯."																				
+	떠그클럽	https://thug-club.com/	"[브랜드 공식] 이미지 사용 가능, 사이즈 표로 작성되어 있음, 품번 없음
+- 바이마에서 원래 있기가 있는 브랜드로 공홈에서만 판매."																				
+	스무드무드	https://smoothmood.kr/index.html	"[브랜드 공식] 이미지 사용 가능, 제품 상세 설명 모두 워드로 적혀있어서 업로드시에
+모두 올라갔으면 좋겠음!
+- 바이마에서 원래 있기가 있는 브랜드로 공홈에서만 판매."																				
+																							
+																							
+																							
+																							
+																							
+																							
+																							
+																							
+	무신사	https://www.musinsa.com																					
+	29cm	https://www.29cm.co.kr																					
+	w컨셉	https://display.wconcept.co.kr																					
+	한섬 EQL	https://www.eqlstore.com																					
+	HAGO	https://www.hago.kr																					
+	폴더	https://www.folderstyle.com																					
+	슈마커	https://www.shoemarker.co.kr																					
+	ABC마트	https://abcmart.a-rt.com																					
+	ABC마트 그랜드스테이지	https://grandstage.a-rt.com																					
+	훕시티	https://www.hoopcity.co.kr																					
+	SSF	https://www.ssfshop.com																					
+	아이엠샵	https://iamshop-online.com																					
+																							
+																							

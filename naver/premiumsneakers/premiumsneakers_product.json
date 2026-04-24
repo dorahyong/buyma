@@ -1,0 +1,732 @@
+{
+    "id": "13269132776",
+    "channelServiceType": "STOREFARM",
+    "channelProductType": "SINGLE",
+    "channelProductSupplyType": "OWNER",
+    "channelProductStatusType": "NORMAL",
+    "channelProductDisplayStatusType": "ON",
+    "category": {
+        "categoryId": "50000543",
+        "categoryName": "비니",
+        "category1Id": "50000001",
+        "category2Id": "50000181",
+        "category3Id": "50000543",
+        "category1Name": "패션잡화",
+        "category2Name": "모자",
+        "category3Name": "비니",
+        "wholeCategoryId": "50000001>50000181>50000543",
+        "wholeCategoryName": "패션잡화>모자>비니",
+        "categoryLevel": 3,
+        "lastLevel": true,
+        "sortOrder": 4,
+        "validCategory": true,
+        "receiptIssue": true,
+        "exceptionalCategoryTypes": [
+            "MANUFACTURE_DEFINE_NO",
+            "FREE_RETURN_INSURANCE",
+            "REGULAR_SUBSCRIPTION"
+        ],
+        "pointAccumulationYn": false
+    },
+    "name": "몽클레어 25FW 화이트 그레노블 알파카 울 비니 3B00001 M5381 04A",
+    "productUrl": "https://smartstore.naver.com/main/products/13269132776",
+    "mobileProductUrl": "https://m.smartstore.naver.com/main/products/13269132776",
+    "channel": {
+        "accountNo": 100656056,
+        "channelNo": "100712533",
+        "channelUid": "2sWDyrsbMOI0bGYT34q3G",
+        "channelName": "프리미엄스니커즈",
+        "representName": "(주) 리얼트루컴퍼니",
+        "channelSiteUrl": "premiumsneakers",
+        "channelSiteFullUrl": "https://smartstore.naver.com/premiumsneakers",
+        "channelSiteMobileUrl": "https://m.smartstore.naver.com/premiumsneakers",
+        "accountId": "ncp_1nxepk_01",
+        "naverPaySellerNo": "510665952",
+        "sellerExternalStatusType": "NORMAL",
+        "logoWidth": 1300,
+        "logoHeight": 1300,
+        "logoUrl": "http://shop1.phinf.naver.net/20250508_86/1746678019750pQH6g_JPEG/80810960863351433_2090403727.jpg",
+        "channelTypeCode": "STOREFARM"
+    },
+    "storeKeepExclusiveProduct": false,
+    "epInfo": {
+        "naverShoppingRegistration": true,
+        "naverShoppingExposure": true,
+        "enuriRegistration": false,
+        "danawaRegistration": false,
+        "syncNvMid": 90813643108
+    },
+    "best": false,
+    "orderRequestUsable": false,
+    "channelProductAttributes": [],
+    "productNo": "13210618062",
+    "salePrice": 323000,
+    "dispSalePrice": 323000,
+    "stockQuantity": 1,
+    "saleType": "NEW",
+    "excludeAdminDiscount": false,
+    "payExposure": true,
+    "productStatusType": "SALE",
+    "statusType": "SALE",
+    "authenticationType": "NORMAL",
+    "productImages": [
+        {
+            "order": 1,
+            "url": "https://shop-phinf.pstatic.net/20260318_116/1773823923589VUnTR_JPEG/3086375910339180_1444919403.jpg",
+            "width": 600,
+            "height": 600,
+            "imageType": "REPRESENTATIVE"
+        },
+        {
+            "order": 1,
+            "url": "https://shop-phinf.pstatic.net/20260318_116/1773823923589VUnTR_JPEG/3086375910339180_1444919403.jpg",
+            "width": 600,
+            "height": 600,
+            "imageType": "OPTIONAL"
+        },
+        {
+            "order": 2,
+            "url": "https://shop-phinf.pstatic.net/20260318_151/1773823926026XdhR8_JPEG/107956774161610467_1369972434.jpg",
+            "width": 1500,
+            "height": 1500,
+            "imageType": "OPTIONAL"
+        }
+    ],
+    "naverShoppingSearchInfo": {
+        "manufacturerName": "MONCLER",
+        "brandName": "몽클레르",
+        "brandId": 151532,
+        "modelName": "3B00001 M5381 04A"
+    },
+    "itselfProductionProductYn": false,
+    "afterServiceInfo": {
+        "afterServiceTelephoneNumber": "********",
+        "afterServiceGuideContent": "********"
+    },
+    "originAreaInfo": {
+        "originAreaType": "DIRECT_INPUT",
+        "content": "이탈리아",
+        "originAreaCode": "04",
+        "wholeOriginAreaName": "직접입력",
+        "plural": false
+    },
+    "sellerCodeInfo": {
+        "sellerManagementCode": "3B00001 M5381 04A"
+    },
+    "optionUsable": true,
+    "options": [
+        {
+            "id": 11485675856,
+            "optionType": "COMBINATION",
+            "groupName": "사이즈"
+        }
+    ],
+    "optionCombinations": [
+        {
+            "id": 56948074811,
+            "optionName1": "ONE SIZE",
+            "stockQuantity": 1,
+            "price": 0,
+            "regOrder": 0,
+            "registerDate": "2026-03-18T08:52:06.839+00:00"
+        }
+    ],
+    "optionStandards": [],
+    "supplementProductUsable": false,
+    "purchaseReviewInfo": {
+        "purchaseReviewExposure": true
+    },
+    "customMadeInfo": {
+        "customMade": false
+    },
+    "manufactureDate": "2026-02-28T15:00:00.000+00:00",
+    "taxType": "TAX",
+    "certification": false,
+    "certificationTargetExcludeContent": {
+        "childCertifiedProductExclusionYn": true,
+        "kcCertifiedProductExclusionYn": true,
+        "kcCertifiedProductExclusionType": "TRUE"
+    },
+    "minorPurchasable": true,
+    "productInfoProvidedNoticeView": {
+        "basic": {
+            "종류": "비니",
+            "소재": "acrylic 38% (아크릴 38%), alpaca 34% (알파카 34%), polyamide 15% (폴리아미드 15%), virgin wool 13% (버진 울 13%)",
+            "치수": "둘레55~62 세로24 단위(cm)",
+            "제조자(사)": "몽클레어/병행수입(리얼트루컴퍼니)",
+            "제조국": "이탈리아",
+            "취급시 주의사항": "의류 직물 등은 반드시 케어라벨 기호를 확인하시고 세탁 부탁드립니다. 가죽 및 프린팅, 스터드 등 디테일이 들어간 제품의 경우 세탁 시 이염 및 손상이 될 수 있으니, 가급적 세탁을 자제하시거나 전문 세탁업소에 의뢰 부탁드립니다. 미세한 주름 및 박음질 오류 등은 공정 과정의 특성으로 품질상의 이상은 아닙니다. 공정거래위원회 고시(소비자분쟁해결기준)에 의거하여 보상해 드립니다.",
+            "품질보증기준": "관련법 및 소비자분쟁 해결기준에 따름",
+            "A/S 책임자와 전화번호": "********"
+        },
+        "additional": {
+            "재화등의 배송방법에 관한 정보": "택배",
+            "주문 이후 예상되는 배송기간": "대금 지급일로부터 3일 이내에 발송",
+            "제품하자·오배송 등에 따른 청약철회 등의 경우 청약철회 등의 기한 및 통신판매업자가 부담하는 반품비용 등에 관한 정보": "상세설명참조",
+            "제품하자가 아닌 소비자의 단순변심에 따른 청약철회 시 소비자가 부담하는 반품비용 등에 관한 정보": "편도 4000원 (최초 배송비 무료인 경우 8000원 부과)",
+            "제품하자가 아닌 소비자의 단순변심에 따른 청약철회가 불가능한 경우 그 구체적 사유와 근거": "상세설명참조",
+            "재화등의 교환·반품·보증 조건 및 품질보증기준": "상세설명참조",
+            "재화등의 A/S 관련 전화번호": "********",
+            "대금을 환불받기 위한 방법과 환불이 지연될 경우 지연배상금을 지급받을 수 있다는 지연배상금 지급의 구체적인 조건·절차": "상세설명참조",
+            "소비자피해보상의 처리, 재화등에 대한 불만 처리 및 소비자와 사업자 사이의 분쟁처리에 관한 사항": "상세설명참조",
+            "거래에 관한 약관의 내용 또는 확인할 수 있는 방법": "상품상세 페이지 및 페이지 하단의 이용약관 링크를 통해 확인할 수 있습니다."
+        }
+    },
+    "productAttributes": [],
+    "productDeliveryInfo": {
+        "deliveryFeeType": "FREE",
+        "deliveryMethodTypes": [
+            "DELIVERY"
+        ],
+        "baseFee": 0,
+        "installationFee": false,
+        "deliveryBundleGroup": {
+            "id": 33546314,
+            "deliveryFeeChargeMethodType": "MIN"
+        },
+        "deliveryAttributeType": "SELLER_GUARANTEE",
+        "todayDelivery": false,
+        "deliveryCompany": {
+            "id": "EPOST",
+            "name": "우체국택배"
+        }
+    },
+    "claimDeliveryInfo": {
+        "returnDeliveryCompanyPriority": "PRIMARY",
+        "deliveryCompanyName": "우체국택배",
+        "deliveryCompanyCode": "EPOST",
+        "naverPayAppointment": false,
+        "returnDeliveryFee": 4000,
+        "exchangeDeliveryFee": 8000,
+        "shippingAddressId": 101881292,
+        "returnAddressId": 101881291,
+        "shippingAddress": "부산광역시 서구 구덕로327번길 57 1층 리얼트루컴퍼니 (우 : 49225) ",
+        "returnAddress": "부산광역시 서구 구덕로327번길 57 1층 리얼트루컴퍼니 (우 : 49225) ",
+        "overseasShipping": false,
+        "freeReturnInsurance": false,
+        "contractId": 2020041620326137
+    },
+    "isCultureCostIncomeDeduction": false,
+    "isRestrictCart": false,
+    "naverGuaranteed": false,
+    "newShoppingExposureYn": true,
+    "benefitsView": {
+        "discountedSalePrice": 323000,
+        "mobileDiscountedSalePrice": 323000,
+        "dispDiscountedSalePrice": 323000,
+        "sellerImmediateDiscountAmount": 0,
+        "mobileSellerImmediateDiscountAmount": 0,
+        "managerImmediateDiscountAmount": 0,
+        "mobileManagerImmediateDiscountAmount": 0,
+        "specialDiscountAmount": {},
+        "discountedRatio": 0,
+        "mobileDiscountedRatio": 0,
+        "dispDiscountedRatio": 0,
+        "sellerPurchasePoint": 0,
+        "mobileSellerPurchasePoint": 0,
+        "sellerCustomerManagementPoint": 0,
+        "mobileSellerCustomerManagementPoint": 0,
+        "managerPurchasePoint": 3230,
+        "mobileManagerPurchasePoint": 3230,
+        "managerPurchaseExtraPoint": 0,
+        "mobileManagerPurchaseExtraPoint": 0,
+        "managerPaymoneyAccumulatePoint": 4845,
+        "mobileManagerPaymoneyAccumulatePoint": 4845,
+        "managerBankbookAccumulatePoint": 1615,
+        "mobileManagerBankbookAccumulatePoint": 1615,
+        "managerArrivalGuaranteePoint": 0,
+        "mobileManagerArrivalGuaranteePoint": 0,
+        "managerMembershipArrivalGuaranteePoint": 0,
+        "mobileManagerMembershipArrivalGuaranteePoint": 0,
+        "generalPurchaseReviewPoint": 0,
+        "premiumPurchaseReviewPoint": 0,
+        "managerGeneralPurchaseReviewPoint": 50,
+        "managerPremiumPurchaseReviewPoint": 150,
+        "textReviewPoint": 0,
+        "photoVideoReviewPoint": 0,
+        "afterUseTextReviewPoint": 0,
+        "afterUsePhotoVideoReviewPoint": 0,
+        "storeMemberReviewPoint": 0,
+        "managerTextReviewPoint": 50,
+        "managerPhotoVideoReviewPoint": 150,
+        "managerAfterUseTextReviewPoint": 0,
+        "managerAfterUsePhotoVideoReviewPoint": 0,
+        "givePresent": true
+    },
+    "benefitsPolicy": {
+        "managerPurchasePointPolicyNo": 10511031105304,
+        "managerPurchasePointValueUnit": "PERCENT",
+        "managerPurchasePointValue": 1,
+        "managerMaxPurchasePointAmount": 100000,
+        "managerPaymoneyAccumulatePolicyNo": 439583905,
+        "managerPaymoneyAccumulateValueUnit": "PERCENT",
+        "managerPaymoneyAccumulateValue": 1.5,
+        "managerMaxPaymoneyAccumulateAmount": 30000,
+        "managerBankbookAccumulatePolicyNo": 13927943816488,
+        "managerBankbookAccumulateValueUnit": "PERCENT",
+        "managerBankbookAccumulateValue": 0.5,
+        "managerMaxBankbookAccumulateAmount": 10000,
+        "givePresent": true
+    },
+    "mobileBenefitsPolicy": {
+        "managerPurchasePointPolicyNo": 10511031105304,
+        "managerPurchasePointValueUnit": "PERCENT",
+        "managerPurchasePointValue": 1,
+        "managerMaxPurchasePointAmount": 100000,
+        "managerPaymoneyAccumulatePolicyNo": 439583905,
+        "managerPaymoneyAccumulateValueUnit": "PERCENT",
+        "managerPaymoneyAccumulateValue": 1.5,
+        "managerMaxPaymoneyAccumulateAmount": 30000,
+        "managerBankbookAccumulatePolicyNo": 13927943816488,
+        "managerBankbookAccumulateValueUnit": "PERCENT",
+        "managerBankbookAccumulateValue": 0.5,
+        "managerMaxBankbookAccumulateAmount": 10000,
+        "givePresent": true
+    },
+    "reviewAmount": {
+        "totalReviewCount": 0,
+        "score1ReviewCount": 0,
+        "score2ReviewCount": 0,
+        "score3ReviewCount": 0,
+        "score4ReviewCount": 0,
+        "score5ReviewCount": 0,
+        "averageReviewScore": 0,
+        "productSatisfactionPercent": 0,
+        "premiumReviewHighlyRecommendationCount": 0,
+        "premiumReviewRecommendationCount": 0,
+        "premiumReviewNormalCount": 0,
+        "premiumReviewNotRecommendationCount": 0,
+        "generalReviewSatisfactionCount": 0,
+        "generalReviewNormalCount": 0,
+        "generalReviewDisSatisfactionCount": 0,
+        "premiumReviewCount": 0
+    },
+    "sellerDeliveryLeadTimes": [
+        {
+            "rangeNumberText": "1",
+            "rangeText": "일 이내",
+            "leadTimeCount": 75,
+            "leadTimePercent": 46
+        },
+        {
+            "rangeNumberText": "2",
+            "rangeText": "일 이내",
+            "leadTimeCount": 88,
+            "leadTimePercent": 54
+        },
+        {
+            "rangeNumberText": "3",
+            "rangeText": "일 이내",
+            "leadTimeCount": 1,
+            "leadTimePercent": 1
+        },
+        {
+            "rangeNumberText": "4",
+            "rangeText": "일 이상",
+            "leadTimeCount": 0,
+            "leadTimePercent": 0
+        }
+    ],
+    "averageDeliveryLeadTime": {
+        "productAverageDeliveryLeadTime": 0,
+        "sellerAverageDeliveryLeadTime": 1.4085366
+    },
+    "sellerDailyDeliveryLeadTimes": {
+        "leadTimeCount": [
+            23,
+            52,
+            88,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "leadTimeViewType": "NORMAL_DELIVERY"
+    },
+    "detailContents": {
+        "excessDetailContentText": false,
+        "editorType": "NONE"
+    },
+    "useExternalStock": false,
+    "dispName": "몽클레어 25FW 화이트 그레노블 알파카 울 비니 3B00001 M5381 04A",
+    "adultAuthorizationType": "ADULT_SELFAUTH",
+    "authorizationDisplay": "NORMAL",
+    "representImage": {
+        "order": 1,
+        "url": "https://shop-phinf.pstatic.net/20260318_116/1773823923589VUnTR_JPEG/3086375910339180_1444919403.jpg",
+        "width": 600,
+        "height": 600,
+        "imageType": "REPRESENTATIVE"
+    },
+    "view360Image": [],
+    "galleryImages": [
+        {
+            "order": 1,
+            "url": "https://shop-phinf.pstatic.net/20260318_116/1773823923589VUnTR_JPEG/3086375910339180_1444919403.jpg",
+            "width": 600,
+            "height": 600,
+            "imageType": "REPRESENTATIVE"
+        },
+        {
+            "order": 1,
+            "url": "https://shop-phinf.pstatic.net/20260318_116/1773823923589VUnTR_JPEG/3086375910339180_1444919403.jpg",
+            "width": 600,
+            "height": 600,
+            "imageType": "OPTIONAL"
+        },
+        {
+            "order": 2,
+            "url": "https://shop-phinf.pstatic.net/20260318_151/1773823926026XdhR8_JPEG/107956774161610467_1369972434.jpg",
+            "width": 1500,
+            "height": 1500,
+            "imageType": "OPTIONAL"
+        }
+    ],
+    "soldout": false,
+    "viewAttributes": {
+        "상품상태": "신상품",
+        "상품번호": "13269132776",
+        "제조사": "MONCLER",
+        "브랜드": "몽클레르",
+        "모델명": "3B00001 M5381 04A",
+        "원산지": "이탈리아",
+        "제조일자": "2026.03.01."
+    },
+    "additionalAttributes": {
+        "영수증발급": "신용카드전표, 현금영수증발급",
+        "A/S 안내": [
+            "********",
+            "********"
+        ]
+    },
+    "sellerTags": [],
+    "eCouponCategory": false,
+    "cultureCategory": false,
+    "textOptions": [],
+    "simpleOptions": [],
+    "combinationOptions": [
+        {
+            "groupName": "사이즈",
+            "options": [
+                {
+                    "id": 56948074811,
+                    "optionName1": "ONE SIZE",
+                    "stockQuantity": 1,
+                    "price": 0,
+                    "regOrder": 0,
+                    "registerDate": "2026-03-18T08:52:06.839+00:00"
+                }
+            ],
+            "checkedName": null,
+            "checkedIds": null,
+            "price": 0,
+            "isLastDepth": true
+        }
+    ],
+    "standardOptions": [],
+    "standardCombinations": [
+        {
+            "id": 56948074811,
+            "optionName1": "ONE SIZE",
+            "stockQuantity": 1,
+            "price": 0,
+            "regOrder": 0,
+            "registerDate": "2026-03-18T08:52:06.839+00:00",
+            "title": "_ONE SIZE____"
+        }
+    ],
+    "supplements": [],
+    "deliveryText": null,
+    "deliveryMethodType": {
+        "code": 1,
+        "name": "택배",
+        "description": "택배",
+        "etc": null,
+        "naverPayCode": "DELIVERY"
+    },
+    "discountedSalePrice": 323000,
+    "mobileDiscountRatio": 0,
+    "hopeDelivery": null,
+    "commentCount": 0,
+    "interestFreePlans": {
+        "hasInterestFreePlans": true,
+        "sellerBurden": {},
+        "adminBurden": {
+            "국민": [
+                {
+                    "cardCorpName": "국민",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_KBbank.gif",
+                    "managerFreeInterestBurdenType": "MP",
+                    "managerFreeInterestCode": "MEMBERSHIP",
+                    "freeInterestMonth": "12",
+                    "minPayAmount": 1000000
+                },
+                {
+                    "cardCorpName": "국민",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_KBbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3,4,5",
+                    "minPayAmount": 50000
+                },
+                {
+                    "cardCorpName": "국민",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_KBbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "6",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3"
+                },
+                {
+                    "cardCorpName": "국민",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_KBbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "10",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3,4,5"
+                }
+            ],
+            "롯데": [
+                {
+                    "cardCorpName": "롯데",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_lottecard_n.png",
+                    "managerFreeInterestBurdenType": "MP",
+                    "managerFreeInterestCode": "MEMBERSHIP",
+                    "freeInterestMonth": "12",
+                    "minPayAmount": 1000000
+                },
+                {
+                    "cardCorpName": "롯데",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_lottecard_n.png",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3,4,5",
+                    "minPayAmount": 50000
+                }
+            ],
+            "신한": [
+                {
+                    "cardCorpName": "신한",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "managerFreeInterestBurdenType": "MP",
+                    "managerFreeInterestCode": "MEMBERSHIP",
+                    "freeInterestMonth": "12",
+                    "minPayAmount": 1000000
+                },
+                {
+                    "cardCorpName": "신한",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3",
+                    "minPayAmount": 50000
+                },
+                {
+                    "cardCorpName": "신한",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "7",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3"
+                },
+                {
+                    "cardCorpName": "신한",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "9",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3,4"
+                },
+                {
+                    "cardCorpName": "신한",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "11",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3,4,5"
+                }
+            ],
+            "삼성": [
+                {
+                    "cardCorpName": "삼성",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_samsung_n.png",
+                    "managerFreeInterestBurdenType": "MP",
+                    "managerFreeInterestCode": "MEMBERSHIP",
+                    "freeInterestMonth": "12",
+                    "minPayAmount": 1000000
+                },
+                {
+                    "cardCorpName": "삼성",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_samsung_n.png",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3",
+                    "minPayAmount": 50000
+                },
+                {
+                    "cardCorpName": "삼성",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_samsung_n.png",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "7",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3"
+                },
+                {
+                    "cardCorpName": "삼성",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_samsung_n.png",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "11",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3,4,5"
+                }
+            ],
+            "NH": [
+                {
+                    "cardCorpName": "NH",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_NH_n.png",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3,4,5,6",
+                    "minPayAmount": 50000
+                },
+                {
+                    "cardCorpName": "NH",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_NH_n.png",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "7,8,9,10",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3"
+                }
+            ],
+            "BC": [
+                {
+                    "cardCorpName": "BC",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_BCcard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3,4,5",
+                    "minPayAmount": 50000
+                }
+            ],
+            "우리": [
+                {
+                    "cardCorpName": "우리",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_wooricard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3,4,5",
+                    "minPayAmount": 50000
+                },
+                {
+                    "cardCorpName": "우리",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_wooricard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "10",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3,4"
+                }
+            ],
+            "하나": [
+                {
+                    "cardCorpName": "하나",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_hanacard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3,4",
+                    "minPayAmount": 50000
+                },
+                {
+                    "cardCorpName": "하나",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_hanacard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "6",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3"
+                },
+                {
+                    "cardCorpName": "하나",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_hanacard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "10",
+                    "minPayAmount": 50000,
+                    "customerBurdenMonth": "1,2,3,4"
+                }
+            ],
+            "현대": [
+                {
+                    "cardCorpName": "현대",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_hyundaicard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "2,3",
+                    "minPayAmount": 10000
+                },
+                {
+                    "cardCorpName": "현대",
+                    "cardCorpImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_hyundaicard.gif",
+                    "managerFreeInterestBurdenType": "PG",
+                    "freeInterestMonth": "10",
+                    "minPayAmount": 10000,
+                    "customerBurdenMonth": "1,2,3,4,5"
+                }
+            ]
+        },
+        "maxInterestFreePlanMonths": 12,
+        "specialPlans": {
+            "CCKM": [
+                {
+                    "interestCardCompanyId": "CCKM",
+                    "interestCardProductCode": "none",
+                    "interestInstallmentType": "total",
+                    "interestInstallmentMonths": "24,36",
+                    "interestMinAmount": 1000000,
+                    "interestCustomerBurdenCommissionRate": 7,
+                    "interestShowCommissionRateYn": "y",
+                    "interestCiImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_KBbank.gif",
+                    "cardCorpName": "국민"
+                },
+                {
+                    "interestCardCompanyId": "CCKM",
+                    "interestCardProductCode": "none",
+                    "interestInstallmentType": "total",
+                    "interestInstallmentMonths": "48,60",
+                    "interestMinAmount": 1000000,
+                    "interestCustomerBurdenCommissionRate": 8,
+                    "interestShowCommissionRateYn": "y",
+                    "interestCiImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_KBbank.gif",
+                    "cardCorpName": "국민"
+                }
+            ],
+            "CCLG": [
+                {
+                    "interestCardCompanyId": "CCLG",
+                    "interestCardProductCode": "none",
+                    "interestInstallmentType": "total",
+                    "interestInstallmentMonths": "24,36",
+                    "interestMinAmount": 1000000,
+                    "interestCustomerBurdenCommissionRate": 7,
+                    "interestShowCommissionRateYn": "y",
+                    "interestCiImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "cardCorpName": "신한"
+                },
+                {
+                    "interestCardCompanyId": "CCLG",
+                    "interestCardProductCode": "none",
+                    "interestInstallmentType": "total",
+                    "interestInstallmentMonths": "48,60",
+                    "interestMinAmount": 1000000,
+                    "interestCustomerBurdenCommissionRate": 8,
+                    "interestShowCommissionRateYn": "y",
+                    "interestCiImageUrl": "https://ssl.pstatic.net/static.pay/u/card/logocard_shinhanbank.gif",
+                    "cardCorpName": "신한"
+                }
+            ]
+        }
+    },
+    "isPayMember": true,
+    "arrivalGuarantee": true,
+    "rmids": [
+        "2_7X",
+        "3_7Y",
+        "4_7Z"
+    ],
+    "groupId": null,
+    "groupEpId": null,
+    "simpleProductAffiliateYn": false,
+    "disableAdditionalApi": false
+}

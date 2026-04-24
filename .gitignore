@@ -91,3 +91,12 @@ okmall/*.txt
 okmall/*.docx
 
 nul
+
+# naver
+naver/naver_cookies.json
+naver/nav_dump.json
+naver/nav_tree.json
+naver/__pycache__/
+naver/**/__pycache__/
+naver/premiumsneakers/full_collect_summary_*.txt
+naver/premiumsneakers/full_collect_*.log
