@@ -1,7 +1,7 @@
 # 네이버 + 신규 수집처 프로젝트 전체 개요
 
 > `naver/NEXT_STEPS.md`와 `todo.md` 통합 문서. BUYMA 자동화 파이프라인에 새 수집처를 추가하는 프로젝트 전체 맥락·진행상황·다음작업을 한 파일로 정리.
-> 최종 갱신: 2026-04-15 (신규 6개 mall BUYMA 등록 완료)
+> 최종 갱신: 2026-04-24 (플랫폼 재분류: 럭스보이 Wisa / 브릭맨션·메종파르코·밀라니즈 Cafe24 확정)
 
 ---
 
@@ -38,7 +38,7 @@ match_brands + category_cleaner
 | ✅ 7 | 팹스타일 | 네이버 스마트스토어 | ✅ **수집+convert+등록 완료** (1,645 raw / 940 active / 763 BUYMA 등록) |
 | ✅ 8 | 루티크 | 네이버 스마트스토어 | ✅ **수집+convert+등록 완료** (36 raw / 24 active — 대부분 품절) |
 | ✅ 9 | 까르피 | 네이버 브랜드스토어 | 🟢 **brand_store_collector로 수집 가능** (10건 파일럿 완료, 이미지 1장뿐) |
-| 10 | 럭스보이 | 고도몰 (www.luxboy.com) | ⬜ 대기 |
+| 10 | 럭스보이 | Wisa (www.luxboy.com) ⚠️ 쇼핑몰 TSV는 `brand.naver.com/luxboy` 지목 — 동일 업체 여부 확인 필요 | ⬜ 대기 |
 | ✅ 11 | 디몬트 | 네이버 스마트스토어 | 🟢 **premiumsneakers_category_collector (전체상품)로 수집 가능** (10건 파일럿, 이미지 1장) |
 | 12 | 아르떼모아 | 고도몰 | ⬜ 대기 |
 | 13 | 구템즈 | Cafe24 | ⬜ 대기 |
@@ -56,11 +56,11 @@ match_brands + category_cleaner
 | 플랫폼 | 사이트 | 전략 |
 |--------|-------|------|
 | 네이버 스마트스토어/브랜드스토어 | 12개 (순번 6-11, 15-16, 18, 20-22) | 단일 공용 collector (`--source` 분기) |
-| Cafe24 | 2개 (순번 13, 17) | 기존 nextzennpack 패턴 복사 |
-| 고도몰 | 1개 (순번 12) | 신규 유형 — 별도 collector |
+| Cafe24 | 2개 (순번 13 구템즈, 17 라프리마) | 기존 nextzennpack 패턴 복사 |
+| 고도몰 | 1개 (순번 12 아르떼모아) | 신규 유형 — 별도 collector |
+| Wisa | 1개 (순번 10 럭스보이) | 신규 유형 — 별도 collector (2026-04-24 재분류) |
 | 무신사 | 1개 (순번 14) | 신규 유형 — 별도 collector |
 | MakeShop | 1개 (순번 19) | 신규 유형 — 별도 collector |
-| 고도몰 | 1개 (순번 10 럭스보이) | 공용 가능 (아르떼모아와 함께) |
 
 ---
 
@@ -73,7 +73,7 @@ match_brands + category_cleaner
 | 루티크 | smartstore.naver.com/loutique | 모델명: 상품명 끝 (간혹 없음) |
 | 라벨루쏘 | labellusso.com | 완료 |
 | 아르떼모아 | artemoa.com | 고도몰. 모델명: 브랜드 뒤/상품정보 |
-| 럭스보이 | www.luxboy.com | 고도몰. 모델명: 상품명 끝/상품정보. `brand_list` 페이지에 200+ 브랜드 |
+| 럭스보이 | www.luxboy.com | **Wisa** (위사, `luxboy.wisacdn.com` / (주)위즈컴퍼니). 모델명: 상품명 끝/상품정보. `brand_list` 페이지에 200+ 브랜드. ⚠️ 쇼핑몰 TSV는 `brand.naver.com/luxboy` 지목 — 동일 업체 여부 확인 필요 |
 | 넥스트젠팩 | nextzennpack.com | 완료 |
 | 팹스타일 | smartstore.naver.com/fabstyle | 모델명: 상품명 끝/상품정보 |
 | 까르피 | brand.naver.com/carpi | 모델명: 상품명 끝/상품정보 |
@@ -82,7 +82,7 @@ match_brands + category_cleaner
 | 디몬트 | smartstore.naver.com/dmont | 브랜드 축약→제조사 풀네임, '디몬트' 제거, 쿠폰가, 상세이미지 추가 |
 | 무신사부티크 | musinsa.com/boutique | 모델명: 상품명 끝/상품정보 |
 | 구템즈 | 9tems.com | Cafe24 |
-| 밀라니즈 | milaneez.com | 모델명: 브랜드명 옆 |
+| 밀라니즈 | milaneez.com | **Cafe24** (2026-04-24 확인). 모델명: 브랜드명 옆 |
 | 블리에이 | smartstore.naver.com/vely_a | 모음전 제외 (옵션 갯수 필터?) |
 | 비블루 | smartstore.naver.com/bblue | 모델명 괄호, 이미지 여부 불명, 모음전 제외 |
 | 티원글로벌 | smartstore.naver.com/t1global | 모음전 제외 (품번 없음) |
@@ -90,7 +90,7 @@ match_brands + category_cleaner
 | 더마 | smartstore.naver.com/nilsenco | 모델명 랜덤, 상품정보가 정확 |
 | 비비아노 | smartstore.naver.com/vvano | 쿠폰 자주 생김, 쿠폰가 수집 권장 |
 | 세토프 | smartstore.naver.com/set-of | **이미지 사용 불가** |
-| 메종파르코 | maisonparco.com | 모델명: 상품명 끝 |
+| 메종파르코 | maisonparco.com | **Cafe24** (2026-04-24 확인, `file.cafe24cos.com`). 모델명: 상품명 끝 |
 | 뚜또베네 | smartstore.naver.com/tutto-bene | `[국내배송][15%중복쿠폰]` 제거 필수, 쿠폰가 |
 | 조하리스토어 | brand.naver.com/joharistore | 모음전 제외, 쿠폰가 |
 | 프리미엄스니커즈 | smartstore.naver.com/premiumsneakers | 쿠폰가 |
@@ -391,15 +391,17 @@ todo.md 원본에 있던 추가 후보 사이트 리스트. 22개 우선 대상(
 ### 자체/Cafe24/기타 도메인 (추가 후보)
 | 사이트 | URL | 플랫폼 추정 | 메모 |
 |--------|-----|-----|------|
-| 브릭맨션 | https://brickmansion.co.kr | 자체 | - |
-| 웍스아웃 | https://worksout.co.kr | 자체 | - |
-| 메종파르코 | https://www.maisonparco.com | 자체 | 모델명: 상품명 끝 |
-| 꼬르소밀라노 | https://www.corsomilano.com | 자체 | - |
-| 하하몰 | https://hahamall.co.kr | 자체 | - |
-| 베이지그 | https://bazig.com | 자체 | - |
-| 유니코 | https://e-unico.co.kr | 자체 | - |
-| 셉템 | https://septem.kr | 자체 | - |
+| 브릭맨션 | https://brickmansion.co.kr | **Cafe24** (2026-04-24 확인) | 심플렉스인터넷 호스팅, echosting.cafe24.com |
+| 웍스아웃 | https://worksout.co.kr | 자체 (미확인) | - |
+| 메종파르코 | https://www.maisonparco.com | **Cafe24** (2026-04-24 확인) | `file.cafe24cos.com` CDN. 모델명: 상품명 끝 |
+| 꼬르소밀라노 | https://www.corsomilano.com | 자체 (미확인) | - |
+| 하하몰 | https://hahamall.co.kr | 자체 (미확인) | - |
+| 베이지그 | https://bazig.com | 자체 (미확인) | - |
+| 유니코 | https://e-unico.co.kr | 자체 (미확인) | - |
+| 셉템 | https://septem.kr | 자체 (미확인) | - |
 | 라스트센스 | — | — | URL 미기재 |
+| 로로모다 | https://loromoda.net | **Cafe24** (2026-04-24 확인) | echosting.cafe24.com + ec-base- 클래스 |
+| 밀라니즈 | https://milaneez.com | **Cafe24** (2026-04-24 확인) | milaneez.com/web/product/ 패턴 |
 
 ### 대형 플랫폼 (장기 검토 대상)
 | 사이트 | URL |
