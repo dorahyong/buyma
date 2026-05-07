@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DB 조회 · manage</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; font-size: 14px; color: #222; }
+    h1 { font-size: 1.15rem; margin: 0 0 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
+    label { font-weight: 600; }
+    select, button { padding: 6px 10px; font-size: 14px; }
+    table { border-collapse: collapse; width: 100%; overflow: auto; display: block; max-height: 70vh; }
+    thead { position: sticky; top: 0; background: #f4f4f4; }
+    th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { white-space: nowrap; }
+    td { max-width: 320px; overflow: auto; }
+    .err { color: #b00; margin: 12px 0; }
+    .hint { color: #666; font-size: 12px; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <h1>DB 조회 (manage 서버)</h1>
+  <form class="row" method="get" action="">
+    <label for="table">테이블</label>
+    <select id="table" name="table" onchange="this.form.submit()">
+      {% for t in allowed_tables %}
+      <option value="{{ t }}" {% if t == table %}selected{% endif %}>{{ t }}</option>
+      {% endfor %}
+    </select>
+    <label for="limit">최대 행</label>
+    <select id="limit" name="limit" onchange="this.form.submit()">
+      {% for n in limits %}
+      <option value="{{ n }}" {% if n == limit %}selected{% endif %}>{{ n }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit">조회</button>
+  </form>
+
+  {% if error %}
+  <p class="err">{{ error }}</p>
+  {% else %}
+  <p>{{ rows | length }}행 · <code>{{ table }}</code></p>
+  <table>
+    <thead>
+      <tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>{% for c in columns %}<td>{{ r[c] }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <p class="hint">
+    웹훅(server.py · 보통 8000) 과 분리된 프로세스(기본 8001)입니다.
+    공개 도메인에 붙일 때는 nginx 에서 <code>location /manage { proxy_pass http://127.0.0.1:8001; }</code>
+    등으로 연결하면 <code>/manage?table=mall_sites</code> 형태로 쓸 수 있습니다.
+    IP 제한·인증은 nginx 쪽을 권장합니다.
+  </p>
+</body>
+</html>
