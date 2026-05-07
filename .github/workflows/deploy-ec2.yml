@@ -1,0 +1,34 @@
+# main 에 push → EC2 에서 git pull + buyma-manage 재시작 (1~2분 내 반영)
+#
+# GitHub: 이 repo → Settings → Secrets and variables → Actions → New repository secret
+#   필수
+#     EC2_HOST    공인 IP (예: 43.200.228.173)
+#     EC2_SSH_KEY 로컬 buyma-key.pem 파일 "전체" 텍스트
+#   선택 (다를 때만)
+#     EC2_USER    기본 ssh 사용자 (미설정 시 ubuntu)
+#     EC2_REPO_PATH  레포 절대경로 (미설정 시 /home/ubuntu/buyma/buyma)
+
+name: Deploy EC2
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pull on server & restart buyma-manage
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            REPO_PATH="${{ secrets.EC2_REPO_PATH }}"
+            if [ -z "$REPO_PATH" ]; then REPO_PATH="/home/ubuntu/buyma/buyma"; fi
+            cd "$REPO_PATH"
+            git pull origin main
+            sudo systemctl restart buyma-manage
