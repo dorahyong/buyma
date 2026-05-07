@@ -6,7 +6,17 @@
   <title>DB 조회 · manage</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 16px; font-size: 14px; color: #222; }
-    h1 { font-size: 1.15rem; margin: 0 0 12px; }
+    .greeting { font-size: 1rem; margin: 0 0 8px; line-height: 1.5; }
+    h1 { font-size: 1.15rem; margin: 16px 0 12px; }
+    .url-help {
+      background: #f6f8fa; border: 1px solid #d0d7de; border-radius: 8px;
+      padding: 12px 14px; margin-bottom: 16px; font-size: 13px; line-height: 1.65;
+    }
+    .url-help h2 { margin: 0 0 8px; font-size: 0.95rem; }
+    .url-help ul { margin: 0; padding-left: 18px; }
+    .url-help li { margin: 6px 0; }
+    .url-help a { color: #0969da; word-break: break-all; }
+    .url-help code { font-size: 12px; background: #fff; padding: 2px 6px; border-radius: 4px; }
     .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px; }
     label { font-weight: 600; }
     select, button { padding: 6px 10px; font-size: 14px; }
@@ -20,6 +30,30 @@
   </style>
 </head>
 <body>
+  <p class="greeting">안녕하세요. 반갑습니다.</p>
+
+  <div class="url-help">
+    <h2>URL 안내 (링크는 새 창에서 열립니다)</h2>
+    <ul>
+      <li>
+        <strong>기본 화면</strong> — 테이블·행 수를 드롭다운으로 바꿀 수 있습니다.<br>
+        <a href="/manage" target="_blank" rel="noopener noreferrer">/manage</a>
+        <span>· 전체 주소 예:</span>
+        <a href="https://buyma-api.oneblocks.co.kr/manage" target="_blank" rel="noopener noreferrer">https://buyma-api.oneblocks.co.kr/manage</a>
+      </li>
+      <li>
+        <strong>쿼리로 바로 지정</strong> — <code>table</code>은 화이트리스트에 있는 테이블만, <code>limit</code>은 50·100·200·500 중 하나입니다.<br>
+        <a href="/manage?table=mall_sites&amp;limit=200" target="_blank" rel="noopener noreferrer">/manage?table=mall_sites&amp;limit=200</a>
+        <span>· 전체 주소 예:</span>
+        <a href="https://buyma-api.oneblocks.co.kr/manage?table=mall_sites&amp;limit=200" target="_blank" rel="noopener noreferrer">https://buyma-api.oneblocks.co.kr/manage?table=mall_sites&amp;limit=200</a>
+      </li>
+      <li>
+        <strong>다른 예</strong> — <code>ace_products</code> 최대 100행:<br>
+        <a href="/manage?table=ace_products&amp;limit=100" target="_blank" rel="noopener noreferrer">/manage?table=ace_products&amp;limit=100</a>
+      </li>
+    </ul>
+  </div>
+
   <h1>DB 조회 (manage 서버)</h1>
   <form class="row" method="get" action="">
     <label for="table">테이블</label>
@@ -56,8 +90,7 @@
   <p class="hint">
     웹훅(server.py · 보통 8000) 과 분리된 프로세스(기본 8001)입니다.
     공개 도메인에 붙일 때는 nginx 에서 <code>location /manage { proxy_pass http://127.0.0.1:8001; }</code>
-    등으로 연결하면 <code>/manage?table=mall_sites</code> 형태로 쓸 수 있습니다.
-    IP 제한·인증은 nginx 쪽을 권장합니다.
+    등으로 연결합니다. IP 제한·인증은 nginx 쪽을 권장합니다.
   </p>
 </body>
 </html>
