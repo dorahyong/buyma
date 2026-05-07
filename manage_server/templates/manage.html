@@ -27,6 +27,7 @@
     td { max-width: 320px; overflow: auto; }
     .err { color: #b00; margin: 12px 0; }
     .hint { color: #666; font-size: 12px; margin-top: 16px; }
+    .empty-notice { color: #555; margin: 12px 0; padding: 10px; background: #f9f9f9; border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -36,20 +37,17 @@
     <h2>URL 안내 (링크는 새 창에서 열립니다)</h2>
     <ul>
       <li>
-        <strong>기본 화면</strong> — 테이블·행 수를 드롭다운으로 바꿀 수 있습니다.<br>
+        <strong>기본 주소</strong> — 테이블을 고르기 전까지 데이터는 나오지 않습니다. 아래 셀렉트에는 <strong>현재 DB의 모든 테이블</strong>이 올라갑니다.<br>
         <a href="/manage" target="_blank" rel="noopener noreferrer">/manage</a>
-        <span>· 전체 주소 예:</span>
+        ·
         <a href="https://buyma-api.oneblocks.co.kr/manage" target="_blank" rel="noopener noreferrer">https://buyma-api.oneblocks.co.kr/manage</a>
       </li>
       <li>
-        <strong>쿼리로 바로 지정</strong> — <code>table</code>은 화이트리스트에 있는 테이블만, <code>limit</code>은 50·100·200·500 중 하나입니다.<br>
+        <strong>URL로 바로 열기 (예시)</strong> — <code>table</code>에는 실제 있는 테이블 이름을 쓰면 됩니다. 아래는 이름 예시로만 <code>mall_sites</code>를 넣은 것입니다.<br>
         <a href="/manage?table=mall_sites&amp;limit=200" target="_blank" rel="noopener noreferrer">/manage?table=mall_sites&amp;limit=200</a>
-        <span>· 전체 주소 예:</span>
-        <a href="https://buyma-api.oneblocks.co.kr/manage?table=mall_sites&amp;limit=200" target="_blank" rel="noopener noreferrer">https://buyma-api.oneblocks.co.kr/manage?table=mall_sites&amp;limit=200</a>
-      </li>
-      <li>
-        <strong>다른 예</strong> — <code>ace_products</code> 최대 100행:<br>
-        <a href="/manage?table=ace_products&amp;limit=100" target="_blank" rel="noopener noreferrer">/manage?table=ace_products&amp;limit=100</a>
+        ·
+        <a href="https://buyma-api.oneblocks.co.kr/manage?table=mall_sites&amp;limit=200" target="_blank" rel="noopener noreferrer">https://buyma-api.oneblocks.co.kr/manage?table=mall_sites&amp;limit=200</a><br>
+        <code>limit</code>은 50·100·200·500 중 하나입니다.
       </li>
     </ul>
   </div>
@@ -58,7 +56,8 @@
   <form class="row" method="get" action="">
     <label for="table">테이블</label>
     <select id="table" name="table" onchange="this.form.submit()">
-      {% for t in allowed_tables %}
+      <option value="">— 테이블 선택 —</option>
+      {% for t in all_tables %}
       <option value="{{ t }}" {% if t == table %}selected{% endif %}>{{ t }}</option>
       {% endfor %}
     </select>
@@ -73,6 +72,8 @@
 
   {% if error %}
   <p class="err">{{ error }}</p>
+  {% elif not table %}
+  <p class="empty-notice">테이블을 선택하거나, URL에 <code>?table=테이블이름</code>을 붙여 주세요.</p>
   {% else %}
   <p>{{ rows | length }}행 · <code>{{ table }}</code></p>
   <table>

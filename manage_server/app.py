@@ -20,6 +20,7 @@ from pathlib import Path
 import os
 
 import pymysql
+from pymysql import err as mysql_err
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 
@@ -38,8 +39,44 @@ DB_CONFIG = {
     "cursorclass": pymysql.cursors.DictCursor,
 }
 
-_MANAGE_ALLOWED_TABLES = frozenset({"mall_sites", "ace_products"})
 _MANAGE_LIMIT_CHOICES = (50, 100, 200, 500)
+
+
+def _fetch_table_names(conn):
+    with conn.cursor() as cur:
+        cur.execute("SHOW TABLES")
+        rows = cur.fetchall()
+        if not rows:
+            return []
+        key = list(rows[0].keys())[0]
+        return [r[key] for r in rows]
+
+
+def _select_from_table(conn, table, limit):
+    with conn.cursor() as cur:
+        try:
+            cur.execute(
+                f"SELECT * FROM `{table}` ORDER BY id DESC LIMIT %s",
+                (limit,),
+            )
+        except (mysql_err.ProgrammingError, mysql_err.OperationalError):
+            cur.execute(f"SELECT * FROM `{table}` LIMIT %s", (limit,))
+        rows = cur.fetchall()
+    columns = list(rows[0].keys()) if rows else []
+    return columns, rows
+
+
+def _render(table, limit, all_tables, columns, rows, error):
+    return render_template(
+        "manage.html",
+        error=error,
+        columns=columns,
+        rows=rows,
+        table=table or "",
+        limit=limit,
+        all_tables=sorted(all_tables),
+        limits=_MANAGE_LIMIT_CHOICES,
+    )
 
 
 @app.route("/health")
@@ -49,9 +86,7 @@ def health():
 
 @app.route("/manage")
 def manage_dashboard():
-    table = (request.args.get("table") or "mall_sites").strip()
-    if table not in _MANAGE_ALLOWED_TABLES:
-        table = "mall_sites"
+    raw_table = (request.args.get("table") or "").strip()
     try:
         limit = int(request.args.get("limit", 200))
     except (TypeError, ValueError):
@@ -62,40 +97,51 @@ def manage_dashboard():
     try:
         conn = pymysql.connect(**DB_CONFIG)
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT * FROM `{table}` ORDER BY id DESC LIMIT %s",
-                    (limit,),
+            all_tables = _fetch_table_names(conn)
+            if not raw_table:
+                return _render("", limit, all_tables, [], [], None)
+
+            if raw_table not in all_tables:
+                return (
+                    _render(
+                        raw_table,
+                        limit,
+                        all_tables,
+                        [],
+                        [],
+                        f"존재하지 않는 테이블입니다: {raw_table}",
+                    ),
+                    400,
                 )
-                rows = cur.fetchall()
+
+            columns, rows = _select_from_table(conn, raw_table, limit)
         finally:
             conn.close()
-        columns = list(rows[0].keys()) if rows else []
     except Exception as e:
+        conn = None
+        try:
+            conn = pymysql.connect(**DB_CONFIG)
+            all_tables = _fetch_table_names(conn)
+        except Exception:
+            all_tables = []
+        finally:
+            if conn:
+                conn.close()
         return (
             render_template(
                 "manage.html",
                 error=str(e),
                 columns=[],
                 rows=[],
-                table=table,
+                table=raw_table or "",
                 limit=limit,
-                allowed_tables=sorted(_MANAGE_ALLOWED_TABLES),
+                all_tables=sorted(all_tables),
                 limits=_MANAGE_LIMIT_CHOICES,
             ),
             500,
         )
 
-    return render_template(
-        "manage.html",
-        error=None,
-        columns=columns,
-        rows=rows,
-        table=table,
-        limit=limit,
-        allowed_tables=sorted(_MANAGE_ALLOWED_TABLES),
-        limits=_MANAGE_LIMIT_CHOICES,
-    )
+    return _render(raw_table, limit, all_tables, columns, rows, None)
 
 
 if __name__ == "__main__":
