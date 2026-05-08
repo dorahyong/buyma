@@ -9,11 +9,12 @@
   <div class="topbar">
     <h1>바이마 출품목록관리</h1>
     <div class="right">
-      <div class="filters" id="filters"></div>
       <span class="meta" id="meta">데이터 로드 중…</span>
       <input type="text" id="search" placeholder="상품명 / 품번 / 상품ID 검색">
     </div>
   </div>
+
+  <div class="tabs" id="filters"></div>
 
   <div id="content"></div>
 
@@ -25,7 +26,7 @@
     </div>
   </div>
 
-  <script src="./merged_latest.js"></script>
+  <script src="./products_data.js"></script>
   <script>
     // =======================================================
     // 컬럼 정의 (기획문서 1~26번; 27번 출품제외요청은 보류)
@@ -547,6 +548,6 @@
       renderAll();
     }
   </script>
-  <script src="./merged_latest.js"></script>
+  <script src="./products_data.js"></script>
 </body>
 </html>
