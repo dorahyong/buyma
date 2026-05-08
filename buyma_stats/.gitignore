@@ -1,0 +1,4 @@
+# 수집기가 만들어내는 데이터 파일은 git에 올리지 않음 (코드만 추적)
+*_latest.json
+*_latest.js
+buyma_self_stats_2*.json

@@ -22,11 +22,12 @@ import os
 import pymysql
 from pymysql import err as mysql_err
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, send_from_directory
 
 load_dotenv()
 
 _BASE_DIR = Path(__file__).resolve().parent
+_STATS_DIR = _BASE_DIR.parent / "buyma_stats"
 app = Flask(__name__, template_folder=str(_BASE_DIR / "templates"))
 
 DB_CONFIG = {
@@ -82,6 +83,16 @@ def _render(table, limit, all_tables, columns, rows, error):
 @app.route("/health")
 def health():
     return jsonify({"status": "ok", "service": "manage_server"}), 200
+
+
+@app.route("/manage/products/")
+def manage_products_view():
+    return send_from_directory(_STATS_DIR, "products.html")
+
+
+@app.route("/manage/products/<path:filename>")
+def manage_products_assets(filename):
+    return send_from_directory(_STATS_DIR, filename)
 
 
 @app.route("/manage")
