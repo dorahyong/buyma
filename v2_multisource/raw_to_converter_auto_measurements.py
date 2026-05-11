@@ -1024,6 +1024,7 @@ class RawToAceConverter:
                 FROM raw_scraped_data r
                 LEFT JOIN ace_products a ON r.id = a.raw_data_id
                 WHERE 1=1
+                  AND (r.product_name IS NULL OR r.product_name NOT LIKE '%하자%')
             """
             params = {}
             if raw_id:

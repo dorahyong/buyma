@@ -1022,6 +1022,7 @@ class RawToAceConverter:
                 FROM raw_scraped_data r
                 LEFT JOIN ace_products a ON r.id = a.raw_data_id
                 WHERE r.source_site = :source_site
+                  AND (r.product_name IS NULL OR r.product_name NOT LIKE '%하자%')
             """
             params = {'source_site': self.source_site}
             if raw_id:

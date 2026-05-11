@@ -1052,6 +1052,7 @@ class RawToAceConverter:
                            r.raw_json_data, r.product_url, r.created_at, r.updated_at
                     FROM raw_scraped_data r
                     WHERE r.id = :raw_id
+                      AND (r.product_name IS NULL OR r.product_name NOT LIKE '%하자%')
                 """
                 params = {'raw_id': raw_id}
             else:
@@ -1076,12 +1077,14 @@ class RawToAceConverter:
                                    ) as rn
                             FROM raw_scraped_data
                             WHERE model_id IS NOT NULL
+                              AND (product_name IS NULL OR product_name NOT LIKE '%하자%')
                         ) ranked
                         WHERE rn = 1
                         GROUP BY model_id
                     ) best ON r.id = best.best_id
                     LEFT JOIN ace_products a ON a.model_no = r.model_id
                     WHERE 1=1
+                      AND (r.product_name IS NULL OR r.product_name NOT LIKE '%하자%')
                 """
                 params = {}
 
