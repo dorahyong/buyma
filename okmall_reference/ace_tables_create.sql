@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS `mall_categories` (
     `depth2`           VARCHAR(100) NULL DEFAULT NULL,
     `depth3`           VARCHAR(100) NULL DEFAULT NULL,
     `full_path`        VARCHAR(255) NULL DEFAULT NULL,
+    `mall_category_url` VARCHAR(200) NULL DEFAULT NULL,
     `buyma_category_id` INT(11)    NULL DEFAULT NULL,
     `is_active`        TINYINT(1)  NULL DEFAULT 1,
     `created_at`       TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
