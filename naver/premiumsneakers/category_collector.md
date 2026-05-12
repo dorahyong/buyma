@@ -100,7 +100,7 @@ premiumsneakers_category_collector.py
 
 **import 재사용 (기존 파일 수정 0)**:
 - `set_source`, `fetch_detail`, `map_to_row`, `save_rows`
-- `get_existing_product_ids`, `absolute_url`, `login_and_save_cookies`
+- `get_published_product_ids`, `absolute_url`, `login_and_save_cookies`
 - `COOKIE_FILE`, `DETAIL_MAX_RETRIES`
 
 ## 7. 사용법

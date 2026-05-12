@@ -21,7 +21,7 @@
     python premiumsneakers_collector.py --brand "Balenciaga"         # 특정 브랜드만
     python premiumsneakers_collector.py --limit 5 --dry-run          # 소량 테스트
     python premiumsneakers_collector.py                              # 전체 수집
-    python premiumsneakers_collector.py --skip-existing              # 기존 수집 상품 제외
+    python premiumsneakers_collector.py --skip-existing              # 등록 완료 상품만 스킵 (신규+미등록 수집)
 """
 
 import os
@@ -110,11 +110,16 @@ def get_brands(brand_filter: Optional[str] = None) -> List[Dict]:
         return [{'name': r[0], 'url': r[1], 'brand_no': r[2]} for r in rows]
 
 
-def get_existing_product_ids() -> set:
+def get_published_product_ids() -> set:
+    """ace_products.is_published=1 인 상품의 mall_product_id 조회 (등록 완료 상품만 스킵 대상)"""
     with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT mall_product_id FROM raw_scraped_data WHERE source_site = :site"
-        ), {'site': SOURCE_SITE}).fetchall()
+        rows = conn.execute(text("""
+            SELECT r.mall_product_id
+            FROM raw_scraped_data r
+            INNER JOIN ace_products a ON r.id = a.raw_data_id
+            WHERE r.source_site = :site
+            AND a.is_published = 1
+        """), {'site': SOURCE_SITE}).fetchall()
         return {str(r[0]) for r in rows}
 
 
@@ -380,7 +385,7 @@ async def fetch_detail(page, product_no: str) -> Tuple[Optional[Dict], Optional[
     try:
         detail_url = f"{STORE_HOME}/products/{product_no}"
         try:
-            await page.goto(detail_url, timeout=30000)
+            await page.goto(detail_url, referer=STORE_HOME, timeout=30000)
             await page.wait_for_load_state('domcontentloaded', timeout=10000)
             try:
                 await page.wait_for_load_state('networkidle', timeout=8000)
@@ -585,7 +590,7 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
         logger.warning("mall_brands에 브랜드 없음. scan_store_brands.py로 먼저 수집하세요.")
         return
 
-    skip_ids = get_existing_product_ids() if skip_existing else set()
+    skip_ids = get_published_product_ids() if skip_existing else set()
     if skip_existing:
         logger.info(f"기존 수집: {len(skip_ids)}개 (스킵)")
 
@@ -684,7 +689,7 @@ def main():
     parser.add_argument('--brand', type=str, help='특정 브랜드만 (UPPER 매칭)')
     parser.add_argument('--limit', type=int, help='최대 수집 상품 수')
     parser.add_argument('--dry-run', action='store_true', help='DB 저장 없이 테스트')
-    parser.add_argument('--skip-existing', action='store_true', help='기존 수집 상품 스킵')
+    parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품만 스킵 (신규+미등록 상품 수집)')
     parser.add_argument('--login', action='store_true', help='네이버 로그인 → 쿠키 갱신')
     parser.add_argument('--dump', action='store_true', help='수집된 첫 행의 raw_json_data 전체 출력 (dry-run 전용)')
     parser.add_argument('--count', action='store_true', help='Phase 1만 실행 — 브랜드별 상품 수만 집계 후 종료')

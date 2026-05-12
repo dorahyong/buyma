@@ -34,7 +34,7 @@ brand_store_collector.py
 ```
 
 **`premiumsneakers_collector.py`에서 import (재사용)**:
-- `set_source`, `login_and_save_cookies`, `get_brands`, `get_existing_product_ids`
+- `set_source`, `login_and_save_cookies`, `get_brands`, `get_published_product_ids`
 - `collect_product_list` (브랜드 URL 순회 + 클릭 페이지네이션)
 - `map_to_row`, `save_rows`, `absolute_url`, `COOKIE_FILE`, `DETAIL_MAX_RETRIES`
 

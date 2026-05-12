@@ -11,7 +11,7 @@
 
 공유 컴포넌트 재사용:
   - set_source, login_and_save_cookies, map_to_row, save_rows
-  - get_brands, get_existing_product_ids, absolute_url, COOKIE_FILE
+  - get_brands, get_published_product_ids, absolute_url, COOKIE_FILE
   - collect_product_list (브랜드 URL 순회 + 클릭 페이지네이션)
   - DETAIL_MAX_RETRIES
 
@@ -37,7 +37,7 @@ from premiumsneakers_collector import (
     set_source,
     login_and_save_cookies,
     get_brands,
-    get_existing_product_ids,
+    get_published_product_ids,
     save_rows,
     map_to_row,
     collect_product_list,
@@ -130,7 +130,7 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
         logger.warning(f"mall_brands에 '{base.SOURCE_SITE}' 브랜드 없음.")
         return
 
-    skip_ids = get_existing_product_ids() if skip_existing else set()
+    skip_ids = get_published_product_ids() if skip_existing else set()
     if skip_existing:
         logger.info(f"기존 수집: {len(skip_ids)}개 (스킵)")
 
@@ -228,7 +228,7 @@ def main():
     parser.add_argument('--brand', type=str, help='특정 브랜드만 (UPPER 매칭)')
     parser.add_argument('--limit', type=int, help='최대 수집 상품 수')
     parser.add_argument('--dry-run', action='store_true', help='DB 저장 없이 테스트')
-    parser.add_argument('--skip-existing', action='store_true', help='기존 수집 상품 스킵')
+    parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품만 스킵 (신규+미등록 상품 수집)')
     parser.add_argument('--login', action='store_true', help='네이버 로그인 → 쿠키 갱신')
     parser.add_argument('--dump', action='store_true', help='수집된 첫 행의 raw_json_data 전체 출력')
     parser.add_argument('--count', action='store_true', help='Phase 1만 실행 — 브랜드별 상품 수 집계')

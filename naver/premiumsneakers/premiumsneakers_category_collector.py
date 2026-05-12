@@ -11,7 +11,7 @@
   - 상품 상세에서 brand/category를 추출 → mall_brands/mall_categories 자동 INSERT
 
 공유 컴포넌트는 premiumsneakers_collector에서 import:
-  - set_source, fetch_detail, map_to_row, save_rows, get_existing_product_ids
+  - set_source, fetch_detail, map_to_row, save_rows, get_published_product_ids
   - absolute_url, login_and_save_cookies, COOKIE_FILE, DETAIL_DELAY, LIST_DELAY, DETAIL_MAX_RETRIES
 
 사용법:
@@ -36,7 +36,7 @@ from premiumsneakers_collector import (
     engine,
     set_source,
     login_and_save_cookies,
-    get_existing_product_ids,
+    get_published_product_ids,
     save_rows,
     fetch_detail,
     map_to_row,
@@ -346,7 +346,7 @@ async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
         logger.error(f"STORE_ALL_PRODUCT_URLS에 '{base.SOURCE_SITE}' 미등록. 코드에 URL 추가 필요.")
         return
 
-    skip_ids = get_existing_product_ids() if skip_existing else set()
+    skip_ids = get_published_product_ids() if skip_existing else set()
     if skip_existing:
         logger.info(f"기존 수집: {len(skip_ids)}개 (스킵)")
 
@@ -505,7 +505,7 @@ def main():
                         help='수집 대상 스토어 예: dmont, tuttobene, thefactor2')
     parser.add_argument('--limit', type=int, help='최대 수집 상품 수')
     parser.add_argument('--dry-run', action='store_true', help='DB 저장 없이 테스트')
-    parser.add_argument('--skip-existing', action='store_true', help='기존 수집 상품 스킵')
+    parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품만 스킵 (신규+미등록 상품 수집)')
     parser.add_argument('--login', action='store_true', help='네이버 로그인 → 쿠키 갱신')
     parser.add_argument('--dump', action='store_true', help='수집된 첫 행의 raw_json_data 전체 출력')
     parser.add_argument('--count', action='store_true', help='Phase 1만 실행 — 총 상품 수 집계')
