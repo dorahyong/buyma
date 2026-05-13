@@ -24,6 +24,8 @@ from pymysql import err as mysql_err
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
+from products_api import CACHE_PATH, build_and_save_cache
+
 load_dotenv()
 
 _BASE_DIR = Path(__file__).resolve().parent
@@ -88,6 +90,27 @@ def health():
 @app.route("/manage/products/")
 def manage_products_view():
     return send_from_directory(_STATS_DIR, "products.html")
+
+
+@app.route("/manage/products/data.json")
+def manage_products_data():
+    """products.html이 fetch로 받아 가는 데이터.
+
+    매번 5만 행 머지를 하지 않고, 크롤러가 만들어둔 캐시 파일을 그대로 응답.
+    캐시 파일이 없으면 (= 한 번도 머지된 적 없음) 즉석 빌드 후 응답.
+    """
+    if not CACHE_PATH.exists():
+        db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+        try:
+            build_and_save_cache(db_cfg)
+        except Exception as e:
+            return jsonify({"error": f"캐시 생성 실패: {e}",
+                            "items": [], "count": 0}), 500
+    return send_from_directory(
+        str(CACHE_PATH.parent),
+        CACHE_PATH.name,
+        mimetype='application/json',
+    )
 
 
 @app.route("/manage/products/<path:filename>")

@@ -41,8 +41,10 @@ import argparse
 from datetime import datetime
 from typing import Dict, List, Optional
 
+import pymysql
 import requests as req_lib
 from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
 # 표준 출력 인코딩 (윈도우 환경 대응)
 if sys.platform == 'win32':
@@ -57,12 +59,14 @@ if sys.platform == 'win32':
 
 BUYMA_BASE_URL = "https://www.buyma.com"
 
-# 출품 중(전시목록) 리스트. tab=b 화면이 호출하는 SSR URL과 동일한 파라미터셋.
+# 셀러 전시목록 — 전체 상태(출품중·정지·종료 등 모두) 한 번에 긁어옴.
+# 이전 버전은 &status=for_sale 이 박혀 있어 출품중만 11,300건 정도만 잡혔음.
+# status 파라미터를 빼면 셀러페이지의 "전체" 탭(약 460+ 페이지)이 잡힘.
 BUYMA_LIST_URL_TEMPLATE = (
     "{base}/my/sell?duty_kind=all"
     "&facet=brand_id%2Ccate_pivot%2Cstatus%2Ctag_ids%2Cshop_labels%2Cstock_state"
     "&order=desc&page={{page}}&rows=100&sale_kind=all&sort=item_id"
-    "&status=for_sale&timesale_kind=all"
+    "&timesale_kind=all"
 ).format(base=BUYMA_BASE_URL)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -72,8 +76,19 @@ COOKIE_FILE = os.path.normpath(
     os.path.join(SCRIPT_DIR, '..', 'buyma_cleaners', 'buyma_cookies.json')
 )
 
-OUTPUT_DIR = SCRIPT_DIR
 CRAWL_DELAY = 1.0
+
+load_dotenv(os.path.join(os.path.dirname(SCRIPT_DIR), '.env'))
+
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST'),
+    'port': int(os.getenv('DB_PORT', 3306)),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_NAME'),
+    'charset': 'utf8mb4',
+    'autocommit': False,
+}
 
 
 def log(msg: str, level: str = "INFO") -> None:
@@ -188,24 +203,55 @@ def parse_row(tr) -> Optional[Dict]:
 # 크롤링
 # =====================================================
 
-def crawl_all(session: req_lib.Session, max_pages: Optional[int] = None) -> List[Dict]:
+PAGE_TIMEOUT = 60       # 한 페이지 요청 타임아웃(초)
+PAGE_RETRY = 3          # 페이지당 재시도 횟수
+RETRY_BACKOFF = 5       # 재시도 사이 대기(초). 1차 5s, 2차 10s 식으로 증가
+
+
+def _fetch_page(session: req_lib.Session, url: str, page_num: int):
+    """한 페이지 요청. 재시도 + 백오프. 끝까지 실패하면 None."""
+    last_err = None
+    for attempt in range(1, PAGE_RETRY + 1):
+        try:
+            resp = session.get(url, timeout=PAGE_TIMEOUT)
+            resp.raise_for_status()
+            return resp
+        except req_lib.RequestException as e:
+            last_err = e
+            wait = RETRY_BACKOFF * attempt
+            log(f"  ↻ 페이지 {page_num} 시도 {attempt}/{PAGE_RETRY} 실패 ({e}). {wait}s 대기 후 재시도", "WARN")
+            time.sleep(wait)
+    log(f"  ✗ 페이지 {page_num} 최종 실패: {last_err}", "ERROR")
+    return None
+
+
+def crawl_all(session: req_lib.Session,
+              max_pages: Optional[int] = None,
+              start_page: int = 1) -> List[Dict]:
     all_rows: List[Dict] = []
-    page_num = 1
+    page_num = start_page
+    consecutive_failures = 0
+    end_page = (start_page + max_pages - 1) if max_pages else None
 
     while True:
-        if max_pages and page_num > max_pages:
-            log(f"max-pages={max_pages} 도달. 중단")
+        if end_page and page_num > end_page:
+            log(f"max-pages={max_pages} (페이지 {start_page}~{end_page}) 도달. 중단")
             break
 
         url = BUYMA_LIST_URL_TEMPLATE.format(page=page_num)
         log(f"페이지 {page_num} 요청...")
 
-        try:
-            resp = session.get(url, timeout=30)
-            resp.raise_for_status()
-        except req_lib.RequestException as e:
-            log(f"요청 실패: {e}", "ERROR")
-            break
+        resp = _fetch_page(session, url, page_num)
+        if resp is None:
+            consecutive_failures += 1
+            # 연속 3 페이지 실패면 진짜 끝난 것으로 보고 중단
+            if consecutive_failures >= 3:
+                log("연속 3페이지 실패. 크롤 종료.", "ERROR")
+                break
+            page_num += 1
+            time.sleep(CRAWL_DELAY)
+            continue
+        consecutive_failures = 0
 
         if '/login' in resp.url:
             log("세션 만료. cleaner 쪽에서 --login 다시 실행 필요.", "ERROR")
@@ -238,56 +284,125 @@ def crawl_all(session: req_lib.Session, max_pages: Optional[int] = None) -> List
 
 
 # =====================================================
+# DB UPSERT
+# =====================================================
+
+def _fetch_ace_id_map(conn, buyma_ids: List[str]) -> Dict[str, int]:
+    """buyma_product_id → ace_products.id 매핑."""
+    if not buyma_ids:
+        return {}
+    out: Dict[str, int] = {}
+    # IN 절이 너무 길어지지 않게 1000개씩 끊어서 조회
+    uniq = [b for b in {b for b in buyma_ids if b}]
+    for i in range(0, len(uniq), 1000):
+        chunk = uniq[i:i + 1000]
+        placeholders = ','.join(['%s'] * len(chunk))
+        sql = (
+            f"SELECT id, buyma_product_id FROM ace_products "
+            f"WHERE buyma_product_id IN ({placeholders})"
+        )
+        with conn.cursor() as c:
+            c.execute(sql, chunk)
+            for row in c.fetchall():
+                out[str(row[1])] = int(row[0])
+    return out
+
+
+def upsert_stats(rows: List[Dict]) -> None:
+    """크롤링 결과를 buyma_product_stats에 UPSERT."""
+    if not rows:
+        log("UPSERT 대상 없음")
+        return
+
+    log(f"DB 접속 → {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
+    conn = pymysql.connect(**DB_CONFIG)
+    try:
+        # buyma_product_id 별 ace_product_id 매핑 한 번에 가져오기
+        buyma_ids = [r['buyma_product_id'] for r in rows if r.get('buyma_product_id')]
+        ace_map = _fetch_ace_id_map(conn, buyma_ids)
+        log(f"ace_products 매칭: {len(ace_map)} / {len(buyma_ids)}건")
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        sql = """
+            INSERT INTO buyma_product_stats
+                (buyma_product_id, ace_product_id,
+                 access_count, cart_count, favorite_count, stats_collected_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                ace_product_id    = VALUES(ace_product_id),
+                access_count      = VALUES(access_count),
+                cart_count        = VALUES(cart_count),
+                favorite_count    = VALUES(favorite_count),
+                stats_collected_at = VALUES(stats_collected_at)
+        """
+        params = [
+            (
+                r['buyma_product_id'],
+                ace_map.get(r['buyma_product_id']),
+                r.get('access_count'),
+                r.get('cart_count'),
+                r.get('favorite_count'),
+                now,
+            )
+            for r in rows
+            if r.get('buyma_product_id')
+        ]
+
+        with conn.cursor() as c:
+            c.executemany(sql, params)
+        conn.commit()
+        log(f"UPSERT 완료: {len(params)}건 (stats_collected_at={now})")
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# =====================================================
 # main
 # =====================================================
 
 def main():
     parser = argparse.ArgumentParser(
-        description='바이마 셀러 전시목록 통계 수집 (조회/장바구니/찜 + 부가 정보)'
+        description='바이마 셀러 전시목록 통계 수집 → buyma_product_stats UPSERT'
     )
     parser.add_argument('--max-pages', type=int, default=None,
                         help='테스트용: 페이지 N개만 (기본: 전체)')
-    parser.add_argument('--out', type=str, default=None,
-                        help='출력 JSON 경로 (기본: buyma_self_stats_YYYYMMDD_HHMM.json)')
+    parser.add_argument('--start-page', type=int, default=1,
+                        help='시작 페이지 (기본: 1). 중단된 곳부터 이어 받기용')
     args = parser.parse_args()
 
     log("=" * 60)
-    log("바이마 자사 전시목록 통계 수집 시작")
+    log(f"바이마 자사 전시목록 통계 수집 시작 (start_page={args.start_page})")
     log("=" * 60)
 
     session = create_session()
-    rows = crawl_all(session, max_pages=args.max_pages)
+    rows = crawl_all(session,
+                     max_pages=args.max_pages,
+                     start_page=args.start_page)
 
     if not rows:
         log("수집된 데이터 없음")
         return
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M")
-    out_path = args.out or os.path.join(
-        OUTPUT_DIR, f'buyma_self_stats_{ts}.json'
-    )
+    upsert_stats(rows)
 
-    payload = {
-        'collected_at': datetime.now().isoformat(timespec='seconds'),
-        'count': len(rows),
-        'items': rows,
-    }
-    with open(out_path, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-
-    # HTML 프리뷰가 file:// 에서도 읽을 수 있도록 latest 사본을 .json/.js 둘 다 떨굼
-    latest_json = os.path.join(OUTPUT_DIR, 'buyma_self_stats_latest.json')
-    latest_js = os.path.join(OUTPUT_DIR, 'buyma_self_stats_latest.js')
-    with open(latest_json, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-    with open(latest_js, 'w', encoding='utf-8') as f:
-        f.write('window.STATS_DATA = ')
-        json.dump(payload, f, ensure_ascii=False, indent=2)
-        f.write(';\n')
+    # 머지 캐시 파일 갱신 (manage_server/data_cache.json)
+    # 화면(products.html)이 빠르게 받아 가도록 미리 만들어 둠.
+    try:
+        log("DB → 머지 → 캐시 파일 갱신 중...")
+        manage_dir = os.path.join(os.path.dirname(SCRIPT_DIR), 'manage_server')
+        sys.path.insert(0, manage_dir)
+        from products_api import build_and_save_cache, CACHE_PATH
+        cache_db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'autocommit'}
+        payload = build_and_save_cache(cache_db_cfg)
+        log(f"캐시 저장: {payload['count']}건 → {CACHE_PATH}")
+    except Exception as e:
+        log(f"캐시 갱신 실패 (수동으로 manage_server/build_cache.py 실행 필요): {e}", "WARN")
 
     log("=" * 60)
-    log(f"완료: {len(rows)}건 → {out_path}")
-    log(f"        latest 사본 → {os.path.basename(latest_json)}, {os.path.basename(latest_js)}")
+    log(f"완료: 크롤 {len(rows)}건 → DB 반영")
     log("=" * 60)
 
 

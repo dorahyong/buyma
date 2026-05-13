@@ -26,11 +26,11 @@
     </div>
   </div>
 
-  <script src="./products_data.js"></script>
   <script>
     // =======================================================
     // 컬럼 정의 (기획문서 1~26번; 27번 출품제외요청은 보류)
-    // 데이터는 build_merged_dataset.py 가 만든 머지 구조 기준 (행 = model_id)
+    // 데이터는 /manage/products/data.json (manage_server/products_api.py)
+    // 에서 fetch로 받아옴. (행 = model_id)
     // =======================================================
     const COLS = [
       { key: 'image',       label: '이미지',
@@ -222,8 +222,8 @@
     // =======================================================
     // 상태
     // =======================================================
-    let DATA = (window.STATS_DATA && window.STATS_DATA.items) || [];
-    let META = window.STATS_DATA || {};
+    let DATA = [];   // 부팅 시 data.json 으로 채워짐
+    let META = {};
     let sortState = { key: null, dir: null };
     let searchQ = '';
     let statusFilter = 'all';   // all | on_sale | waiting | no_lowest | sold_out | unknown
@@ -535,19 +535,32 @@
     document.getElementById('search').oninput = (e) => { searchQ = e.target.value.trim(); currentPage = 1; renderAll(); };
 
     // =======================================================
-    // 부팅
+    // 부팅: data.json fetch
     // =======================================================
-    if (!window.STATS_DATA) {
-      document.getElementById('content').innerHTML =
-        '<div class="empty-state">머지 데이터가 없습니다.<br><br>' +
-        '먼저 다음을 순서대로 실행해주세요:<br><br>' +
-        '<code>python3 buyma_self_stats_collector.py</code><br>' +
-        '<code>python3 build_merged_dataset.py --limit 200</code></div>';
-      document.getElementById('meta').textContent = '데이터 없음';
-    } else {
-      renderAll();
-    }
+    document.getElementById('meta').textContent = '데이터 로드 중…';
+    fetch('./data.json', { cache: 'no-store' })
+      .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(data => {
+        DATA = data.items || [];
+        META = data;
+        if (!DATA.length) {
+          document.getElementById('content').innerHTML =
+            '<div class="empty-state">데이터가 없습니다. 크롤러가 한 번도 안 돈 상태일 수 있어요.</div>';
+          document.getElementById('meta').textContent = '데이터 없음';
+          return;
+        }
+        renderAll();
+      })
+      .catch(err => {
+        document.getElementById('content').innerHTML =
+          '<div class="empty-state">데이터 로드 실패<br><br>' +
+          '<code>' + esc(err.message) + '</code><br><br>' +
+          'manage_server가 떠 있는지, /manage/products/data.json 응답이 정상인지 확인해주세요.</div>';
+        document.getElementById('meta').textContent = '로드 실패';
+      });
   </script>
-  <script src="./products_data.js"></script>
 </body>
 </html>
