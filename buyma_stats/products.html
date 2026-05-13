@@ -35,7 +35,7 @@
     const COLS = [
       { key: 'image',       label: '이미지',
         render: (r) => r.image_url
-          ? `<img class="thumb" src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async" width="44" height="44" onclick='openModal("image", ${JSON.stringify(r.model_id)})'>`
+          ? `<img class="thumb" src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async" width="44" height="44" data-tip="수집된 상품의 이미지입니다.&#10;클릭하면 이 상품의 모든 이미지를 볼 수 있습니다." onclick='openModal("image", ${JSON.stringify(r.model_id)})'>`
           : '<span class="placeholder">—</span>' },
 
       { key: 'status',      label: '상태',
@@ -437,14 +437,31 @@
            <td>${img.source_url ? `<a class="product-link" href="${esc(img.source_url)}" target="_blank">원본 ↗</a>` : '—'}</td>
          </tr>`
       ).join('');
+      const tipPreview =
+        '현재는 상품 이미지 외에는 수집하지 않습니다.\n' +
+        '수집처의 상품 페이지에는 공식 상품 사진 외에도 실측표, 배송 안내, 매장 로고처럼 사용할 수 없는 이미지가 함께 올라가 있습니다.\n' +
+        '그중 저작권상 문제없이 사용할 수 있는 공식 상품 이미지만 자동으로 골라 수집합니다.\n' +
+        '따라서 현재 수집된 모든 이미지는 바이마 등록에 활용 가능한 이미지입니다.';
+      const tipUse =
+        '이 이미지가 바이마에 실제로 업로드되어 출품에 활용되고 있는지를 나타냅니다.\n' +
+        '- 사용: 출품에 활용 중인 이미지\n' +
+        '- 미사용: 수집은 됐지만 바이마에 업로드되지 않은 이미지';
+      const tipSource = '수집하지 않는 데이터입니다.';
+      const tipLink =
+        '이 이미지가 게시된 소싱처의 원본 상품 페이지 링크입니다.\n' +
+        '클릭하면 새 창에서 열립니다.';
+      const tipIcon = (t) => `<span class="help-tip" data-tip="${esc(t)}">?</span>`;
       return `
         <table>
-          <thead><tr><th>순서</th><th>미리보기</th><th>사용여부</th><th>출처명</th><th>원본 링크</th></tr></thead>
+          <thead><tr>
+            <th>순서</th>
+            <th>미리보기${tipIcon(tipPreview)}</th>
+            <th>사용여부${tipIcon(tipUse)}</th>
+            <th>출처명${tipIcon(tipSource)}</th>
+            <th>원본 링크${tipIcon(tipLink)}</th>
+          </tr></thead>
           <tbody>${rows}</tbody>
-        </table>
-        <div class="placeholder-note" style="margin-top:12px">
-          ※ "출처명" 컬럼은 이미지별 출처 정보가 별도 테이블/필드로 들어오면 채워집니다 (현재 ace_product_images에 저장되지 않음).
-        </div>`;
+        </table>`;
     }
 
     function modalSources(r) {
@@ -533,6 +550,43 @@
     document.getElementById('modal').onclick = (e) => { if (e.target.id === 'modal') document.getElementById('modal').classList.remove('open'); };
 
     document.getElementById('search').oninput = (e) => { searchQ = e.target.value.trim(); currentPage = 1; renderAll(); };
+
+    // =======================================================
+    // 도움말 툴팁 — 모달 overflow에 잘리지 않도록 body에 띄움
+    // =======================================================
+    (function setupHelpTips() {
+      const popup = document.createElement('div');
+      popup.className = 'help-tip-popup';
+      document.body.appendChild(popup);
+      const hide = () => { popup.style.display = 'none'; };
+      document.body.addEventListener('mouseover', (e) => {
+        const t = e.target.closest('[data-tip]');
+        if (!t || t.classList.contains('warn-mismatch')) return;
+        const tip = t.getAttribute('data-tip') || '';
+        if (!tip) return;
+        popup.textContent = tip;
+        popup.style.display = 'block';
+        // 위치 계산 (아이콘 아래 중앙, 화면 밖 클램프)
+        const r = t.getBoundingClientRect();
+        const tw = popup.offsetWidth;
+        const th = popup.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        let left = r.left + r.width / 2 - tw / 2;
+        left = Math.max(8, Math.min(left, vw - tw - 8));
+        let top = r.bottom + 6;
+        // 아래로 넘치면 위쪽에 표시
+        if (top + th > vh - 8) top = r.top - th - 6;
+        popup.style.left = left + 'px';
+        popup.style.top = top + 'px';
+      });
+      document.body.addEventListener('mouseout', (e) => {
+        const t = e.target.closest('[data-tip]');
+        if (t && !t.classList.contains('warn-mismatch')) hide();
+      });
+      // 모달 닫히거나 스크롤 시 숨김
+      window.addEventListener('scroll', hide, true);
+    })();
 
     // =======================================================
     // 부팅: data.json fetch

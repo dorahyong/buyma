@@ -66,6 +66,31 @@ td.name div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   z-index: 200;
   pointer-events: none;
 }
+.help-tip {
+  display: inline-block; margin-left: 4px;
+  width: 14px; height: 14px; line-height: 14px;
+  font-size: 10px; font-weight: 700; text-align: center;
+  background: #b0b6bd; color: #fff; border-radius: 50%;
+  cursor: help; user-select: none; vertical-align: middle;
+}
+.help-tip:hover { background: #2c2c2c; }
+.help-tip-popup {
+  position: fixed;
+  display: none;
+  background: #2c2c2c;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: pre-line;
+  max-width: 300px;
+  z-index: 9999;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  text-align: left;
+}
 a.product-link { color: #2962ff; text-decoration: none; }
 a.product-link:hover { text-decoration: underline; }
 
