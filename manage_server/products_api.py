@@ -77,72 +77,56 @@ def _fetch_raw_aggregated(conn) -> List[Dict]:
         return c.fetchall()
 
 
-def _fetch_ace_products(conn, model_ids: List[str]) -> List[Dict]:
-    if not model_ids:
-        return []
-    out: List[Dict] = []
-    for chunk in _chunked(list({m for m in model_ids if m}), 1000):
-        placeholders = ','.join(['%s'] * len(chunk))
-        sql = f"""
-            SELECT id, model_no, name, buyma_product_id,
-                   is_active, is_published, is_ready_to_publish, is_lowest_price,
-                   buyma_lowest_price, buyma_lowest_price_checked_at,
-                   price, margin_amount_krw, margin_rate,
-                   available_until, buyma_registered_at
-            FROM ace_products
-            WHERE model_no IN ({placeholders})
-        """
-        with conn.cursor() as c:
-            c.execute(sql, list(chunk))
-            out.extend(c.fetchall())
-    return out
+def _fetch_ace_products(conn) -> List[Dict]:
+    """ace_products 풀스캔 — IN-chunk 누적보다 6배 빠름 (인덱스 풀스캔)."""
+    sql = """
+        SELECT id, model_no, name, buyma_product_id,
+               is_active, is_published, is_ready_to_publish, is_lowest_price,
+               buyma_lowest_price, buyma_lowest_price_checked_at,
+               price, margin_amount_krw, margin_rate,
+               available_until, buyma_registered_at
+        FROM ace_products
+        WHERE model_no IS NOT NULL AND model_no != ''
+    """
+    with conn.cursor() as c:
+        c.execute(sql)
+        return c.fetchall()
 
 
-def _fetch_first_images(conn, ace_ids: List[int]) -> Dict[int, Dict]:
-    """ace_product_id → 첫 번째 이미지 행 (position 기준, correlated subquery 없음)."""
-    if not ace_ids:
-        return {}
+def _fetch_first_images(conn) -> Dict[int, Dict]:
+    """ace_product_id → 첫 번째 이미지 (position 최소). 풀스캔 GROUP BY."""
+    sql = """
+        SELECT img.ace_product_id,
+               img.cloudflare_image_url,
+               img.source_image_url
+        FROM ace_product_images img
+        INNER JOIN (
+            SELECT ace_product_id, MIN(position) AS min_pos
+            FROM ace_product_images
+            GROUP BY ace_product_id
+        ) t ON img.ace_product_id = t.ace_product_id
+           AND img.position = t.min_pos
+    """
     out: Dict[int, Dict] = {}
-    for chunk in _chunked(ace_ids, 1000):
-        placeholders = ','.join(['%s'] * len(chunk))
-        sql = f"""
-            SELECT img.ace_product_id,
-                   img.cloudflare_image_url,
-                   img.source_image_url
-            FROM ace_product_images img
-            INNER JOIN (
-                SELECT ace_product_id, MIN(position) AS min_pos
-                FROM ace_product_images
-                WHERE ace_product_id IN ({placeholders})
-                GROUP BY ace_product_id
-            ) t ON img.ace_product_id = t.ace_product_id
-               AND img.position = t.min_pos
-            WHERE img.ace_product_id IN ({placeholders})
-        """
-        with conn.cursor() as c:
-            c.execute(sql, list(chunk) * 2)
-            for r in c.fetchall():
-                out[r['ace_product_id']] = r
+    with conn.cursor() as c:
+        c.execute(sql)
+        for r in c.fetchall():
+            out[r['ace_product_id']] = r
     return out
 
 
-def _fetch_buyma_stats(conn, bp_ids: List[str]) -> Dict[str, Dict]:
-    """buyma_product_id → 통계 dict. 해당 ID만 조회."""
-    if not bp_ids:
-        return {}
+def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
+    """buyma_product_id → 통계 dict. 풀스캔."""
+    sql = """
+        SELECT buyma_product_id, access_count, cart_count,
+               favorite_count, access_7d
+        FROM buyma_product_stats
+    """
     out: Dict[str, Dict] = {}
-    for chunk in _chunked(bp_ids, 1000):
-        placeholders = ','.join(['%s'] * len(chunk))
-        sql = f"""
-            SELECT buyma_product_id, access_count, cart_count,
-                   favorite_count, access_7d
-            FROM buyma_product_stats
-            WHERE buyma_product_id IN ({placeholders})
-        """
-        with conn.cursor() as c:
-            c.execute(sql, list(chunk))
-            for r in c.fetchall():
-                out[str(r['buyma_product_id'])] = r
+    with conn.cursor() as c:
+        c.execute(sql)
+        for r in c.fetchall():
+            out[str(r['buyma_product_id'])] = r
     return out
 
 
@@ -200,26 +184,22 @@ def build_payload(db_config: Dict) -> Dict:
         # 1. raw 집계 (GROUP BY → N행)
         raw_agg_rows = _fetch_raw_aggregated(conn)
         raw_by_model = {r['model_id']: r for r in raw_agg_rows}
-        model_ids = list(raw_by_model.keys())
 
-        if not model_ids:
+        if not raw_by_model:
             return {'collected_at': datetime.now().isoformat(timespec='seconds'),
                     'count': 0, 'items': []}
 
-        # 2. ace_products
-        ace_rows = _fetch_ace_products(conn, model_ids)
+        # 2. ace_products (풀스캔)
+        ace_rows = _fetch_ace_products(conn)
         ace_by_model: Dict[str, List[Dict]] = defaultdict(list)
         for a in ace_rows:
             ace_by_model[a['model_no']].append(a)
 
-        # 3. 첫 번째 이미지
-        ace_ids = [a['id'] for a in ace_rows]
-        img_by_ace = _fetch_first_images(conn, ace_ids)
+        # 3. 첫 번째 이미지 (풀스캔)
+        img_by_ace = _fetch_first_images(conn)
 
-        # 4. buyma_stats (해당 ID만)
-        bp_ids = [str(a['buyma_product_id'])
-                  for a in ace_rows if a.get('buyma_product_id')]
-        stats_by_pid = _fetch_buyma_stats(conn, bp_ids)
+        # 4. buyma_stats (풀스캔)
+        stats_by_pid = _fetch_buyma_stats(conn)
     finally:
         conn.close()
 

@@ -33,10 +33,7 @@ jobs:
             cd "$REPO_PATH"
             git pull origin main
 
-            # 머지 캐시 갱신 — DB 데이터를 한 번 머지해서 manage_server/data_cache.json 생성.
-            # 매번 화면 요청마다 무거운 머지를 하지 않도록 미리 만들어 둠.
-            # 처음 deploy 시에만 의미 있고, 매일 새벽 cron에서도 갱신될 예정.
-            cd "$REPO_PATH/manage_server"
-            python3 build_cache.py || echo "[WARN] build_cache 실패. 화면 첫 접속 시 즉석 빌드로 폴백됨."
-
+            # manage_server는 시작 시 백그라운드 스레드가 자동으로 캐시를 빌드함.
+            # 재시작 직후 ~1~2분간은 /manage/products/data.json이 503 (loading) 응답,
+            # 클라이언트가 5초 간격으로 자동 재시도.
             sudo systemctl restart buyma-manage

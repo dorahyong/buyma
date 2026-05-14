@@ -603,34 +603,41 @@
     })();
 
     // =======================================================
-    // 부팅: data.json fetch
+    // 부팅: data.json fetch (503 = 캐시 워밍업 중이면 자동 재시도)
     // =======================================================
-    document.getElementById('meta').textContent = '데이터 로드 중…';
     const _limitParam = new URLSearchParams(location.search).get('limit');
     const _dataUrl = _limitParam ? `./data.json?limit=${encodeURIComponent(_limitParam)}` : './data.json';
-    fetch(_dataUrl, { cache: 'no-store' })
-      .then(r => {
+
+    async function loadData(retry = 0) {
+      const meta = document.getElementById('meta');
+      meta.textContent = retry === 0 ? '데이터 로드 중…' : `서버에서 데이터 준비 중… (재시도 ${retry})`;
+      try {
+        const r = await fetch(_dataUrl, { cache: 'no-store' });
+        if (r.status === 503) {
+          // 캐시가 아직 준비 안 됨 — 5초 후 재시도
+          setTimeout(() => loadData(retry + 1), 5000);
+          return;
+        }
         if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      })
-      .then(data => {
+        const data = await r.json();
         DATA = data.items || [];
         META = data;
         if (!DATA.length) {
           document.getElementById('content').innerHTML =
             '<div class="empty-state">데이터가 없습니다. 크롤러가 한 번도 안 돈 상태일 수 있어요.</div>';
-          document.getElementById('meta').textContent = '데이터 없음';
+          meta.textContent = '데이터 없음';
           return;
         }
         renderAll();
-      })
-      .catch(err => {
+      } catch (err) {
         document.getElementById('content').innerHTML =
           '<div class="empty-state">데이터 로드 실패<br><br>' +
           '<code>' + esc(err.message) + '</code><br><br>' +
           'manage_server가 떠 있는지, /manage/products/data.json 응답이 정상인지 확인해주세요.</div>';
-        document.getElementById('meta').textContent = '로드 실패';
-      });
+        meta.textContent = '로드 실패';
+      }
+    }
+    loadData();
   </script>
 </body>
 </html>

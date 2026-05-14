@@ -27,6 +27,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from products_api import build_payload, get_sources, get_images  # noqa: E402
+import products_cache  # noqa: E402
 
 load_dotenv()
 
@@ -43,6 +44,9 @@ DB_CONFIG = {
     "charset": "utf8mb4",
     "cursorclass": pymysql.cursors.DictCursor,
 }
+
+# 부팅 시 캐시 워밍업 시작 (gunicorn import 시점)
+products_cache.start({k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'})
 
 _MANAGE_LIMIT_CHOICES = (50, 100, 200, 500)
 
@@ -96,12 +100,13 @@ def manage_products_view():
 
 @app.route("/manage/products/data.json")
 def manage_products_data():
-    """products.html이 fetch로 받아 가는 데이터. SQL JOIN으로 model_id당 1행 조회."""
-    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
-    try:
-        payload = build_payload(db_cfg)
-    except Exception as e:
-        return jsonify({"error": str(e), "items": [], "count": 0}), 500
+    """products.html이 fetch로 받아 가는 데이터. 메모리 캐시에서 즉시 반환."""
+    payload = products_cache.get()
+    if payload is None:
+        return jsonify({
+            "items": [], "count": 0, "loading": True,
+            "message": "데이터 준비 중입니다. 잠시 후 다시 시도해주세요.",
+        }), 503
     return jsonify(payload)
 
 
