@@ -15,17 +15,11 @@
   unknown       : 위 어디에도 안 걸림
 """
 
-import json
 from collections import defaultdict
 from datetime import datetime
-from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 import pymysql
-
-# 머지된 결과를 보관할 캐시 파일. 크롤러가 끝나면 자동 갱신.
-# API는 이 파일을 그대로 응답 → 매번 5만 행 머지하지 않음.
-CACHE_PATH = Path(__file__).resolve().parent / 'data_cache.json'
 
 STATUS_PRIORITY = ['on_sale', 'waiting', 'no_lowest', 'sold_out', 'unknown']
 
@@ -300,11 +294,3 @@ def build_payload(db_config: Dict, model_id_limit: Optional[int] = None) -> Dict
     }
 
 
-def build_and_save_cache(db_config: Dict) -> Dict:
-    """DB → 머지 → 캐시 파일에 저장. 호출 측에 payload도 반환."""
-    payload = build_payload(db_config)
-    tmp_path = CACHE_PATH.with_suffix('.tmp.json')
-    with open(tmp_path, 'w', encoding='utf-8') as f:
-        json.dump(payload, f, ensure_ascii=False, default=str)
-    tmp_path.replace(CACHE_PATH)   # 원자적 교체 (반쯤 쓴 파일 응답하지 않도록)
-    return payload
