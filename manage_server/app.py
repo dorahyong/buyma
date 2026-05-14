@@ -15,6 +15,7 @@ DB 조회 전용 미니 서버 — 웹훅(okmall_reference/server.py)과 역할 
   같은 .env (DB_HOST, DB_USER, DB_PASSWORD, DB_NAME 등) 사용.
 """
 
+import sys
 from pathlib import Path
 
 import os
@@ -24,7 +25,8 @@ from pymysql import err as mysql_err
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
-from products_api import CACHE_PATH, build_and_save_cache
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from products_api import CACHE_PATH, build_and_save_cache  # noqa: E402
 
 load_dotenv()
 
