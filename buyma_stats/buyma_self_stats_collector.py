@@ -7,21 +7,11 @@
 
 수집 컬럼 (상품 1행당):
   - buyma_product_id
-  - status_code (Sts01 등 raw)
-  - image_url, image_alt
-  - name_ja          (상품명 일본어)
-  - stock            (재고)
-  - units_sold       (판매수)
-  - price_yen        (출품가, ¥)
-  - registered_at    ("2026/05/06 10:54")
-  - expire_at        ("2026/05/10")
   - cart_count       (총 장바구니)
   - favorite_count   (총 찜)
   - access_count     (총 액세스)
 
-
-출력: buyma_self_stats_YYYYMMDD_HHMM.json
-백엔드 분이 페이지/DB 만드시면, 이후에 DB UPSERT 분기를 추가하면 됩니다.
+→ buyma_product_stats 테이블에 UPSERT (ace_product_id는 ace_products에서 매핑하여 채움).
 
 로그인 쿠키는 buyma_cleaners/buyma_cookies.json 공유 사용.
 최초 1회 또는 쿠키 만료 시 buyma_cleaners 쪽에서 로그인:
@@ -71,10 +61,11 @@ BUYMA_LIST_URL_TEMPLATE = (
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 쿠키는 buyma_cleaners 폴더와 공유 (cleaner 쪽에서 --login 한 번 하면 같이 적용됨)
-COOKIE_FILE = os.path.normpath(
-    os.path.join(SCRIPT_DIR, '..', 'buyma_cleaners', 'buyma_cookies.json')
-)
+# 이 스크립트 전용 쿠키 (다른 폴더와 공유하지 않음).
+# 갱신: 로컬에서 buyma_cleaners/buyma_orphan_cleaner.py --login 한 결과
+# (buyma_cleaners/buyma_cookies.json) 을 사용자가 직접 이 위치로 복사.
+# EC2 운영 시에는 scp로 같은 경로에 업로드.
+COOKIE_FILE = os.path.join(SCRIPT_DIR, '.buyma_cookies.json')
 
 CRAWL_DELAY = 1.0
 
@@ -103,9 +94,12 @@ def log(msg: str, level: str = "INFO") -> None:
 def create_session() -> req_lib.Session:
     if not os.path.exists(COOKIE_FILE):
         log(f"쿠키 파일 없음: {COOKIE_FILE}", "ERROR")
-        log("buyma_cleaners 쪽에서 먼저 로그인:")
-        log("  cd ../buyma_cleaners && python3 buyma_orphan_cleaner.py --login")
-        sys.exit(1)
+        log("갱신 방법:")
+        log("  1) 로컬에서 buyma_cleaners/buyma_orphan_cleaner.py --login 실행")
+        log("  2) 생성된 buyma_cleaners/buyma_cookies.json 을 이 경로로 복사")
+        log("     → buyma_stats/.buyma_cookies.json")
+        log("  3) EC2 운영 시 scp 로 같은 경로에 업로드")
+        sys.exit(2)  # exit 2 = 쿠키 부재 (cron이 인지 가능)
 
     with open(COOKIE_FILE, 'r', encoding='utf-8') as f:
         pw_cookies = json.load(f)
@@ -143,38 +137,11 @@ def _to_int(s: str) -> Optional[int]:
 
 
 def parse_row(tr) -> Optional[Dict]:
-    """전시목록 한 행 → 통계 dict"""
+    """전시목록 한 행 → 통계 dict (buyma_product_id + 3개 카운트)"""
     cb = tr.select_one('input[name="chkitems"]')
     if not cb or not cb.get('value'):
         return None
     pid = cb['value'].strip()
-
-    # 상태 코드 (Sts01 등 raw값으로 저장; 매핑은 백엔드/DB 단에서)
-    status_el = tr.select_one('[data-item-edit-status]')
-    status_code = status_el['data-item-edit-status'] if status_el else None
-
-    # 대표 이미지
-    img_el = tr.select_one('td.Image48Box img')
-    image_url = img_el['src'] if img_el and img_el.has_attr('src') else None
-    image_alt = img_el['alt'] if img_el and img_el.has_attr('alt') else None
-
-    # 상품명 (일본어 원문 — 페이지 자동번역 끄고 받아와짐)
-    name_ja = _text(tr.select_one('td.item_name p a'))
-
-    # 재고 / 판매수 / 가격
-    stock = _to_int(_text(tr.select_one('.js-list-capacity-amount')))
-    units_sold = _to_int(_text(tr.select_one('.js-list-unit-summary')))
-    price_yen = _to_int(_text(tr.select_one('.js-item-price-display')))
-
-    # 등록일시 — td 전체에 "YYYY/MM/DD\nHH:MM" 형태
-    reg_date_el = tr.select_one('._item_kokaidate_text')
-    registered_at = None
-    if reg_date_el:
-        td = reg_date_el.find_parent('td')
-        registered_at = _text(td) or None
-
-    # 구매기한
-    expire_at = _text(tr.select_one('._item_yukodate_text')) or None
 
     # 장바구니 / 찜 / 액세스 — 헤더 순서와 동일하게 td.txtCenter가 3개 옴
     centers = tr.select('td.txtCenter span.fab-typo-nowrap')
@@ -184,15 +151,6 @@ def parse_row(tr) -> Optional[Dict]:
 
     return {
         'buyma_product_id': pid,
-        'status_code': status_code,
-        'image_url': image_url,
-        'image_alt': image_alt,
-        'name_ja': name_ja,
-        'stock': stock,
-        'units_sold': units_sold,
-        'price_yen': price_yen,
-        'registered_at': registered_at,
-        'expire_at': expire_at,
         'cart_count': cart_count,
         'favorite_count': favorite_count,
         'access_count': access_count,
@@ -254,8 +212,14 @@ def crawl_all(session: req_lib.Session,
         consecutive_failures = 0
 
         if '/login' in resp.url:
-            log("세션 만료. cleaner 쪽에서 --login 다시 실행 필요.", "ERROR")
-            break
+            log("=" * 60, "ERROR")
+            log("세션 만료 — 쿠키가 무효합니다. 배치 중단.", "ERROR")
+            log("갱신 방법:", "ERROR")
+            log("  1) 로컬에서 buyma_cleaners/buyma_orphan_cleaner.py --login", "ERROR")
+            log("  2) 생성된 쿠키를 buyma_stats/.buyma_cookies.json 으로 복사", "ERROR")
+            log("  3) EC2로 scp 업로드", "ERROR")
+            log("=" * 60, "ERROR")
+            sys.exit(3)  # exit 3 = 세션 만료 (cron이 인지 가능)
 
         soup = BeautifulSoup(resp.text, 'html.parser')
         rows = soup.select('tr.js-checkbox-check-row')
@@ -387,19 +351,6 @@ def main():
         return
 
     upsert_stats(rows)
-
-    # 머지 캐시 파일 갱신 (manage_server/data_cache.json)
-    # 화면(products.html)이 빠르게 받아 가도록 미리 만들어 둠.
-    try:
-        log("DB → 머지 → 캐시 파일 갱신 중...")
-        manage_dir = os.path.join(os.path.dirname(SCRIPT_DIR), 'manage_server')
-        sys.path.insert(0, manage_dir)
-        from products_api import build_and_save_cache, CACHE_PATH
-        cache_db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'autocommit'}
-        payload = build_and_save_cache(cache_db_cfg)
-        log(f"캐시 저장: {payload['count']}건 → {CACHE_PATH}")
-    except Exception as e:
-        log(f"캐시 갱신 실패 (수동으로 manage_server/build_cache.py 실행 필요): {e}", "WARN")
 
     log("=" * 60)
     log(f"완료: 크롤 {len(rows)}건 → DB 반영")
