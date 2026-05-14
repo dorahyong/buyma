@@ -592,7 +592,7 @@
     // 부팅: data.json fetch
     // =======================================================
     document.getElementById('meta').textContent = '데이터 로드 중…';
-    fetch('./data.json?limit=100', { cache: 'no-store' })
+    fetch('./data.json', { cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
