@@ -23,7 +23,7 @@ import os
 import pymysql
 from pymysql import err as mysql_err
 from dotenv import load_dotenv
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from products_api import build_payload, get_sources, get_images  # noqa: E402
@@ -100,14 +100,35 @@ def manage_products_view():
 
 @app.route("/manage/products/data.json")
 def manage_products_data():
-    """products.html이 fetch로 받아 가는 데이터. 메모리 캐시에서 즉시 반환."""
-    payload = products_cache.get()
-    if payload is None:
+    """products.html이 fetch로 받아 가는 데이터.
+
+    캐시에 미리 만들어둔 JSON / gzip bytes 를 그대로 송신한다 (직렬화/압축 비용 0).
+    """
+    j, gz = products_cache.get()
+    if j is None:
         return jsonify({
             "items": [], "count": 0, "loading": True,
             "message": "데이터 준비 중입니다. 잠시 후 다시 시도해주세요.",
         }), 503
-    return jsonify(payload)
+    accept = request.headers.get('Accept-Encoding', '')
+    if gz is not None and 'gzip' in accept.lower():
+        return Response(
+            gz,
+            mimetype='application/json',
+            headers={
+                'Content-Encoding': 'gzip',
+                'Content-Length': str(len(gz)),
+                'Vary': 'Accept-Encoding',
+            },
+        )
+    return Response(
+        j,
+        mimetype='application/json',
+        headers={
+            'Content-Length': str(len(j)),
+            'Vary': 'Accept-Encoding',
+        },
+    )
 
 
 @app.route("/manage/products/sources.json")
