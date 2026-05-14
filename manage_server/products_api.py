@@ -99,7 +99,7 @@ def _fetch_ace_products(conn, model_ids: List[str]) -> List[Dict]:
 
 
 def _fetch_first_images(conn, ace_ids: List[int]) -> Dict[int, Dict]:
-    """ace_product_id → 첫 번째 이미지 행 (position 기준)."""
+    """ace_product_id → 첫 번째 이미지 행 (position 기준, correlated subquery 없음)."""
     if not ace_ids:
         return {}
     out: Dict[int, Dict] = {}
@@ -110,14 +110,17 @@ def _fetch_first_images(conn, ace_ids: List[int]) -> Dict[int, Dict]:
                    img.cloudflare_image_url,
                    img.source_image_url
             FROM ace_product_images img
+            INNER JOIN (
+                SELECT ace_product_id, MIN(position) AS min_pos
+                FROM ace_product_images
+                WHERE ace_product_id IN ({placeholders})
+                GROUP BY ace_product_id
+            ) t ON img.ace_product_id = t.ace_product_id
+               AND img.position = t.min_pos
             WHERE img.ace_product_id IN ({placeholders})
-              AND img.position = (
-                  SELECT MIN(position) FROM ace_product_images
-                  WHERE ace_product_id = img.ace_product_id
-              )
         """
         with conn.cursor() as c:
-            c.execute(sql, list(chunk))
+            c.execute(sql, list(chunk) * 2)
             for r in c.fetchall():
                 out[r['ace_product_id']] = r
     return out
