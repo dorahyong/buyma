@@ -592,7 +592,9 @@
     // 부팅: data.json fetch
     // =======================================================
     document.getElementById('meta').textContent = '데이터 로드 중…';
-    fetch('./data.json', { cache: 'no-store' })
+    const _limitParam = new URLSearchParams(location.search).get('limit');
+    const _dataUrl = _limitParam ? `./data.json?limit=${encodeURIComponent(_limitParam)}` : './data.json';
+    fetch(_dataUrl, { cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
