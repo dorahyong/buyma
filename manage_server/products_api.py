@@ -60,7 +60,29 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
-def _fetch_raw_scraped(conn) -> List[Dict]:
+def _fetch_raw_scraped(conn, model_id_limit: Optional[int] = None) -> List[Dict]:
+    if model_id_limit:
+        with conn.cursor() as c:
+            c.execute("""
+                SELECT DISTINCT model_id FROM raw_scraped_data
+                WHERE model_id IS NOT NULL AND model_id != ''
+                LIMIT %s
+            """, (model_id_limit,))
+            limited_ids = [r['model_id'] for r in c.fetchall()]
+        if not limited_ids:
+            return []
+        placeholders = ','.join(['%s'] * len(limited_ids))
+        sql = f"""
+            SELECT id, source_site, mall_product_id, brand_name_en, brand_name_kr,
+                   product_name, p_name_full, model_id, raw_price, stock_status,
+                   product_url, updated_at
+            FROM raw_scraped_data
+            WHERE model_id IN ({placeholders})
+        """
+        with conn.cursor() as c:
+            c.execute(sql, limited_ids)
+            return c.fetchall()
+
     sql = """
         SELECT id, source_site, mall_product_id, brand_name_en, brand_name_kr,
                product_name, p_name_full, model_id, raw_price, stock_status,
@@ -168,11 +190,11 @@ def _detect_db_mismatch(in_seller_listing: bool, ace_rows: List[Dict]) -> Option
     return ', '.join(sorted(flags)) or 'DB 상태 불일치'
 
 
-def build_payload(db_config: Dict) -> Dict:
+def build_payload(db_config: Dict, model_id_limit: Optional[int] = None) -> Dict:
     """products.html이 기대하는 JSON 구조 생성."""
     conn = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
     try:
-        raw_rows = _fetch_raw_scraped(conn)
+        raw_rows = _fetch_raw_scraped(conn, model_id_limit=model_id_limit)
         by_model: Dict[str, List[Dict]] = defaultdict(list)
         for r in raw_rows:
             by_model[r['model_id']].append(r)

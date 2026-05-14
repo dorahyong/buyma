@@ -99,7 +99,9 @@ def manage_products_data():
     """products.html이 fetch로 받아 가는 데이터. DB를 직접 조회해서 응답."""
     db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
     try:
-        payload = build_payload(db_cfg)
+        limit_str = request.args.get('limit')
+        model_id_limit = int(limit_str) if limit_str and limit_str.isdigit() else None
+        payload = build_payload(db_cfg, model_id_limit=model_id_limit)
     except Exception as e:
         return jsonify({"error": str(e), "items": [], "count": 0}), 500
     return jsonify(payload)
