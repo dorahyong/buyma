@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from products_api import build_payload  # noqa: E402
+from products_api import build_payload, get_sources, get_images  # noqa: E402
 
 load_dotenv()
 
@@ -96,15 +96,41 @@ def manage_products_view():
 
 @app.route("/manage/products/data.json")
 def manage_products_data():
-    """products.html이 fetch로 받아 가는 데이터. DB를 직접 조회해서 응답."""
+    """products.html이 fetch로 받아 가는 데이터. SQL JOIN으로 model_id당 1행 조회."""
     db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
     try:
-        limit_str = request.args.get('limit')
-        model_id_limit = int(limit_str) if limit_str and limit_str.isdigit() else None
-        payload = build_payload(db_cfg, model_id_limit=model_id_limit)
+        payload = build_payload(db_cfg)
     except Exception as e:
         return jsonify({"error": str(e), "items": [], "count": 0}), 500
     return jsonify(payload)
+
+
+@app.route("/manage/products/sources.json")
+def manage_products_sources():
+    """sources 팝업용 — ?model_id=XXX"""
+    model_id = request.args.get('model_id', '').strip()
+    if not model_id:
+        return jsonify({"error": "model_id required", "sources": []}), 400
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        sources = get_sources(db_cfg, model_id)
+    except Exception as e:
+        return jsonify({"error": str(e), "sources": []}), 500
+    return jsonify({"model_id": model_id, "sources": sources})
+
+
+@app.route("/manage/products/images.json")
+def manage_products_images():
+    """이미지 팝업용 — ?model_id=XXX"""
+    model_id = request.args.get('model_id', '').strip()
+    if not model_id:
+        return jsonify({"error": "model_id required", "images": []}), 400
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        images = get_images(db_cfg, model_id)
+    except Exception as e:
+        return jsonify({"error": str(e), "images": []}), 500
+    return jsonify({"model_id": model_id, "images": images})
 
 
 @app.route("/manage/products/<path:filename>")

@@ -1,32 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-바이마 출품목록관리 화면(products.html)이 fetch로 받아 가는 JSON 페이로드 생성.
+바이마 출품목록관리 API
 
-데이터 단위: model_id (품번) 1개 = 화면 1행
-  - 같은 품번이 여러 소싱처에 있으면 sources[]에 모임
-  - ace_products는 model_no로 매칭
-  - 바이마 셀러 통계는 buyma_product_stats 테이블에서 buyma_product_id로 매칭
-
-상태 판정 (build_merged_dataset.py와 동일 규칙):
-  on_sale       : 바이마 셀러페이지 노출 중 OR ace.is_published=1 AND is_active=1
-  waiting       : ace.is_ready_to_publish=1 AND ace.is_published=0
-  no_lowest     : ace.is_lowest_price=0 AND ace.is_published=0
-  sold_out      : 모든 raw.stock_status='out_of_stock'
-  unknown       : 위 어디에도 안 걸림
+SQL JOIN + GROUP BY로 model_id당 1행만 조회.
+sources / images 는 팝업 클릭 시 별도 API로 lazy load.
 """
 
-from collections import defaultdict
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, List, Optional
 
 import pymysql
-
-STATUS_PRIORITY = ['on_sale', 'waiting', 'no_lowest', 'sold_out', 'unknown']
-
-
-def _chunked(seq: List, size: int) -> Iterable[List]:
-    for i in range(0, len(seq), size):
-        yield seq[i:i + size]
 
 
 def _iso(v) -> Optional[str]:
@@ -54,237 +37,161 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
-def _fetch_raw_scraped(conn, model_id_limit: Optional[int] = None) -> List[Dict]:
-    if model_id_limit:
-        with conn.cursor() as c:
-            c.execute("""
-                SELECT DISTINCT model_id FROM raw_scraped_data
-                WHERE model_id IS NOT NULL AND model_id != ''
-                LIMIT %s
-            """, (model_id_limit,))
-            limited_ids = [r['model_id'] for r in c.fetchall()]
-        if not limited_ids:
-            return []
-        placeholders = ','.join(['%s'] * len(limited_ids))
-        sql = f"""
-            SELECT id, source_site, mall_product_id, brand_name_en, brand_name_kr,
-                   product_name, p_name_full, model_id, raw_price, stock_status,
-                   product_url, updated_at
-            FROM raw_scraped_data
-            WHERE model_id IN ({placeholders})
-        """
-        with conn.cursor() as c:
-            c.execute(sql, limited_ids)
-            return c.fetchall()
-
-    sql = """
-        SELECT id, source_site, mall_product_id, brand_name_en, brand_name_kr,
-               product_name, p_name_full, model_id, raw_price, stock_status,
-               product_url, updated_at
-        FROM raw_scraped_data
-        WHERE model_id IS NOT NULL AND model_id != ''
-    """
-    with conn.cursor() as c:
-        c.execute(sql)
-        return c.fetchall()
-
-
-def _fetch_ace_products(conn, model_ids: List[str]) -> List[Dict]:
-    if not model_ids:
-        return []
-    out: List[Dict] = []
-    for chunk in _chunked(list({m for m in model_ids if m}), 1000):
-        placeholders = ','.join(['%s'] * len(chunk))
-        sql = f"""
-            SELECT id, raw_data_id, model_no, name, buyma_product_id, status,
-                   control, is_active, is_published, is_ready_to_publish,
-                   is_lowest_price, buyma_lowest_price, buyma_lowest_price_checked_at,
-                   price, margin_amount_krw, margin_rate, available_until,
-                   buyma_registered_at, source_product_url
-            FROM ace_products
-            WHERE model_no IN ({placeholders})
-        """
-        with conn.cursor() as c:
-            c.execute(sql, list(chunk))
-            out.extend(c.fetchall())
-    return out
-
-
-def _fetch_ace_images(conn, ace_product_ids: List[int]) -> List[Dict]:
-    if not ace_product_ids:
-        return []
-    out: List[Dict] = []
-    for chunk in _chunked(ace_product_ids, 1000):
-        placeholders = ','.join(['%s'] * len(chunk))
-        sql = f"""
-            SELECT ace_product_id, position, source_image_url,
-                   cloudflare_image_url, is_uploaded
-            FROM ace_product_images
-            WHERE ace_product_id IN ({placeholders})
-            ORDER BY ace_product_id, position
-        """
-        with conn.cursor() as c:
-            c.execute(sql, list(chunk))
-            out.extend(c.fetchall())
-    return out
+# SQL JOIN으로 model_id당 1행 조회.
+# - raw_scraped_data: GROUP BY model_id 집계 + 최신 대표행 JOIN
+# - ace_products: model_no 기준 published 우선 1개
+# - buyma_product_stats: buyma_product_id 기준 JOIN
+# - ace_product_images: ace_product_id 기준 첫 번째 이미지
+_MAIN_SQL = """
+SELECT
+    agg.model_id,
+    rep.brand_name_en,
+    rep.brand_name_kr,
+    rep.product_name,
+    rep.p_name_full,
+    agg.source_updated_at,
+    agg.oos_count,
+    agg.total_source_count,
+    a.id                                AS ace_id,
+    a.name                              AS name_ja,
+    a.buyma_product_id,
+    a.is_published,
+    a.is_active,
+    a.is_ready_to_publish,
+    a.is_lowest_price,
+    a.buyma_lowest_price,
+    a.buyma_lowest_price_checked_at,
+    a.price,
+    a.margin_amount_krw,
+    a.margin_rate,
+    a.available_until,
+    a.buyma_registered_at,
+    s.access_count,
+    s.cart_count,
+    s.favorite_count,
+    s.access_7d,
+    COALESCE(img.cloudflare_image_url, img.source_image_url) AS image_url
+FROM (
+    SELECT
+        model_id,
+        MAX(updated_at)                     AS source_updated_at,
+        SUM(stock_status = 'out_of_stock')  AS oos_count,
+        COUNT(*)                            AS total_source_count
+    FROM raw_scraped_data
+    WHERE model_id IS NOT NULL AND model_id != ''
+    GROUP BY model_id
+) agg
+JOIN raw_scraped_data rep
+    ON rep.model_id = agg.model_id
+   AND rep.id = (
+       SELECT id FROM raw_scraped_data r2
+       WHERE r2.model_id = agg.model_id
+       ORDER BY r2.updated_at DESC, r2.id DESC
+       LIMIT 1
+   )
+LEFT JOIN ace_products a
+    ON a.model_no = agg.model_id
+   AND a.id = (
+       SELECT id FROM ace_products a2
+       WHERE a2.model_no = agg.model_id
+       ORDER BY a2.is_published DESC, a2.id
+       LIMIT 1
+   )
+LEFT JOIN buyma_product_stats s
+    ON s.buyma_product_id = a.buyma_product_id
+LEFT JOIN ace_product_images img
+    ON img.id = (
+       SELECT id FROM ace_product_images i2
+       WHERE i2.ace_product_id = a.id
+       ORDER BY i2.position
+       LIMIT 1
+   )
+"""
 
 
-def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
-    """buyma_product_id → 통계 dict"""
-    sql = """
-        SELECT buyma_product_id, ace_product_id,
-               access_count, cart_count, favorite_count, access_7d,
-               stats_collected_at, weekly_collected_at
-        FROM buyma_product_stats
-    """
-    out: Dict[str, Dict] = {}
-    with conn.cursor() as c:
-        c.execute(sql)
-        for r in c.fetchall():
-            pid = str(r['buyma_product_id'])
-            out[pid] = {
-                'access_count': r.get('access_count'),
-                'cart_count': r.get('cart_count'),
-                'favorite_count': r.get('favorite_count'),
-                'access_7d': r.get('access_7d'),
-                'stats_collected_at': _iso(r.get('stats_collected_at')),
-            }
-    return out
-
-
-def _determine_status(ace_rows: List[Dict], raw_rows: List[Dict],
-                      in_seller_listing: bool = False) -> str:
+def _determine_status(row: Dict, in_seller_listing: bool) -> str:
     if in_seller_listing:
         return 'on_sale'
-    if ace_rows:
-        if any(a.get('is_published') == 1 and a.get('is_active') == 1 for a in ace_rows):
+    if row.get('ace_id'):
+        if row.get('is_published') == 1 and row.get('is_active') == 1:
             return 'on_sale'
-        if any(a.get('is_ready_to_publish') == 1 and a.get('is_published') == 0 for a in ace_rows):
+        if row.get('is_ready_to_publish') == 1 and row.get('is_published') == 0:
             return 'waiting'
-        if any(a.get('is_lowest_price') == 0 and a.get('is_published') == 0 for a in ace_rows):
+        if row.get('is_lowest_price') == 0 and row.get('is_published') == 0:
             return 'no_lowest'
-    if raw_rows and all((r.get('stock_status') or '').lower() == 'out_of_stock' for r in raw_rows):
+    oos = row.get('oos_count') or 0
+    total = row.get('total_source_count') or 0
+    if total > 0 and oos >= total:
         return 'sold_out'
     return 'unknown'
 
 
-def _detect_db_mismatch(in_seller_listing: bool, ace_rows: List[Dict]) -> Optional[str]:
+def _detect_db_mismatch(in_seller_listing: bool, row: Dict) -> Optional[str]:
     if not in_seller_listing:
         return None
-    if not ace_rows:
+    if not row.get('ace_id'):
         return 'ace_products 매칭 없음'
-    if any(a.get('is_published') == 1 and a.get('is_active') == 1 for a in ace_rows):
+    if row.get('is_published') == 1 and row.get('is_active') == 1:
         return None
-    flags = set()
-    for a in ace_rows:
-        if a.get('is_published') != 1:
-            flags.add(f"is_published={a.get('is_published')}")
-        if a.get('is_active') != 1:
-            flags.add(f"is_active={a.get('is_active')}")
-    return ', '.join(sorted(flags)) or 'DB 상태 불일치'
+    flags = []
+    if row.get('is_published') != 1:
+        flags.append(f"is_published={row.get('is_published')}")
+    if row.get('is_active') != 1:
+        flags.append(f"is_active={row.get('is_active')}")
+    return ', '.join(flags) or 'DB 상태 불일치'
 
 
-def build_payload(db_config: Dict, model_id_limit: Optional[int] = None) -> Dict:
-    """products.html이 기대하는 JSON 구조 생성."""
+def build_payload(db_config: Dict) -> Dict:
+    """products.html이 기대하는 JSON 구조 생성. SQL JOIN으로 model_id당 1행."""
     conn = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
     try:
-        raw_rows = _fetch_raw_scraped(conn, model_id_limit=model_id_limit)
-        by_model: Dict[str, List[Dict]] = defaultdict(list)
-        for r in raw_rows:
-            by_model[r['model_id']].append(r)
-
-        ace_rows = _fetch_ace_products(conn, list(by_model.keys()))
-        ace_by_model: Dict[str, List[Dict]] = defaultdict(list)
-        for a in ace_rows:
-            ace_by_model[a['model_no']].append(a)
-
-        ace_ids = [a['id'] for a in ace_rows]
-        img_rows = _fetch_ace_images(conn, ace_ids)
-        img_by_ace: Dict[int, List[Dict]] = defaultdict(list)
-        for img in img_rows:
-            img_by_ace[img['ace_product_id']].append(img)
-
-        buyma_stats_by_pid = _fetch_buyma_stats(conn)
+        with conn.cursor() as c:
+            c.execute(_MAIN_SQL)
+            rows = c.fetchall()
     finally:
         conn.close()
 
     items: List[Dict] = []
-    for model_id, raw_list in by_model.items():
-        ace_list = ace_by_model.get(model_id, [])
-
-        raw0 = max(raw_list, key=lambda r: r.get('updated_at') or datetime.min)
-        ace0 = None
-        if ace_list:
-            published = [a for a in ace_list if a.get('is_published') == 1]
-            ace0 = published[0] if published else ace_list[0]
-
-        bp_id = ace0.get('buyma_product_id') if ace0 else None
-        bstats = buyma_stats_by_pid.get(str(bp_id)) if bp_id else None
-        in_seller = bstats is not None
-
-        status = _determine_status(ace_list, raw_list, in_seller_listing=in_seller)
-        db_mismatch_reason = _detect_db_mismatch(in_seller, ace_list)
-
-        sources: List[Dict] = []
-        seen_urls = set()
-        for r in raw_list:
-            url = r.get('product_url')
-            if url and url not in seen_urls:
-                seen_urls.add(url)
-                sources.append({
-                    'site': r.get('source_site'),
-                    'url': url,
-                    'mall_product_id': r.get('mall_product_id'),
-                    'stock_status': r.get('stock_status'),
-                    'price_krw': _to_float(r.get('raw_price')),
-                })
-
-        all_images: List[Dict] = []
-        if ace0:
-            for img in img_by_ace.get(ace0['id'], []):
-                all_images.append({
-                    'url': img.get('cloudflare_image_url') or img.get('source_image_url'),
-                    'source_url': img.get('source_image_url'),
-                    'position': img.get('position'),
-                    'is_uploaded': bool(img.get('is_uploaded')),
-                })
-        rep_image = all_images[0]['url'] if all_images else None
+    for row in rows:
+        bp_id = row.get('buyma_product_id')
+        in_seller = row.get('access_count') is not None
+        status = _determine_status(row, in_seller)
+        db_mismatch = _detect_db_mismatch(in_seller, row)
 
         items.append({
-            'model_id': model_id,
-            'buyma_product_id': str(bp_id) if bp_id else None,
-            'status': status,
-            'db_mismatch_reason': db_mismatch_reason,
-            'name_ja': ace0.get('name') if ace0 else None,
-            'name_ko': raw0.get('product_name') or raw0.get('p_name_full'),
-            'brand_name_en': raw0.get('brand_name_en'),
-            'brand_name_kr': raw0.get('brand_name_kr'),
-            'image_url': rep_image,
-            'all_images': all_images,
-            'access_count': bstats.get('access_count') if bstats else None,
-            'cart_count': bstats.get('cart_count') if bstats else None,
-            'favorite_count': bstats.get('favorite_count') if bstats else None,
-            'access_7d': bstats.get('access_7d') if bstats else None,
-            'buyma_lowest_price': ace0.get('buyma_lowest_price') if ace0 else None,
-            'available_lowest_price_jpy': ace0.get('price') if ace0 else None,
-            'price_yen': ace0.get('price') if ace0 else None,
-            'margin_amount_krw': _to_float(ace0.get('margin_amount_krw')) if ace0 else None,
-            'margin_rate': _to_float(ace0.get('margin_rate')) if ace0 else None,
-            'price_updated_at': _iso(ace0.get('buyma_lowest_price_checked_at')) if ace0 else None,
-            'source_updated_at': _iso(raw0.get('updated_at')),
-            'registered_at': _fmt_dt(ace0.get('buyma_registered_at')) if ace0 else None,
-            'expire_at': _fmt_dt(ace0.get('available_until'), '%Y/%m/%d') if ace0 else None,
-            # 시장 데이터 (별도 크롤러가 채우게 될 자리; 지금은 비워둠)
-            'same_count': None,
-            'rank_position': None,
-            'our_ranks': None,
-            'top1_link': None,
-            'top1_is_ours': None,
+            'model_id':                   row['model_id'],
+            'buyma_product_id':           str(bp_id) if bp_id else None,
+            'status':                     status,
+            'db_mismatch_reason':         db_mismatch,
+            'name_ja':                    row.get('name_ja'),
+            'name_ko':                    row.get('product_name') or row.get('p_name_full'),
+            'brand_name_en':              row.get('brand_name_en'),
+            'brand_name_kr':              row.get('brand_name_kr'),
+            'image_url':                  row.get('image_url'),
+            'source_count':               int(row.get('total_source_count') or 0),
+            'access_count':               row.get('access_count'),
+            'cart_count':                 row.get('cart_count'),
+            'favorite_count':             row.get('favorite_count'),
+            'access_7d':                  row.get('access_7d'),
+            'buyma_lowest_price':         row.get('buyma_lowest_price'),
+            'available_lowest_price_jpy': row.get('price'),
+            'price_yen':                  row.get('price'),
+            'margin_amount_krw':          _to_float(row.get('margin_amount_krw')),
+            'margin_rate':                _to_float(row.get('margin_rate')),
+            'price_updated_at':           _iso(row.get('buyma_lowest_price_checked_at')),
+            'source_updated_at':          _iso(row.get('source_updated_at')),
+            'registered_at':              _fmt_dt(row.get('buyma_registered_at')),
+            'expire_at':                  _fmt_dt(row.get('available_until'), '%Y/%m/%d'),
+            # 미수집 시장 데이터 (별도 크롤러 예정)
+            'same_count':       None,
+            'rank_position':    None,
+            'our_ranks':        None,
+            'top1_link':        None,
+            'top1_is_ours':     None,
             'top1_seller_name': None,
-            'top1_seller_id': None,
-            'top1_price': None,
-            'top1_name': None,
-            'sources': sources,
+            'top1_seller_id':   None,
+            'top1_price':       None,
+            'top1_name':        None,
         })
 
     return {
@@ -294,3 +201,58 @@ def build_payload(db_config: Dict, model_id_limit: Optional[int] = None) -> Dict
     }
 
 
+def get_sources(db_config: Dict, model_id: str) -> List[Dict]:
+    """sources 팝업용 — model_id의 모든 소싱처 정보 반환."""
+    sql = """
+        SELECT source_site, product_url, mall_product_id, stock_status, raw_price
+        FROM raw_scraped_data
+        WHERE model_id = %s
+    """
+    conn = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        with conn.cursor() as c:
+            c.execute(sql, (model_id,))
+            rows = c.fetchall()
+    finally:
+        conn.close()
+
+    seen: set = set()
+    sources: List[Dict] = []
+    for r in rows:
+        url = r.get('product_url')
+        if url and url not in seen:
+            seen.add(url)
+            sources.append({
+                'site':           r.get('source_site'),
+                'url':            url,
+                'mall_product_id': r.get('mall_product_id'),
+                'stock_status':   r.get('stock_status'),
+                'price_krw':      _to_float(r.get('raw_price')),
+            })
+    return sources
+
+
+def get_images(db_config: Dict, model_id: str) -> List[Dict]:
+    """이미지 팝업용 — model_id의 모든 이미지 반환."""
+    sql = """
+        SELECT img.cloudflare_image_url, img.source_image_url,
+               img.position, img.is_uploaded
+        FROM ace_product_images img
+        JOIN ace_products a ON img.ace_product_id = a.id
+        WHERE a.model_no = %s
+        ORDER BY a.is_published DESC, a.id, img.position
+    """
+    conn = pymysql.connect(**db_config, cursorclass=pymysql.cursors.DictCursor)
+    try:
+        with conn.cursor() as c:
+            c.execute(sql, (model_id,))
+            rows = c.fetchall()
+    finally:
+        conn.close()
+
+    return [{
+        'url':        r.get('cloudflare_image_url') or r.get('source_image_url'),
+        'source_url': r.get('source_image_url'),
+        'position':   r.get('position'),
+        'is_uploaded': bool(r.get('is_uploaded')),
+    } for r in rows]

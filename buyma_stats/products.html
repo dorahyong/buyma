@@ -121,8 +121,8 @@
           : '<span class="placeholder">—</span>' },
 
       { key: 'sources',     label: '상품출처',          cls: 'center',
-        sortKey: (r) => (r.sources || []).length,
-        render: (r) => `<span class="clickable" onclick='openModal("sources", ${JSON.stringify(r.model_id)})'>${(r.sources||[]).length}곳</span>` },
+        sortKey: (r) => r.source_count ?? 0,
+        render: (r) => `<span class="clickable" onclick='openModal("sources", ${JSON.stringify(r.model_id)})'>${r.source_count ?? 0}곳</span>` },
 
       { key: 'price_updated_at',  label: '최저가 업데이트 일시',
         sortKey: (r) => r.price_updated_at || '',
@@ -425,8 +425,7 @@
     // =======================================================
     function findRow(modelId) { return DATA.find(r => r.model_id === modelId); }
 
-    function modalImage(r) {
-      const imgs = r.all_images || [];
+    function modalImage(imgs) {
       if (!imgs.length) return '<div class="placeholder-note">수집된 이미지가 없습니다.</div>';
       const rows = imgs.map((img, i) =>
         `<tr>
@@ -464,8 +463,7 @@
         </table>`;
     }
 
-    function modalSources(r) {
-      const ss = r.sources || [];
+    function modalSources(ss) {
       if (!ss.length) return '<div class="placeholder-note">출처 정보가 없습니다.</div>';
       const rows = ss.map(s =>
         `<tr>
@@ -530,20 +528,36 @@
         </div>`;
     }
 
-    function openModal(type, modelId) {
+    async function openModal(type, modelId) {
       const r = findRow(modelId);
       const title = (MODAL_TITLES[type] || '상세') + (r ? ` — 품번 ${r.model_id}` : '');
       document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-body').innerHTML = '<div class="placeholder-note">로딩 중…</div>';
+      document.getElementById('modal').classList.add('open');
 
       let body;
-      if (type === 'image' && r)        body = modalImage(r);
-      else if (type === 'sources' && r) body = modalSources(r);
-      else if (type === 'rank' && r)    body = modalRank(r);
-      else if (type === 'top1' && r)    body = modalTop1(r);
-      else body = '<div class="placeholder-note">이 모달의 데이터는 별도 수집기에서 채워질 예정입니다.</div>';
-
+      try {
+        if (type === 'image') {
+          const resp = await fetch(`./images.json?model_id=${encodeURIComponent(modelId)}`, { cache: 'no-store' });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          body = modalImage(data.images || []);
+        } else if (type === 'sources') {
+          const resp = await fetch(`./sources.json?model_id=${encodeURIComponent(modelId)}`, { cache: 'no-store' });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          body = modalSources(data.sources || []);
+        } else if (type === 'rank' && r) {
+          body = modalRank(r);
+        } else if (type === 'top1' && r) {
+          body = modalTop1(r);
+        } else {
+          body = '<div class="placeholder-note">이 모달의 데이터는 별도 수집기에서 채워질 예정입니다.</div>';
+        }
+      } catch (err) {
+        body = `<div class="placeholder-note">로드 실패: ${esc(err.message)}</div>`;
+      }
       document.getElementById('modal-body').innerHTML = body;
-      document.getElementById('modal').classList.add('open');
     }
     window.openModal = openModal;
     document.getElementById('modal-close').onclick = () => document.getElementById('modal').classList.remove('open');
