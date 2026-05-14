@@ -61,13 +61,13 @@ def _fetch_raw_aggregated(conn) -> List[Dict]:
     sql = """
         SELECT
             model_id,
-            ANY_VALUE(brand_name_en)  AS brand_name_en,
-            ANY_VALUE(brand_name_kr)  AS brand_name_kr,
-            ANY_VALUE(product_name)   AS product_name,
-            ANY_VALUE(p_name_full)    AS p_name_full,
-            MAX(updated_at)           AS source_updated_at,
+            MAX(brand_name_en)  AS brand_name_en,
+            MAX(brand_name_kr)  AS brand_name_kr,
+            MAX(product_name)   AS product_name,
+            MAX(p_name_full)    AS p_name_full,
+            MAX(updated_at)     AS source_updated_at,
             SUM(stock_status = 'out_of_stock') AS oos_count,
-            COUNT(*)                  AS total_source_count
+            COUNT(*)            AS total_source_count
         FROM raw_scraped_data
         WHERE model_id IS NOT NULL AND model_id != ''
         GROUP BY model_id
