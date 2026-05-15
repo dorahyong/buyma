@@ -62,7 +62,6 @@ def _fetch_raw_aggregated(conn) -> List[Dict]:
         SELECT
             model_id,
             MAX(brand_name_en)  AS brand_name_en,
-            MAX(brand_name_kr)  AS brand_name_kr,
             MAX(product_name)   AS product_name,
             MAX(p_name_full)    AS p_name_full,
             MAX(updated_at)     AS source_updated_at,
@@ -231,7 +230,6 @@ def build_payload(db_config: Dict) -> Dict:
             'name_ja':                    ace0.get('name') if ace0 else None,
             'name_ko':                    raw.get('product_name') or raw.get('p_name_full'),
             'brand_name_en':              raw.get('brand_name_en'),
-            'brand_name_kr':              raw.get('brand_name_kr'),
             'image_url':                  image_url,
             'source_count':               int(raw.get('total_source_count') or 0),
             'access_count':               bstats.get('access_count') if bstats else None,

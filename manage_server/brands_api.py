@@ -23,7 +23,6 @@ BRANDS_CSV = ROOT / 'buyma_master_data' / 'brands.csv'
 
 EDITABLE_COLUMNS = {
     'mall_brand_name_en',
-    'mall_brand_name_ko',
     'buyma_brand_id',
     'buyma_brand_name',
     'mapping_level',
@@ -35,7 +34,7 @@ EDITABLE_COLUMNS = {
 
 SELECT_COLUMNS = [
     'mall_name', 'raw_brand_name',
-    'mall_brand_name_en', 'mall_brand_name_ko',
+    'mall_brand_name_en',
     'buyma_brand_id', 'buyma_brand_name',
     'mapping_level', 'is_mapped',
     'mall_brand_url', 'is_active', 'mall_brand_no',
@@ -108,9 +107,9 @@ def get_brands(
         like = f"%{search}%"
         where.append(
             "(raw_brand_name LIKE %s OR mall_brand_name_en LIKE %s "
-            " OR mall_brand_name_ko LIKE %s OR buyma_brand_name LIKE %s)"
+            " OR buyma_brand_name LIKE %s)"
         )
-        params.extend([like, like, like, like])
+        params.extend([like, like, like])
     where_sql = ' AND '.join(where) if where else '1'
 
     cols_sql = ', '.join(f'`{c}`' for c in SELECT_COLUMNS)

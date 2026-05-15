@@ -67,7 +67,7 @@ def log(msg: str, level: str = "INFO") -> None:
 
 def fetch_raw_scraped(conn, limit: Optional[int] = None) -> List[Dict]:
     sql = """
-        SELECT id, source_site, mall_product_id, brand_name_en, brand_name_kr,
+        SELECT id, source_site, mall_product_id, brand_name_en,
                product_name, p_name_full, model_id, raw_price, stock_status,
                product_url, updated_at
         FROM raw_scraped_data
@@ -336,7 +336,6 @@ def build_merged(limit: Optional[int] = None) -> Dict:
             'name_ja': ace0.get('name') if ace0 else None,      # 일본어 가공본
             'name_ko': raw0.get('product_name') or raw0.get('p_name_full'),
             'brand_name_en': raw0.get('brand_name_en'),
-            'brand_name_kr': raw0.get('brand_name_kr'),
 
             # 이미지
             'image_url': rep_image,
