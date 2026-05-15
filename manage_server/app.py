@@ -30,6 +30,7 @@ from products_api import build_payload, get_sources, get_images  # noqa: E402
 import products_cache  # noqa: E402
 from auth import configure_auth, register_auth_routes, require_login  # noqa: E402
 import brands_api  # noqa: E402
+import categories_api  # noqa: E402
 
 load_dotenv()
 
@@ -248,6 +249,80 @@ def manage_brands_search_buyma():
         limit = 50
     limit = max(1, min(limit, 200))
     results = brands_api.search_buyma_brands(q, limit=limit)
+    return jsonify({"q": q, "count": len(results), "results": results})
+
+
+@app.route("/manage/categories")
+@require_login
+def manage_categories_view():
+    return render_template("categories.html")
+
+
+@app.route("/manage/categories/data.json")
+@require_login
+def manage_categories_data():
+    mall_name = (request.args.get('mall_name') or '').strip() or None
+    is_active = request.args.get('is_active')
+    unmapped_only = request.args.get('unmapped_only', '').lower() in ('1', 'true', 'yes')
+    search = (request.args.get('search') or '').strip() or None
+    try:
+        limit = int(request.args.get('limit', 500))
+    except (TypeError, ValueError):
+        limit = 500
+    limit = max(1, min(limit, 5000))
+
+    def _bool_or_none(v):
+        if v is None or v == '':
+            return None
+        return 1 if str(v).lower() in ('1', 'true', 'yes') else 0
+
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        rows = categories_api.get_categories(
+            db_cfg,
+            mall_name=mall_name,
+            is_active=_bool_or_none(is_active),
+            unmapped_only=unmapped_only,
+            search=search,
+            limit=limit,
+        )
+        mall_names = categories_api.get_mall_names(db_cfg)
+    except Exception as e:
+        return jsonify({"error": str(e), "rows": [], "mall_names": []}), 500
+    return jsonify({
+        "rows": rows,
+        "count": len(rows),
+        "mall_names": mall_names,
+        "editable_columns": sorted(categories_api.EDITABLE_COLUMNS),
+        "select_columns": categories_api.SELECT_COLUMNS,
+    })
+
+
+@app.route("/manage/categories/update", methods=['POST', 'PATCH'])
+@require_login
+def manage_categories_update():
+    payload = request.get_json(silent=True) or {}
+    changes = payload.get('changes') or []
+    if not isinstance(changes, list) or not changes:
+        return jsonify({"error": "changes must be a non-empty list", "updated": 0}), 400
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        updated = categories_api.apply_updates(db_cfg, changes)
+    except Exception as e:
+        return jsonify({"error": str(e), "updated": 0}), 500
+    return jsonify({"updated": updated})
+
+
+@app.route("/manage/categories/search_buyma")
+@require_login
+def manage_categories_search_buyma():
+    q = (request.args.get('q') or '').strip()
+    try:
+        limit = int(request.args.get('limit', 50))
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, 200))
+    results = categories_api.search_buyma_categories(q, limit=limit)
     return jsonify({"q": q, "count": len(results), "results": results})
 
 

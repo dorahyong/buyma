@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>mall_brands 검수 · manage</title>
+  <title>mall_categories 검수 · manage</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 14px; font-size: 13px; color: #222; }
     h1 { font-size: 1.1rem; margin: 0 0 12px; }
@@ -66,7 +66,7 @@
     }
     .modal-bg.open { display: flex; }
     .modal {
-      width: 520px; max-height: 70vh; background: #fff; border-radius: 8px;
+      width: 600px; max-height: 70vh; background: #fff; border-radius: 8px;
       padding: 16px; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,.2);
     }
     .modal h2 { margin: 0 0 10px; font-size: 1rem; }
@@ -80,6 +80,7 @@
     }
     .modal .results .item:hover { background: #f0f7ff; }
     .modal .results .item .id { color: #888; font-size: 11px; margin-right: 6px; }
+    .modal .results .item .paths { color: #666; font-size: 11px; }
     .modal .results .empty { padding: 10px; color: #888; font-style: italic; }
     .modal .footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
     .modal .footer button {
@@ -92,9 +93,9 @@
 </head>
 <body>
   <h1>
-    mall_brands 검수
+    mall_categories 검수
     <a href="/manage" class="nav-link">/manage</a>
-    <a href="/manage/categories" class="nav-link">/manage/categories</a>
+    <a href="/manage/brands" class="nav-link">/manage/brands</a>
     <a href="/manage/products/" class="nav-link">/manage/products</a>
     <a href="/manage/logout" class="nav-link">로그아웃</a>
   </h1>
@@ -110,17 +111,10 @@
       <option value="0">0</option>
     </select>
 
-    <label>is_mapped</label>
-    <select id="f-mapped">
-      <option value="">(전체)</option>
-      <option value="1">1</option>
-      <option value="0">0</option>
-    </select>
-
-    <label><input type="checkbox" id="f-unmapped"> 미매핑만 (buyma_brand_id NULL/0)</label>
+    <label><input type="checkbox" id="f-unmapped"> 미매핑만 (buyma_category_id NULL/0)</label>
 
     <label>검색</label>
-    <input type="text" id="f-search" placeholder="raw/en/ko/buyma_name LIKE">
+    <input type="text" id="f-search" placeholder="full_path/depth LIKE">
 
     <label>limit</label>
     <select id="f-limit">
@@ -161,8 +155,8 @@
   <!-- buyma 검색 팝업 -->
   <div class="modal-bg" id="modal-bg">
     <div class="modal">
-      <h2>buyma 브랜드 검색</h2>
-      <input type="text" class="search" id="modal-search" placeholder="브랜드명 또는 ID">
+      <h2>buyma 카테고리 검색</h2>
+      <input type="text" class="search" id="modal-search" placeholder="카테고리명 / 경로 / ID">
       <div class="results" id="modal-results"></div>
       <div class="footer">
         <button id="modal-close">닫기</button>
@@ -171,21 +165,21 @@
   </div>
 
 <script>
-const PK_COLS = ['mall_name', 'raw_brand_name'];
-const META_COLS = ['created_at', 'updated_at'];
-const BOOL_COLS = new Set(['is_active', 'is_mapped']);
-const NUMERIC_COLS = new Set(['buyma_brand_id', 'mapping_level']);
+const PK_COLS = ['id'];
+const META_COLS = ['created_at'];
+const BOOL_COLS = new Set(['is_active']);
+const NUMERIC_COLS = new Set(['buyma_category_id', 'id']);
 
 let allRows = [];          // 서버에서 받은 원본
 let editableCols = new Set();
 let displayCols = [];
-let dirty = {};            // key="mall_name||raw_brand_name" → {col: newValue}
+let dirty = {};            // key="id" → {col: newValue}
 let checked = new Set();   // PK keys
 let activeBuymaTarget = null;  // 검색 팝업에서 선택 시 어느 행 갱신할지
-let sortState = {col: null, dir: null};  // 정렬 상태 (dir: 'asc'|'desc'|null)
+let sortState = {col: null, dir: null};  // 정렬 상태
 
 // ── 유틸 ──
-function pkKey(row) { return row.mall_name + '||' + row.raw_brand_name; }
+function pkKey(row) { return String(row.id); }
 function qs(id) { return document.getElementById(id); }
 
 function setStatus(msg, cls) {
@@ -212,14 +206,12 @@ async function reload() {
   if (mv) p.set('mall_name', mv);
   const av = qs('f-active').value;
   if (av) p.set('is_active', av);
-  const mp = qs('f-mapped').value;
-  if (mp) p.set('is_mapped', mp);
   if (qs('f-unmapped').checked) p.set('unmapped_only', '1');
   const sv = qs('f-search').value.trim();
   if (sv) p.set('search', sv);
   p.set('limit', qs('f-limit').value);
   try {
-    const res = await fetch('/manage/brands/data.json?' + p.toString(), {credentials: 'same-origin'});
+    const res = await fetch('/manage/categories/data.json?' + p.toString(), {credentials: 'same-origin'});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     allRows = data.rows || [];
@@ -255,7 +247,6 @@ function getSortedRows() {
     const aNull = av == null || av === '';
     const bNull = bv == null || bv === '';
     if (aNull && bNull) return 0;
-    // NULL을 가장 작은 값으로 취급 (MariaDB 기본 동작): ASC면 위, DESC면 아래
     if (aNull) return -dir;
     if (bNull) return dir;
     if (isNum) {
@@ -332,7 +323,7 @@ function renderTable() {
         sel.dataset.orig = sel.value;
         sel.addEventListener('change', () => handleEdit(row, td, col, sel.value, sel.dataset.orig));
         td.appendChild(sel);
-      } else if (col === 'buyma_brand_id') {
+      } else if (col === 'buyma_category_id') {
         td.innerHTML = '';
         const wrap = document.createElement('div');
         wrap.className = 'buyma-cell';
@@ -347,14 +338,14 @@ function renderTable() {
         const btn = document.createElement('button');
         btn.className = 'lookup';
         btn.textContent = '🔍';
-        btn.title = 'buyma 브랜드 검색';
+        btn.title = 'buyma 카테고리 검색';
         btn.addEventListener('click', () => openBuymaSearch(row, tr));
         wrap.appendChild(btn);
         td.appendChild(wrap);
       } else {
         td.classList.add('edit');
         const inp = document.createElement('input');
-        inp.type = NUMERIC_COLS.has(col) ? 'text' : 'text';
+        inp.type = 'text';
         inp.className = 'cell-input';
         inp.value = val == null ? '' : String(val);
         inp.dataset.col = col;
@@ -381,7 +372,6 @@ function handleEdit(row, td, col, newVal, origVal) {
   const norm = newVal === '' ? null : newVal;
   const origNorm = origVal === '' ? null : origVal;
   if (String(norm) === String(origNorm)) {
-    // 변경 되돌림
     if (dirty[k]) {
       delete dirty[k][col];
       if (!Object.keys(dirty[k]).length) delete dirty[k];
@@ -400,7 +390,6 @@ function handleEdit(row, td, col, newVal, origVal) {
 
 // ── 저장 ──
 async function saveChanges(targets) {
-  // targets: 옵션 — 특정 row+col만 저장. 없으면 dirty 전체.
   let changes = [];
   if (targets && targets.length) {
     for (const t of targets) {
@@ -409,13 +398,12 @@ async function saveChanges(targets) {
       const fields = {};
       for (const c of t.cols) if (c in drow) fields[c] = drow[c];
       if (Object.keys(fields).length) {
-        changes.push({pk: {mall_name: t.row.mall_name, raw_brand_name: t.row.raw_brand_name}, fields});
+        changes.push({pk: {id: t.row.id}, fields});
       }
     }
   } else {
     for (const k in dirty) {
-      const [mall, raw] = k.split('||');
-      changes.push({pk: {mall_name: mall, raw_brand_name: raw}, fields: {...dirty[k]}});
+      changes.push({pk: {id: Number(k)}, fields: {...dirty[k]}});
     }
   }
   if (!changes.length) {
@@ -424,7 +412,7 @@ async function saveChanges(targets) {
   }
   setStatus(`저장 중... (${changes.length}건)`);
   try {
-    const res = await fetch('/manage/brands/update', {
+    const res = await fetch('/manage/categories/update', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       credentials: 'same-origin',
@@ -434,10 +422,10 @@ async function saveChanges(targets) {
     if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
     // 성공한 셀들 dirty 제거 + 원본값 갱신
     for (const ch of changes) {
-      const k = ch.pk.mall_name + '||' + ch.pk.raw_brand_name;
+      const k = String(ch.pk.id);
       for (const col of Object.keys(ch.fields)) {
         if (dirty[k]) delete dirty[k][col];
-        const row = allRows.find(r => r.mall_name === ch.pk.mall_name && r.raw_brand_name === ch.pk.raw_brand_name);
+        const row = allRows.find(r => String(r.id) === k);
         if (row) row[col] = ch.fields[col];
       }
       if (dirty[k] && !Object.keys(dirty[k]).length) delete dirty[k];
@@ -476,7 +464,7 @@ async function doBuymaSearch(q) {
     return;
   }
   try {
-    const res = await fetch('/manage/brands/search_buyma?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+    const res = await fetch('/manage/categories/search_buyma?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
     const data = await res.json();
     const box = qs('modal-results');
     if (!data.results || !data.results.length) {
@@ -484,18 +472,16 @@ async function doBuymaSearch(q) {
       return;
     }
     box.innerHTML = data.results.map(r =>
-      `<div class="item" data-id="${r.id}" data-name="${(r.brand_name || '').replace(/"/g, '&quot;')}">` +
-      `<span class="id">#${r.id}</span>${r.brand_name}${r.limited ? ' <span style="color:#b00">[limited]</span>' : ''}</div>`
+      `<div class="item" data-id="${r.id}">` +
+      `<span class="id">#${r.id}</span>${r.name}${r.limited ? ' <span style="color:#b00">[limited]</span>' : ''}` +
+      `<div class="paths">${r.paths}</div></div>`
     ).join('');
     box.querySelectorAll('.item').forEach(el => {
       el.addEventListener('click', () => {
         const id = el.dataset.id;
-        const name = el.dataset.name;
         if (!activeBuymaTarget) return;
         const {row, tr} = activeBuymaTarget;
-        // buyma_brand_id, buyma_brand_name 두 셀 dirty 처리
-        setCellValue(row, tr, 'buyma_brand_id', id);
-        setCellValue(row, tr, 'buyma_brand_name', name);
+        setCellValue(row, tr, 'buyma_category_id', id);
         closeBuymaSearch();
       });
     });
@@ -508,7 +494,6 @@ function setCellValue(row, tr, col, val) {
   const idx = displayCols.indexOf(col);
   if (idx < 0) return;
   const td = tr.children[idx + 1];
-  // input or select 찾기
   const inp = td.querySelector('input.cell-input, select');
   if (!inp) return;
   const orig = inp.dataset.orig;
@@ -529,8 +514,7 @@ function bulkSet(col, value) {
   }
   const targets = [];
   for (const k of checked) {
-    const [mall, raw] = k.split('||');
-    const row = allRows.find(r => r.mall_name === mall && r.raw_brand_name === raw);
+    const row = allRows.find(r => String(r.id) === k);
     if (!row) continue;
     if (!dirty[k]) dirty[k] = {};
     dirty[k][col] = value;
