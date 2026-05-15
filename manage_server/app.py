@@ -28,12 +28,18 @@ from flask import Flask, Response, jsonify, render_template, request, send_from_
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from products_api import build_payload, get_sources, get_images  # noqa: E402
 import products_cache  # noqa: E402
+from auth import configure_auth, register_auth_routes, require_login  # noqa: E402
+import brands_api  # noqa: E402
 
 load_dotenv()
 
 _BASE_DIR = Path(__file__).resolve().parent
 _STATS_DIR = _BASE_DIR.parent / "buyma_stats"
 app = Flask(__name__, template_folder=str(_BASE_DIR / "templates"))
+app.url_map.strict_slashes = False  # /manage 와 /manage/ 둘 다 허용
+
+configure_auth(app)
+register_auth_routes(app)
 
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
@@ -94,11 +100,13 @@ def health():
 
 
 @app.route("/manage/products/")
+@require_login
 def manage_products_view():
     return send_from_directory(_STATS_DIR, "products.html")
 
 
 @app.route("/manage/products/data.json")
+@require_login
 def manage_products_data():
     """products.html이 fetch로 받아 가는 데이터.
 
@@ -132,6 +140,7 @@ def manage_products_data():
 
 
 @app.route("/manage/products/sources.json")
+@require_login
 def manage_products_sources():
     """sources 팝업용 — ?model_id=XXX"""
     model_id = request.args.get('model_id', '').strip()
@@ -146,6 +155,7 @@ def manage_products_sources():
 
 
 @app.route("/manage/products/images.json")
+@require_login
 def manage_products_images():
     """이미지 팝업용 — ?model_id=XXX"""
     model_id = request.args.get('model_id', '').strip()
@@ -160,11 +170,89 @@ def manage_products_images():
 
 
 @app.route("/manage/products/<path:filename>")
+@require_login
 def manage_products_assets(filename):
     return send_from_directory(_STATS_DIR, filename)
 
 
+@app.route("/manage/brands")
+@require_login
+def manage_brands_view():
+    return render_template("brands.html")
+
+
+@app.route("/manage/brands/data.json")
+@require_login
+def manage_brands_data():
+    mall_name = (request.args.get('mall_name') or '').strip() or None
+    is_active = request.args.get('is_active')
+    is_mapped = request.args.get('is_mapped')
+    unmapped_only = request.args.get('unmapped_only', '').lower() in ('1', 'true', 'yes')
+    search = (request.args.get('search') or '').strip() or None
+    try:
+        limit = int(request.args.get('limit', 500))
+    except (TypeError, ValueError):
+        limit = 500
+    limit = max(1, min(limit, 5000))
+
+    def _bool_or_none(v):
+        if v is None or v == '':
+            return None
+        return 1 if str(v).lower() in ('1', 'true', 'yes') else 0
+
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        rows = brands_api.get_brands(
+            db_cfg,
+            mall_name=mall_name,
+            is_active=_bool_or_none(is_active),
+            is_mapped=_bool_or_none(is_mapped),
+            unmapped_only=unmapped_only,
+            search=search,
+            limit=limit,
+        )
+        mall_names = brands_api.get_mall_names(db_cfg)
+    except Exception as e:
+        return jsonify({"error": str(e), "rows": [], "mall_names": []}), 500
+    return jsonify({
+        "rows": rows,
+        "count": len(rows),
+        "mall_names": mall_names,
+        "editable_columns": sorted(brands_api.EDITABLE_COLUMNS),
+        "select_columns": brands_api.SELECT_COLUMNS,
+    })
+
+
+@app.route("/manage/brands/update", methods=['POST', 'PATCH'])
+@require_login
+def manage_brands_update():
+    payload = request.get_json(silent=True) or {}
+    changes = payload.get('changes') or []
+    if not isinstance(changes, list) or not changes:
+        return jsonify({"error": "changes must be a non-empty list", "updated": 0}), 400
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        updated = brands_api.apply_updates(db_cfg, changes)
+    except Exception as e:
+        return jsonify({"error": str(e), "updated": 0}), 500
+    return jsonify({"updated": updated})
+
+
+@app.route("/manage/brands/search_buyma")
+@require_login
+def manage_brands_search_buyma():
+    q = (request.args.get('q') or '').strip()
+    try:
+        limit = int(request.args.get('limit', 50))
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, 200))
+    results = brands_api.search_buyma_brands(q, limit=limit)
+    return jsonify({"q": q, "count": len(results), "results": results})
+
+
 @app.route("/manage")
+@require_login
 def manage_dashboard():
     raw_table = (request.args.get("table") or "").strip()
     try:

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>로그인 · manage</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 0;
+           min-height: 100vh; display: flex; align-items: center; justify-content: center;
+           background: #f6f8fa; color: #222; }
+    .card { width: 320px; background: #fff; border: 1px solid #d0d7de; border-radius: 10px;
+            padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.05); }
+    h1 { margin: 0 0 16px; font-size: 1.1rem; }
+    .field { margin-bottom: 12px; }
+    label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    input[type="password"] {
+      width: 100%; padding: 8px 10px; font-size: 14px;
+      border: 1px solid #d0d7de; border-radius: 6px; box-sizing: border-box;
+    }
+    button {
+      width: 100%; padding: 9px 12px; font-size: 14px; font-weight: 600;
+      background: #0969da; color: #fff; border: 0; border-radius: 6px; cursor: pointer;
+    }
+    button:hover { background: #0860c7; }
+    .err { color: #b00; font-size: 13px; margin: 10px 0 0; }
+    .hint { color: #666; font-size: 12px; margin-top: 14px; text-align: center; }
+  </style>
+</head>
+<body>
+  <form class="card" method="post" action="">
+    <h1>관리자 로그인</h1>
+    <div class="field">
+      <label for="password">비밀번호</label>
+      <input type="password" id="password" name="password" autofocus required>
+    </div>
+    <button type="submit">로그인</button>
+    {% if error %}
+    <p class="err">{{ error }}</p>
+    {% endif %}
+    <p class="hint">세션 30분 유지</p>
+  </form>
+</body>
+</html>

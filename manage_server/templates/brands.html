@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>mall_brands 검수 · manage</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 14px; font-size: 13px; color: #222; }
+    h1 { font-size: 1.1rem; margin: 0 0 12px; }
+    .topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+              padding: 10px 12px; background: #f6f8fa; border: 1px solid #d0d7de;
+              border-radius: 8px; margin-bottom: 10px; }
+    .topbar label { font-size: 12px; font-weight: 600; }
+    .topbar select, .topbar input[type="text"] {
+      padding: 4px 8px; font-size: 13px;
+      border: 1px solid #d0d7de; border-radius: 5px; background: #fff;
+    }
+    .topbar button {
+      padding: 5px 12px; font-size: 13px; font-weight: 600;
+      border: 1px solid #d0d7de; background: #fff; border-radius: 5px; cursor: pointer;
+    }
+    .topbar button:hover { background: #f0f3f6; }
+    .topbar button.primary { background: #0969da; color: #fff; border-color: #0969da; }
+    .topbar button.primary:hover { background: #0860c7; }
+    .topbar button.danger { background: #cf222e; color: #fff; border-color: #cf222e; }
+    .topbar .sep { width: 1px; align-self: stretch; background: #d0d7de; margin: 0 4px; }
+    .status { font-size: 12px; color: #555; margin: 0 0 6px; }
+    .status.dirty { color: #b46c00; font-weight: 600; }
+    .status.error { color: #b00; font-weight: 600; }
+
+    table { border-collapse: collapse; width: 100%; }
+    .tbl-wrap { overflow: auto; max-height: calc(100vh - 180px); border: 1px solid #ccc; }
+    thead { position: sticky; top: 0; z-index: 2; background: #f4f4f4; }
+    th, td { border: 1px solid #ddd; padding: 4px 6px; text-align: left; vertical-align: top;
+             white-space: nowrap; }
+    th { font-size: 12px; }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { background: #e6ecf1; }
+    th.sortable .arrow { color: #0969da; margin-left: 2px; }
+    td.ro { background: #fafafa; color: #555; }
+    td.dirty { background: #fff8c5; }
+    td.edit { cursor: text; }
+    td.edit:focus, td.edit input:focus { outline: 2px solid #0969da; }
+    td input.cell-input {
+      width: 100%; box-sizing: border-box; border: 0; background: transparent;
+      font: inherit; padding: 0; color: inherit;
+    }
+    td input[type="number"].cell-input { width: 100%; }
+    td.bool-cell { text-align: center; }
+    td.bool-cell select { width: 100%; border: 0; background: transparent; font: inherit; padding: 0; }
+
+    .pk-col { background: #fafafa; color: #555; font-family: monospace; font-size: 12px; }
+    .check-col { width: 28px; text-align: center; background: #fafafa; }
+    .buyma-cell { display: flex; gap: 4px; align-items: center; }
+    .buyma-cell input { flex: 1; }
+    .buyma-cell button.lookup {
+      padding: 2px 6px; font-size: 11px; border: 1px solid #d0d7de;
+      background: #fff; border-radius: 3px; cursor: pointer;
+    }
+    .buyma-cell button.lookup:hover { background: #f0f3f6; }
+
+    /* 검색 팝업 */
+    .modal-bg {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      width: 520px; max-height: 70vh; background: #fff; border-radius: 8px;
+      padding: 16px; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    }
+    .modal h2 { margin: 0 0 10px; font-size: 1rem; }
+    .modal input.search {
+      width: 100%; box-sizing: border-box; padding: 8px 10px; font-size: 14px;
+      border: 1px solid #d0d7de; border-radius: 6px; margin-bottom: 10px;
+    }
+    .modal .results { flex: 1; overflow: auto; border: 1px solid #eee; border-radius: 6px; }
+    .modal .results .item {
+      padding: 6px 10px; border-bottom: 1px solid #eee; cursor: pointer; font-size: 13px;
+    }
+    .modal .results .item:hover { background: #f0f7ff; }
+    .modal .results .item .id { color: #888; font-size: 11px; margin-right: 6px; }
+    .modal .results .empty { padding: 10px; color: #888; font-style: italic; }
+    .modal .footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+    .modal .footer button {
+      padding: 6px 12px; border: 1px solid #d0d7de; background: #fff; border-radius: 5px; cursor: pointer;
+    }
+
+    .nav-link { color: #0969da; text-decoration: none; font-size: 12px; margin-left: 8px; }
+    .nav-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>
+    mall_brands 검수
+    <a href="/manage" class="nav-link">/manage</a>
+    <a href="/manage/products/" class="nav-link">/manage/products</a>
+    <a href="/manage/logout" class="nav-link">로그아웃</a>
+  </h1>
+
+  <div class="topbar">
+    <label>mall</label>
+    <select id="f-mall"><option value="">(전체)</option></select>
+
+    <label>is_active</label>
+    <select id="f-active">
+      <option value="">(전체)</option>
+      <option value="1">1</option>
+      <option value="0">0</option>
+    </select>
+
+    <label>is_mapped</label>
+    <select id="f-mapped">
+      <option value="">(전체)</option>
+      <option value="1">1</option>
+      <option value="0">0</option>
+    </select>
+
+    <label><input type="checkbox" id="f-unmapped"> 미매핑만 (buyma_brand_id NULL/0)</label>
+
+    <label>검색</label>
+    <input type="text" id="f-search" placeholder="raw/en/ko/buyma_name LIKE">
+
+    <label>limit</label>
+    <select id="f-limit">
+      <option>100</option>
+      <option>500</option>
+      <option>1000</option>
+      <option>5000</option>
+    </select>
+
+    <button id="btn-reload" class="primary">조회</button>
+
+    <span class="sep"></span>
+
+    <label>저장 모드</label>
+    <select id="save-mode" title="즉시: 셀 변경 즉시 PATCH / 일괄: '저장' 버튼 클릭 시">
+      <option value="batch">일괄</option>
+      <option value="instant">즉시</option>
+    </select>
+    <button id="btn-save" class="primary">변경 저장 (<span id="dirty-count">0</span>)</button>
+    <button id="btn-discard">변경 취소</button>
+
+    <span class="sep"></span>
+
+    <span>선택: <span id="checked-count">0</span></span>
+    <button id="btn-bulk-active1">선택 is_active=1</button>
+    <button id="btn-bulk-active0">선택 is_active=0</button>
+  </div>
+
+  <p class="status" id="status">조회 버튼을 누르세요.</p>
+
+  <div class="tbl-wrap">
+    <table id="tbl">
+      <thead><tr id="thead-row"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- buyma 검색 팝업 -->
+  <div class="modal-bg" id="modal-bg">
+    <div class="modal">
+      <h2>buyma 브랜드 검색</h2>
+      <input type="text" class="search" id="modal-search" placeholder="브랜드명 또는 ID">
+      <div class="results" id="modal-results"></div>
+      <div class="footer">
+        <button id="modal-close">닫기</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const PK_COLS = ['mall_name', 'raw_brand_name'];
+const META_COLS = ['created_at', 'updated_at'];
+const BOOL_COLS = new Set(['is_active', 'is_mapped']);
+const NUMERIC_COLS = new Set(['buyma_brand_id', 'mapping_level']);
+
+let allRows = [];          // 서버에서 받은 원본
+let editableCols = new Set();
+let displayCols = [];
+let dirty = {};            // key="mall_name||raw_brand_name" → {col: newValue}
+let checked = new Set();   // PK keys
+let activeBuymaTarget = null;  // 검색 팝업에서 선택 시 어느 행 갱신할지
+let sortState = {col: null, dir: null};  // 정렬 상태 (dir: 'asc'|'desc'|null)
+
+// ── 유틸 ──
+function pkKey(row) { return row.mall_name + '||' + row.raw_brand_name; }
+function qs(id) { return document.getElementById(id); }
+
+function setStatus(msg, cls) {
+  const el = qs('status');
+  el.textContent = msg;
+  el.className = 'status' + (cls ? ' ' + cls : '');
+}
+
+function updateDirtyCount() {
+  let n = 0;
+  for (const k in dirty) n += Object.keys(dirty[k]).length;
+  qs('dirty-count').textContent = n;
+}
+
+function updateCheckedCount() {
+  qs('checked-count').textContent = checked.size;
+}
+
+// ── 데이터 로드 ──
+async function reload() {
+  setStatus('로딩 중...');
+  const p = new URLSearchParams();
+  const mv = qs('f-mall').value;
+  if (mv) p.set('mall_name', mv);
+  const av = qs('f-active').value;
+  if (av) p.set('is_active', av);
+  const mp = qs('f-mapped').value;
+  if (mp) p.set('is_mapped', mp);
+  if (qs('f-unmapped').checked) p.set('unmapped_only', '1');
+  const sv = qs('f-search').value.trim();
+  if (sv) p.set('search', sv);
+  p.set('limit', qs('f-limit').value);
+  try {
+    const res = await fetch('/manage/brands/data.json?' + p.toString(), {credentials: 'same-origin'});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    allRows = data.rows || [];
+    editableCols = new Set(data.editable_columns || []);
+    displayCols = data.select_columns || [];
+    // mall_name dropdown 채우기
+    const sel = qs('f-mall');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">(전체)</option>' +
+      (data.mall_names || []).map(m => `<option value="${m}">${m}</option>`).join('');
+    if (cur) sel.value = cur;
+    // 초기화
+    dirty = {};
+    checked.clear();
+    renderTable();
+    setStatus(`${allRows.length}행 로드 완료.`);
+    updateDirtyCount();
+    updateCheckedCount();
+  } catch (e) {
+    setStatus('로드 실패: ' + e.message, 'error');
+  }
+}
+
+// ── 정렬 ──
+function getSortedRows() {
+  if (!sortState.col || !sortState.dir) return allRows;
+  const col = sortState.col;
+  const dir = sortState.dir === 'asc' ? 1 : -1;
+  const isNum = NUMERIC_COLS.has(col) || BOOL_COLS.has(col);
+  return [...allRows].sort((a, b) => {
+    const av = a[col];
+    const bv = b[col];
+    const aNull = av == null || av === '';
+    const bNull = bv == null || bv === '';
+    if (aNull && bNull) return 0;
+    // NULL을 가장 작은 값으로 취급 (MariaDB 기본 동작): ASC면 위, DESC면 아래
+    if (aNull) return -dir;
+    if (bNull) return dir;
+    if (isNum) {
+      const an = Number(av), bn = Number(bv);
+      if (isNaN(an) || isNaN(bn)) return String(av).localeCompare(String(bv)) * dir;
+      return (an - bn) * dir;
+    }
+    return String(av).localeCompare(String(bv)) * dir;
+  });
+}
+
+function onHeaderClick(col) {
+  if (sortState.col !== col) {
+    sortState = {col, dir: 'asc'};
+  } else if (sortState.dir === 'asc') {
+    sortState.dir = 'desc';
+  } else {
+    sortState = {col: null, dir: null};
+  }
+  renderTable();
+}
+
+// ── 테이블 렌더 ──
+function renderTable() {
+  const thead = qs('thead-row');
+  thead.innerHTML = '<th class="check-col">✓</th>' +
+    displayCols.map(c => {
+      const isSorted = sortState.col === c;
+      const arrow = isSorted ? `<span class="arrow">${sortState.dir === 'asc' ? '▲' : '▼'}</span>` : '';
+      return `<th class="sortable" data-col="${c}">${c}${arrow}</th>`;
+    }).join('');
+  thead.querySelectorAll('th.sortable').forEach(th => {
+    th.addEventListener('click', () => onHeaderClick(th.dataset.col));
+  });
+  const sortedRows = getSortedRows();
+  const tbody = qs('tbody');
+  tbody.innerHTML = '';
+  for (const row of sortedRows) {
+    const tr = document.createElement('tr');
+    const k = pkKey(row);
+    // 체크박스
+    const tdc = document.createElement('td');
+    tdc.className = 'check-col';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = checked.has(k);
+    cb.addEventListener('change', () => {
+      if (cb.checked) checked.add(k); else checked.delete(k);
+      updateCheckedCount();
+    });
+    tdc.appendChild(cb);
+    tr.appendChild(tdc);
+    // 각 컬럼
+    for (const col of displayCols) {
+      const td = document.createElement('td');
+      const val = row[col];
+      const isPK = PK_COLS.includes(col);
+      const isMeta = META_COLS.includes(col);
+      const editable = editableCols.has(col) && !isPK && !isMeta;
+      if (!editable) {
+        td.classList.add('ro');
+        if (isPK) td.classList.add('pk-col');
+        td.textContent = val == null ? '' : String(val);
+      } else if (BOOL_COLS.has(col)) {
+        td.classList.add('bool-cell');
+        const sel = document.createElement('select');
+        for (const opt of ['', '0', '1']) {
+          const o = document.createElement('option');
+          o.value = opt; o.textContent = opt === '' ? '(NULL)' : opt;
+          sel.appendChild(o);
+        }
+        sel.value = val == null ? '' : String(val);
+        sel.dataset.col = col;
+        sel.dataset.orig = sel.value;
+        sel.addEventListener('change', () => handleEdit(row, td, col, sel.value, sel.dataset.orig));
+        td.appendChild(sel);
+      } else if (col === 'buyma_brand_id') {
+        td.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'buyma-cell';
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'cell-input';
+        inp.value = val == null ? '' : String(val);
+        inp.dataset.col = col;
+        inp.dataset.orig = inp.value;
+        inp.addEventListener('change', () => handleEdit(row, td, col, inp.value, inp.dataset.orig));
+        wrap.appendChild(inp);
+        const btn = document.createElement('button');
+        btn.className = 'lookup';
+        btn.textContent = '🔍';
+        btn.title = 'buyma 브랜드 검색';
+        btn.addEventListener('click', () => openBuymaSearch(row, tr));
+        wrap.appendChild(btn);
+        td.appendChild(wrap);
+      } else {
+        td.classList.add('edit');
+        const inp = document.createElement('input');
+        inp.type = NUMERIC_COLS.has(col) ? 'text' : 'text';
+        inp.className = 'cell-input';
+        inp.value = val == null ? '' : String(val);
+        inp.dataset.col = col;
+        inp.dataset.orig = inp.value;
+        inp.addEventListener('change', () => handleEdit(row, td, col, inp.value, inp.dataset.orig));
+        td.appendChild(inp);
+      }
+      tr.appendChild(td);
+    }
+    // dirty 표시 (재렌더링 시 복원)
+    const drow = dirty[k];
+    if (drow) {
+      for (const col of Object.keys(drow)) {
+        const idx = displayCols.indexOf(col);
+        if (idx >= 0) tr.children[idx + 1].classList.add('dirty');
+      }
+    }
+    tbody.appendChild(tr);
+  }
+}
+
+function handleEdit(row, td, col, newVal, origVal) {
+  const k = pkKey(row);
+  const norm = newVal === '' ? null : newVal;
+  const origNorm = origVal === '' ? null : origVal;
+  if (String(norm) === String(origNorm)) {
+    // 변경 되돌림
+    if (dirty[k]) {
+      delete dirty[k][col];
+      if (!Object.keys(dirty[k]).length) delete dirty[k];
+    }
+    td.classList.remove('dirty');
+  } else {
+    if (!dirty[k]) dirty[k] = {};
+    dirty[k][col] = norm;
+    td.classList.add('dirty');
+  }
+  updateDirtyCount();
+  if (qs('save-mode').value === 'instant') {
+    saveChanges([{row, cols: [col]}]);
+  }
+}
+
+// ── 저장 ──
+async function saveChanges(targets) {
+  // targets: 옵션 — 특정 row+col만 저장. 없으면 dirty 전체.
+  let changes = [];
+  if (targets && targets.length) {
+    for (const t of targets) {
+      const k = pkKey(t.row);
+      const drow = dirty[k] || {};
+      const fields = {};
+      for (const c of t.cols) if (c in drow) fields[c] = drow[c];
+      if (Object.keys(fields).length) {
+        changes.push({pk: {mall_name: t.row.mall_name, raw_brand_name: t.row.raw_brand_name}, fields});
+      }
+    }
+  } else {
+    for (const k in dirty) {
+      const [mall, raw] = k.split('||');
+      changes.push({pk: {mall_name: mall, raw_brand_name: raw}, fields: {...dirty[k]}});
+    }
+  }
+  if (!changes.length) {
+    setStatus('변경 없음.');
+    return;
+  }
+  setStatus(`저장 중... (${changes.length}건)`);
+  try {
+    const res = await fetch('/manage/brands/update', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      credentials: 'same-origin',
+      body: JSON.stringify({changes}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    // 성공한 셀들 dirty 제거 + 원본값 갱신
+    for (const ch of changes) {
+      const k = ch.pk.mall_name + '||' + ch.pk.raw_brand_name;
+      for (const col of Object.keys(ch.fields)) {
+        if (dirty[k]) delete dirty[k][col];
+        const row = allRows.find(r => r.mall_name === ch.pk.mall_name && r.raw_brand_name === ch.pk.raw_brand_name);
+        if (row) row[col] = ch.fields[col];
+      }
+      if (dirty[k] && !Object.keys(dirty[k]).length) delete dirty[k];
+    }
+    renderTable();
+    updateDirtyCount();
+    setStatus(`저장 완료: ${data.updated}행 영향.`);
+  } catch (e) {
+    setStatus('저장 실패: ' + e.message, 'error');
+  }
+}
+
+// ── buyma 검색 팝업 ──
+function openBuymaSearch(row, tr) {
+  activeBuymaTarget = {row, tr};
+  qs('modal-bg').classList.add('open');
+  qs('modal-search').value = '';
+  qs('modal-results').innerHTML = '<div class="empty">검색어를 입력하세요.</div>';
+  setTimeout(() => qs('modal-search').focus(), 0);
+}
+
+function closeBuymaSearch() {
+  qs('modal-bg').classList.remove('open');
+  activeBuymaTarget = null;
+}
+
+let searchTimer = null;
+qs('modal-search').addEventListener('input', e => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => doBuymaSearch(e.target.value.trim()), 200);
+});
+
+async function doBuymaSearch(q) {
+  if (!q) {
+    qs('modal-results').innerHTML = '<div class="empty">검색어를 입력하세요.</div>';
+    return;
+  }
+  try {
+    const res = await fetch('/manage/brands/search_buyma?q=' + encodeURIComponent(q), {credentials: 'same-origin'});
+    const data = await res.json();
+    const box = qs('modal-results');
+    if (!data.results || !data.results.length) {
+      box.innerHTML = '<div class="empty">결과 없음.</div>';
+      return;
+    }
+    box.innerHTML = data.results.map(r =>
+      `<div class="item" data-id="${r.id}" data-name="${(r.brand_name || '').replace(/"/g, '&quot;')}">` +
+      `<span class="id">#${r.id}</span>${r.brand_name}${r.limited ? ' <span style="color:#b00">[limited]</span>' : ''}</div>`
+    ).join('');
+    box.querySelectorAll('.item').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.dataset.id;
+        const name = el.dataset.name;
+        if (!activeBuymaTarget) return;
+        const {row, tr} = activeBuymaTarget;
+        // buyma_brand_id, buyma_brand_name 두 셀 dirty 처리
+        setCellValue(row, tr, 'buyma_brand_id', id);
+        setCellValue(row, tr, 'buyma_brand_name', name);
+        closeBuymaSearch();
+      });
+    });
+  } catch (e) {
+    qs('modal-results').innerHTML = '<div class="empty">검색 실패: ' + e.message + '</div>';
+  }
+}
+
+function setCellValue(row, tr, col, val) {
+  const idx = displayCols.indexOf(col);
+  if (idx < 0) return;
+  const td = tr.children[idx + 1];
+  // input or select 찾기
+  const inp = td.querySelector('input.cell-input, select');
+  if (!inp) return;
+  const orig = inp.dataset.orig;
+  inp.value = val;
+  handleEdit(row, td, col, val, orig);
+}
+
+qs('modal-close').addEventListener('click', closeBuymaSearch);
+qs('modal-bg').addEventListener('click', e => {
+  if (e.target === qs('modal-bg')) closeBuymaSearch();
+});
+
+// ── 일괄 작업 ──
+function bulkSet(col, value) {
+  if (!checked.size) {
+    setStatus('선택된 행이 없습니다.', 'error');
+    return;
+  }
+  const targets = [];
+  for (const k of checked) {
+    const [mall, raw] = k.split('||');
+    const row = allRows.find(r => r.mall_name === mall && r.raw_brand_name === raw);
+    if (!row) continue;
+    if (!dirty[k]) dirty[k] = {};
+    dirty[k][col] = value;
+    targets.push({row, cols: [col]});
+  }
+  renderTable();
+  updateDirtyCount();
+  if (qs('save-mode').value === 'instant') {
+    saveChanges(targets);
+  } else {
+    setStatus(`${targets.length}행에 ${col}=${value} 설정 (저장 버튼 누르세요).`, 'dirty');
+  }
+}
+
+// ── 이벤트 ──
+qs('btn-reload').addEventListener('click', reload);
+qs('btn-save').addEventListener('click', () => saveChanges());
+qs('btn-discard').addEventListener('click', () => {
+  dirty = {};
+  renderTable();
+  updateDirtyCount();
+  setStatus('변경 사항 취소.');
+});
+qs('btn-bulk-active1').addEventListener('click', () => bulkSet('is_active', '1'));
+qs('btn-bulk-active0').addEventListener('click', () => bulkSet('is_active', '0'));
+qs('f-search').addEventListener('keydown', e => { if (e.key === 'Enter') reload(); });
+
+// 초기 로드 (mall_name dropdown 채우기 위해 빈 조회)
+reload();
+</script>
+</body>
+</html>
