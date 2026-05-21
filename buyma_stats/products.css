@@ -8,6 +8,8 @@ body { font-family: -apple-system, "Apple SD Gothic Neo", "Helvetica Neue", sans
 .topbar input[type=text] { padding: 7px 12px; border: 1px solid #cdd2da; border-radius: 4px; width: 320px; font-size: 13px; outline: none; }
 .topbar input[type=text]:focus { border-color: #2962ff; }
 .topbar .meta { font-size: 12px; color: #777; }
+.topbar button { padding: 7px 14px; border: 1px solid #cdd2da; background: #fff; border-radius: 4px; cursor: pointer; font-size: 13px; color: #222; white-space: nowrap; }
+.topbar button:hover { background: #f0f2f5; border-color: #2962ff; color: #2962ff; }
 .tabs { display: flex; background: #f4f5f7; padding: 8px 24px 0; flex-shrink: 0; }
 .filter-chip { padding: 8px 18px; border: 1px solid #d0d4dc; border-bottom: none; border-radius: 4px 4px 0 0; background: #f5f6f8; color: #4a4a4a; font-size: 13px; cursor: pointer; user-select: none; margin-right: 2px; position: relative; top: 1px; }
 .filter-chip:hover { background: #ebedf0; }

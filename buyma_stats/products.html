@@ -11,6 +11,7 @@
     <div class="right">
       <span class="meta" id="meta">데이터 로드 중…</span>
       <input type="text" id="search" placeholder="상품명 / 품번 / 상품ID 검색">
+      <button id="export-csv" type="button">엑셀 다운로드</button>
     </div>
   </div>
 
@@ -564,6 +565,79 @@
     document.getElementById('modal').onclick = (e) => { if (e.target.id === 'modal') document.getElementById('modal').classList.remove('open'); };
 
     document.getElementById('search').oninput = (e) => { searchQ = e.target.value.trim(); currentPage = 1; renderAll(); };
+
+    // =======================================================
+    // CSV 다운로드 — 현재 필터/검색/정렬 적용된 결과 전체
+    // =======================================================
+    function csvCellOf(key, r) {
+      switch (key) {
+        case 'image':            return r.image_url || '';
+        case 'status':           return STATUS_META[r.status]?.label || r.status || '';
+        case 'name_ja':          return r.name_ja || '';
+        case 'name_ko':          return r.name_ko || '';
+        case 'access':           return r.access_count ?? '';
+        case 'cart':             return r.cart_count ?? '';
+        case 'fav':              return r.favorite_count ?? '';
+        case 'fav_avg':          { const v = avg(r.favorite_count, r.registered_at); return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
+        case 'access_avg':       { const v = avg(r.access_count, r.registered_at);   return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
+        case 'cart_avg':         { const v = avg(r.cart_count, r.registered_at);     return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
+        case 'lowest_buyma':     return r.buyma_lowest_price ?? '';
+        case 'lowest_avail':     return r.available_lowest_price_jpy ?? '';
+        case 'price':            return r.status === 'on_sale' ? (r.price_yen ?? 0) : 0;
+        case 'margin': {
+          if (r.margin_amount_krw == null) return '';
+          const rate = r.margin_rate != null ? ` (${Number(r.margin_rate).toFixed(1)}%)` : '';
+          return `${Number(r.margin_amount_krw).toLocaleString('ko-KR')}원${rate}`;
+        }
+        case 'rank':             return r.rank_position != null ? `${r.rank_position}위` : '';
+        case 'same_count':       return r.same_count ?? '';
+        case 'same_access':      return '';
+        case 'top1': {
+          if (r.top1_link == null && r.same_count == null) return '';
+          if (r.top1_is_ours) return '우리가 차지함';
+          return r.top1_seller_name || '확인필요';
+        }
+        case 'access_7d':        return r.access_7d ?? '';
+        case 'buyma_link':       return r.buyma_product_id ? `https://www.buyma.com/item/${r.buyma_product_id}` : '';
+        case 'sources':          return r.source_count != null ? `${r.source_count}곳` : '';
+        case 'price_updated_at': return r.price_updated_at || '';
+        case 'source_updated_at':return r.source_updated_at || '';
+        case 'reg_date':         return r.registered_at || '';
+        case 'reg_days':         { const v = regDays(r.registered_at); return v == null ? '' : v; }
+        case 'expire':           return r.expire_at || '';
+        default:                 return '';
+      }
+    }
+
+    function csvRow(arr) {
+      return arr.map(v => {
+        if (v == null) return '';
+        const s = String(v);
+        if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      }).join(',');
+    }
+
+    function exportCsv() {
+      const view = applyView();
+      const lines = [csvRow(COLS.map(c => c.label))];
+      for (const r of view) {
+        lines.push(csvRow(COLS.map(c => csvCellOf(c.key, r))));
+      }
+      const csv = '﻿' + lines.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      a.href = url;
+      a.download = `buyma_products_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    document.getElementById('export-csv').onclick = exportCsv;
 
     // =======================================================
     // 도움말 툴팁 — 모달 overflow에 잘리지 않도록 body에 띄움
