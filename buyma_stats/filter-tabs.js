@@ -284,6 +284,19 @@
     window.renderAll();
   }
 
+  async function deleteTabInline(tab) {
+    if (!confirm('"' + tab.name + '" 탭을 삭제할까요?')) return;
+    try {
+      await deleteCustomTabRemote(tab.id);
+    } catch (err) {
+      alert('삭제 실패: ' + (err && err.message ? err.message : err));
+      return;
+    }
+    customTabs = customTabs.filter(function (x) { return x.id !== tab.id; });
+    if (activeTabId === tab.id) applyTab('all');
+    else window.renderAll();
+  }
+
   /* =====================================================================
    * 4) 탭 줄 렌더링  (products.html 의 renderAll 이 호출)
    * ===================================================================== */
@@ -295,9 +308,13 @@
       el.className = 'filter-chip' + (tab.id === activeTabId ? ' active' : '') + (isCustom ? ' custom' : '');
       el.innerHTML = esc(tab.name) +
         ' <span class="tab-count">' + countMatches(tab.filter).toLocaleString('ko-KR') + '</span>' +
-        (isCustom ? ' <span class="tab-edit" title="이 탭 수정/삭제">✎</span>' : '');
+        (isCustom
+          ? ' <span class="tab-edit" title="이 탭 수정">✎</span>' +
+            ' <span class="tab-del" title="이 탭 삭제">✕</span>'
+          : '');
       el.addEventListener('click', function (e) {
         if (e.target.classList.contains('tab-edit')) { openBuilder(tab); return; }
+        if (e.target.classList.contains('tab-del'))  { e.stopPropagation(); deleteTabInline(tab); return; }
         applyTab(tab.id);
       });
       box.appendChild(el);

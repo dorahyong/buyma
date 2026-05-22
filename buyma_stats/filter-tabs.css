@@ -16,9 +16,12 @@
 /* 사용자 탭 — 시스템 탭과 구분되는 옅은 파랑 보더 */
 .filter-chip.custom { border-color: #b9c9ef; }
 .filter-chip.custom.active { border-color: #4a4a4a; }
-.filter-chip .tab-edit { margin-left: 5px; opacity: .5; font-size: 11px; }
+.filter-chip .tab-edit { margin-left: 5px; opacity: .5; font-size: 11px; cursor: pointer; }
 .filter-chip .tab-edit:hover { opacity: 1; color: #2962ff; }
 .filter-chip.active .tab-edit:hover { color: #fff; }
+.filter-chip .tab-del { margin-left: 4px; opacity: .5; font-size: 11px; cursor: pointer; }
+.filter-chip .tab-del:hover { opacity: 1; color: #d32f2f; }
+.filter-chip.active .tab-del:hover { color: #fff; }
 
 /* 시스템/사용자 탭 사이 구분선 */
 .tab-divider { width: 1px; align-self: center; height: 18px; background: #d0d4dc; margin: 0 8px 2px; }
