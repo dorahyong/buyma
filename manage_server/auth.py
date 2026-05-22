@@ -14,7 +14,7 @@ from functools import wraps
 from flask import (Flask, redirect, render_template, request, session, url_for)
 
 
-SESSION_LIFETIME_MINUTES = 30
+SESSION_LIFETIME_MINUTES = 180
 
 
 def configure_auth(app: Flask) -> None:
