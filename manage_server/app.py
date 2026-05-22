@@ -31,6 +31,7 @@ import products_cache  # noqa: E402
 from auth import configure_auth, register_auth_routes, require_login  # noqa: E402
 import brands_api  # noqa: E402
 import categories_api  # noqa: E402
+import tabs_api  # noqa: E402
 
 load_dotenv()
 
@@ -324,6 +325,64 @@ def manage_categories_search_buyma():
     limit = max(1, min(limit, 200))
     results = categories_api.search_buyma_categories(q, limit=limit)
     return jsonify({"q": q, "count": len(results), "results": results})
+
+
+@app.route("/manage/products/tabs", methods=['GET'])
+@require_login
+def manage_products_tabs_list():
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        tabs = tabs_api.list_tabs(db_cfg)
+    except Exception as e:
+        return jsonify({"error": str(e), "tabs": []}), 500
+    return jsonify({"tabs": tabs})
+
+
+@app.route("/manage/products/tabs", methods=['POST'])
+@require_login
+def manage_products_tabs_create():
+    payload = request.get_json(silent=True) or {}
+    name = payload.get('name')
+    filter_obj = payload.get('filter')
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        tab = tabs_api.create_tab(db_cfg, name, filter_obj)
+    except tabs_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"tab": tab}), 201
+
+
+@app.route("/manage/products/tabs/<tab_id>", methods=['PUT'])
+@require_login
+def manage_products_tabs_update(tab_id):
+    payload = request.get_json(silent=True) or {}
+    name = payload.get('name')
+    filter_obj = payload.get('filter')
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        tab = tabs_api.update_tab(db_cfg, tab_id, name, filter_obj)
+    except tabs_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    if tab is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"tab": tab})
+
+
+@app.route("/manage/products/tabs/<tab_id>", methods=['DELETE'])
+@require_login
+def manage_products_tabs_delete(tab_id):
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        ok = tabs_api.delete_tab(db_cfg, tab_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    if not ok:
+        return jsonify({"error": "not found"}), 404
+    return ('', 204)
 
 
 @app.route("/manage")

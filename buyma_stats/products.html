@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <title>바이마 출품목록관리</title>
   <link rel="stylesheet" href="./products.css">
+  <link rel="stylesheet" href="./filter-tabs.css">
 </head>
 <body>
   <div class="topbar">
@@ -27,6 +28,7 @@
     </div>
   </div>
 
+  <script src="./filter-tabs.js"></script>
   <script>
     // =======================================================
     // 컬럼 정의 (기획문서 1~26번; 27번 출품제외요청은 보류)
@@ -227,7 +229,6 @@
     let META = {};
     let sortState = { key: null, dir: null };
     let searchQ = '';
-    let statusFilter = 'all';   // all | on_sale | waiting | no_lowest | sold_out | unknown
     let pageSize = 100;
     let currentPage = 1;
 
@@ -317,20 +318,6 @@
       }).join('') + '</tr></thead>';
     }
 
-    function renderFilters() {
-      const counts = { all: DATA.length };
-      DATA.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
-      const order = ['all', 'on_sale', 'waiting', 'no_lowest', 'sold_out', 'unknown'];
-      const labelOf = (k) => k === 'all' ? '전체' : (STATUS_META[k]?.label || k);
-      const html = order.filter(k => k === 'all' || counts[k]).map(k => {
-        const cls = statusFilter === k ? 'filter-chip active' : 'filter-chip';
-        return `<span class="${cls}" onclick="setFilter('${k}')">${labelOf(k)} (${(counts[k] || 0).toLocaleString('ko-KR')})</span>`;
-      }).join('');
-      document.getElementById('filters').innerHTML = html;
-    }
-    function setFilter(k) { statusFilter = k; currentPage = 1; renderAll(); }
-    window.setFilter = setFilter;
-
     function setPage(n) {
       const total = Math.max(1, Math.ceil(applyView().length / pageSize));
       currentPage = Math.min(Math.max(1, n), total);
@@ -347,7 +334,8 @@
 
     function applyView() {
       let view = DATA.slice();
-      if (statusFilter !== 'all') view = view.filter(r => r.status === statusFilter);
+      const f = window.ACTIVE_FILTER;
+      if (f && window.matchFilter) view = view.filter(r => window.matchFilter(r, f));
       if (searchQ) {
         const q = searchQ.toLowerCase();
         view = view.filter(r =>
@@ -408,7 +396,7 @@
     }
 
     function renderAll() {
-      renderFilters();
+      if (window.renderTabBar) window.renderTabBar();
       const view = applyView();
       const start = (currentPage - 1) * pageSize;
       const pageView = view.slice(start, start + pageSize);
@@ -702,6 +690,7 @@
           meta.textContent = '데이터 없음';
           return;
         }
+        if (window.initFilterTabs) await window.initFilterTabs();
         renderAll();
       } catch (err) {
         document.getElementById('content').innerHTML =
