@@ -136,8 +136,8 @@ def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
 
 def _determine_status(raw_agg: Dict, ace_list: List[Dict],
                       in_seller_listing: bool) -> str:
-    if in_seller_listing:
-        return 'on_sale'
+    # in_seller_listing은 detect_db_mismatch에서만 사용 — status 판정에서는 제외.
+    # buyma_product_stats에 stale row(이미 삭제/비활성된 상품)가 남아있어 '출품중' 카운트 부풀림 원인이었음.
     if ace_list:
         if any(a.get('is_published') == 1 and a.get('is_active') == 1
                for a in ace_list):

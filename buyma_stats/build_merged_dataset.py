@@ -138,11 +138,9 @@ def determine_status(ace_rows: List[Dict], raw_rows: List[Dict],
                      in_seller_listing: bool = False) -> str:
     """
     4가지 상태 판정.
-    in_seller_listing=True (= 바이마 셀러 전시목록에 떠 있음) 이면 무조건 on_sale.
-    셀러 페이지가 ground truth이므로 DB 상태와 무관하게 우선 판정.
+    ※ in_seller_listing은 detect_db_mismatch에서만 사용. status 판정에서는 제외
+    (buyma_product_stats는 삭제/비활성된 상품의 stale row도 보유 → 출품중 카운트 부풀림 원인).
     """
-    if in_seller_listing:
-        return 'on_sale'
     if ace_rows:
         if any(a.get('is_published') == 1 and a.get('is_active') == 1 for a in ace_rows):
             return 'on_sale'
