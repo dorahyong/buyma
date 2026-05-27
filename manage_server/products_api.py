@@ -118,7 +118,8 @@ def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
     """buyma_product_id → 통계 dict. 풀스캔."""
     sql = """
         SELECT buyma_product_id, access_count, cart_count,
-               favorite_count, access_7d
+               favorite_count, access_7d,
+               sold_count, sales_amount_jpy
         FROM buyma_product_stats
     """
     out: Dict[str, Dict] = {}
@@ -236,6 +237,8 @@ def build_payload(db_config: Dict) -> Dict:
             'cart_count':                 bstats.get('cart_count') if bstats else None,
             'favorite_count':             bstats.get('favorite_count') if bstats else None,
             'access_7d':                  bstats.get('access_7d') if bstats else None,
+            'sold_count':                 bstats.get('sold_count') if bstats else None,
+            'sales_amount_jpy':           int(bstats['sales_amount_jpy']) if bstats and bstats.get('sales_amount_jpy') is not None else None,
             'buyma_lowest_price':         ace0.get('buyma_lowest_price') if ace0 else None,
             'available_lowest_price_jpy': ace0.get('price') if ace0 else None,
             'price_yen':                  ace0.get('price') if ace0 else None,
