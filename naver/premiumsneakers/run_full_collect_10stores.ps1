@@ -1,8 +1,7 @@
 # 네이버 스마트스토어 10개 본수집 (순차) — PowerShell
 #
 # 선행조건:
-#   1) WARP OFF (네이버 DNS 차단 회피)
-#   2) 쿠키 갱신: python naver/premiumsneakers/premiumsneakers_collector.py --login
+#   1) 쿠키 갱신: python naver/premiumsneakers/premiumsneakers_collector.py --login
 #
 # 사용법:
 #   powershell -ExecutionPolicy Bypass -File naver/premiumsneakers/run_full_collect_10stores.ps1

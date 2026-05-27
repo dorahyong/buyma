@@ -59,7 +59,12 @@ DATABASE_URL = os.getenv(
     f"mysql+pymysql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
     f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT', 3306)}/{os.getenv('DB_NAME')}?charset=utf8mb4"
 )
-engine = create_engine(DATABASE_URL, echo=False)
+engine = create_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,    # 쿼리 전 connection 살아있는지 ping (stale 자동 처리)
+    pool_recycle=1800,     # 30분 지난 connection 자동 재생성
+)
 
 # --source CLI 인자로 덮어씀 (기본값: premiumsneakers)
 STORE_ID = 'premiumsneakers'
@@ -128,11 +133,11 @@ def save_rows(rows: List[Dict]):
         return
     sql = text("""
         INSERT INTO raw_scraped_data
-        (source_site, mall_product_id, brand_name_en, brand_name_kr,
+        (source_site, mall_product_id, brand_name_en,
          product_name, p_name_full, model_id, category_path,
          original_price, raw_price, stock_status, raw_json_data, product_url)
         VALUES
-        (:source_site, :mall_product_id, :brand_name_en, :brand_name_kr,
+        (:source_site, :mall_product_id, :brand_name_en,
          :product_name, :p_name_full, :model_id, :category_path,
          :original_price, :raw_price, :stock_status, :raw_json_data, :product_url)
         ON DUPLICATE KEY UPDATE
@@ -495,6 +500,22 @@ def map_to_row(product: Dict, benefits: Optional[Dict],
             # '사이즈', '신발사이즈' 등은 모두 size로 처리
             group_types.append('size')
 
+    # '모델명'/'품번'/'스타일' 단독 그룹인데 옵션 값이 모두 사이즈 패턴이면 size로 재분류
+    # (판매자가 사이즈 그룹을 모델명 라벨로 잘못 등록한 케이스 구제 — 예: trendmecca)
+    if len(group_types) == 1 and group_types[0] == 'skip':
+        _FREE_SIZE_TOKENS = {'ONE SIZE', 'ONESIZE', '단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI', 'FREE'}
+        _SIZE_RE = re.compile(r'^\(?(XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL|\d+)\)?$', re.IGNORECASE)
+        def _looks_like_size(s: str) -> bool:
+            s = (s or '').strip()
+            if not s:
+                return False
+            if s.upper() in _FREE_SIZE_TOKENS:
+                return True
+            return bool(_SIZE_RE.match(s))
+        _peek = [(c.get('optionName1') or '').strip() for c in (product.get('optionCombinations') or [])]
+        if _peek and all(_looks_like_size(v) for v in _peek):
+            group_types[0] = 'size'
+
     def _normalize_size(s: str) -> str:
         s = (s or '').strip()
         if s.upper() in {'ONE SIZE', 'ONESIZE', '단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI', 'FREE'}:
@@ -563,7 +584,6 @@ def map_to_row(product: Dict, benefits: Optional[Dict],
         'source_site': SOURCE_SITE,
         'mall_product_id': product_no,
         'brand_name_en': brand_name,
-        'brand_name_kr': brand_name,
         'product_name': product_name,
         'p_name_full': product_name,
         'model_id': model_id,
@@ -634,6 +654,8 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
         # Phase 2
         logger.info("\n== Phase 2: 상세 수집 ==")
         rows = []
+        first_row = None      # dump용 (batch save로 rows 비워져도 보존)
+        total_collected = 0   # 누적 수집 카운트
         total = len(items)
         for i, item in enumerate(items, 1):
             pno = item['product_no']
@@ -654,21 +676,28 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
                     logger.warning(f"[{i}/{total}] {pno} 매핑 실패 (product={bool(product)}, benefits={bool(benefits)})")
                 continue
             rows.append(row)
+            total_collected += 1
+            if first_row is None:
+                first_row = row
             raw = json.loads(row['raw_json_data'])
             logger.info(
                 f"[{i}/{total}] {row['brand_name_en']} | {row['model_id']} | "
                 f"₩{row['raw_price']:,} (정가 ₩{row['original_price']:,}) | "
                 f"img:{len(raw['images'])} | opt:{len(raw['options'])}"
             )
+            # batch save (10개마다 — 긴 작업 중간 손실 방지)
+            if not dry_run and len(rows) >= 10:
+                save_rows(rows)
+                rows = []
             await asyncio.sleep(random.uniform(*DETAIL_DELAY))
 
         await browser.close()
 
-    logger.info(f"\n== 수집 완료: {len(rows)}/{len(items)} ==")
+    logger.info(f"\n== 수집 완료: {total_collected}/{len(items)} ==")
 
-    if dump and rows:
+    if dump and first_row:
         logger.info("\n=== 첫 행 전체 덤프 ===")
-        r0 = rows[0]
+        r0 = first_row
         for k, v in r0.items():
             if k == 'raw_json_data':
                 logger.info(f"{k}:")
@@ -676,6 +705,7 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
             else:
                 logger.info(f"{k}: {v}")
 
+    # 마지막 남은 batch
     if rows and not dry_run:
         save_rows(rows)
     elif dry_run:

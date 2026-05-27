@@ -172,6 +172,8 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
 
         logger.info("\n== Phase 2: 상세 수집 (brandstore /n/v2/) ==")
         rows = []
+        first_row = None      # dump용 (batch save로 rows 비워져도 보존)
+        total_collected = 0   # 누적 수집 카운트
         total = len(items)
         for i, item in enumerate(items, 1):
             pno = item['product_no']
@@ -193,21 +195,28 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
                     logger.warning(f"[{i}/{total}] {pno} 매핑 실패 (product={bool(product)}, benefits={bool(benefits)})")
                 continue
             rows.append(row)
+            total_collected += 1
+            if first_row is None:
+                first_row = row
             raw = json.loads(row['raw_json_data'])
             logger.info(
                 f"[{i}/{total}] {row['brand_name_en']} | {row['model_id']} | "
                 f"₩{row['raw_price']:,} (정가 ₩{row['original_price']:,}) | "
                 f"img:{len(raw['images'])} | opt:{len(raw['options'])}"
             )
+            # batch save (10개마다 — 긴 작업 중간 손실 방지)
+            if not dry_run and len(rows) >= 10:
+                save_rows(rows)
+                rows = []
             await asyncio.sleep(random.uniform(*DETAIL_DELAY))
 
         await browser.close()
 
-    logger.info(f"\n== 수집 완료: {len(rows)}/{len(items)} ==")
+    logger.info(f"\n== 수집 완료: {total_collected}/{len(items)} ==")
 
-    if dump and rows:
+    if dump and first_row:
         logger.info("\n=== 첫 행 전체 덤프 ===")
-        r0 = rows[0]
+        r0 = first_row
         for k, v in r0.items():
             if k == 'raw_json_data':
                 logger.info(f"{k}:")
@@ -215,6 +224,7 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
             else:
                 logger.info(f"{k}: {v}")
 
+    # 마지막 남은 batch
     if rows and not dry_run:
         save_rows(rows)
     elif dry_run:

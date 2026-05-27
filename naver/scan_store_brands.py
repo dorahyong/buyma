@@ -455,16 +455,16 @@ def insert_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = Fal
         with conn.cursor() as cur:
             # 기존 브랜드 조회
             cur.execute(
-                "SELECT mall_brand_name_en FROM mall_brands WHERE mall_name = %s",
+                "SELECT raw_brand_name FROM mall_brands WHERE mall_name = %s",
                 (source_site,)
             )
-            existing = {r['mall_brand_name_en'].upper() for r in cur.fetchall()}
+            existing = {r['raw_brand_name'] for r in cur.fetchall() if r['raw_brand_name']}
 
             inserted = 0
             skipped = 0
             for brand in brands:
                 brand_name = brand['name'].strip()
-                if brand_name.upper() in existing:
+                if brand_name in existing:
                     skipped += 1
                     continue
 
@@ -475,13 +475,13 @@ def insert_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = Fal
 
                 cur.execute("""
                     INSERT INTO mall_brands
-                    (mall_name, mall_brand_name_en, mall_brand_name_ko,
+                    (mall_name, raw_brand_name, mall_brand_name_en,
                      mall_brand_url, mall_brand_no, is_active, is_mapped)
                     VALUES (%s, %s, %s, %s, %s, 1, 0)
                 """, (
                     source_site,
                     brand_name,
-                    '',  # 한글명은 나중에 매핑
+                    brand_name,
                     brand['url'],
                     brand['category_key'],
                 ))

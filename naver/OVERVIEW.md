@@ -173,7 +173,7 @@ python naver/scan_store_brands.py --store <store> --insert-site     # 브랜드+
 
 ## 6. premiumsneakers_collector.py 핵심 설계
 
-**사무실 PC에서만 실행** (WARP OFF). AWS는 네이버 DNS 차단.
+**사무실 PC에서만 실행**. AWS는 네이버 DNS 차단.
 
 - Playwright `headless=False` 필수
 - **Phase 1**: 카테고리 페이지 순회, 페이지 버튼 클릭 방식 (URL param 무시됨)
@@ -202,7 +202,7 @@ python naver/premiumsneakers/premiumsneakers_collector.py --source fabstyle    #
 
 네이버 스마트스토어는 HTML/API 구조가 거의 동일 → 샘플 파일 없이도 바로 추가 가능.
 
-1. **WARP OFF** + **쿠키 갱신**: `python naver/premiumsneakers/premiumsneakers_collector.py --login`
+1. **쿠키 갱신**: `python naver/premiumsneakers/premiumsneakers_collector.py --login`
 2. `mall_brands`에 해당 스토어 시드 확인 (없으면 scan):
    ```sql
    SELECT COUNT(*) FROM mall_brands WHERE mall_name='<store>';
@@ -233,7 +233,6 @@ python naver/premiumsneakers/premiumsneakers_collector.py --source fabstyle    #
 ## 8. 운영 메모 / 헤맸던 것들
 
 ### 환경
-- **WARP 충돌**: buyma용 Cloudflare WARP이 켜져 있으면 네이버 DNS 실패 → 네이버 작업 시 WARP OFF 필수
 - **쿠키 수명**: 몇 시간. 실행 전 `--login` 권장
 - **Playwright `headless=False`**: 네이버 봇 감지 회피
 
@@ -315,14 +314,13 @@ python naver/premiumsneakers/premiumsneakers_collector.py --source fabstyle    #
 7. 미매핑 카테고리 568건 수동 매핑 (okmall 448, labellusso 41, kasina 29, nextzennpack 24, trendmecca 23, veroshopmall 3)
 
 ### 다음 실행 체크리스트 (새 세션에서)
-1. **WARP OFF** 확인
-2. 쿠키 갱신: `python naver/premiumsneakers/premiumsneakers_collector.py --login`
-3. DB 조회: 각 스토어별 brands/categories 건수, 매핑률 확인
+1. 쿠키 갱신: `python naver/premiumsneakers/premiumsneakers_collector.py --login`
+2. DB 조회: 각 스토어별 brands/categories 건수, 매핑률 확인
    ```sql
    SELECT mall_name, COUNT(*) n, SUM(buyma_brand_id IS NOT NULL) mapped FROM mall_brands GROUP BY mall_name;
    SELECT mall_name, COUNT(*) n FROM mall_categories GROUP BY mall_name;
    ```
-4. 이 문서의 진행상태 표 갱신
+3. 이 문서의 진행상태 표 갱신
 
 ---
 

@@ -561,7 +561,6 @@ x-client-version
 
 ## 환경 전제
 - **사무실 PC에서만 실행**. AWS/서버에서는 네이버 DNS 차단되거나 쿠키 재활용 안 됨.
-- **WARP 상태**: buyma 크롤링용 Cloudflare WARP이 켜져 있으면 `smartstore.naver.com` DNS resolve 실패 → 네이버 작업 시 **WARP 꺼야** 함.
 - `naver_cookies.json`은 `naver/` 바로 아래(scan_store_brands, premiumsneakers_collector 공용). 쿠키 수명 짧음(몇 시간) → 실행 전 `--login` 권장.
 - Playwright `headless=False` 필수 — headless는 네이버 봇 감지에 걸림.
 

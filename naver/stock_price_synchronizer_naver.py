@@ -13,7 +13,6 @@
   - URL prefix: smartstore는 /i/v2/, brandstore는 /n/v2/
 
 실행 전제:
-  - WARP OFF (네이버 DNS 차단 회피)
   - naver_cookies.json 존재 (없으면 premiumsneakers_collector.py --login 으로 갱신)
   - MAX_WORKERS=1 (Playwright 세션 1개 공유, 직렬 처리)
 
@@ -148,8 +147,8 @@ BUYMA_HEADERS = {
 BUYMA_SEARCH_URL = "https://www.buyma.com/r/-O3/{model_no}/"
 
 # 딜레이 설정
-REQUEST_DELAY_MIN = 0.3  # 네이버 상세 페이지 방문 간 최소 딜레이
-REQUEST_DELAY_MAX = 0.8  # 네이버 상세 페이지 방문 간 최대 딜레이
+REQUEST_DELAY_MIN = 0.2  # 네이버 상세 페이지 방문 간 최소 딜레이
+REQUEST_DELAY_MAX = 0.6  # 네이버 상세 페이지 방문 간 최대 딜레이
 API_CALL_DELAY = 0.2     # 바이마 API 호출 후 딜레이
 DETAIL_PAGE_TIMEOUT = 30000
 DETAIL_MAX_RETRIES = 2
@@ -196,7 +195,7 @@ def load_category_size_keys() -> Dict[int, List[str]]:
 
     import csv
     # okmall 디렉토리의 마스터 데이터 참조
-    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'okmall', 'buyma_master_data_20260226', 'size_details.csv')
+    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'buyma_master_data', 'size_details.csv')
     try:
         with open(csv_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
@@ -717,6 +716,22 @@ class StockPriceSynchronizer:
                 else:
                     group_types.append('size')
 
+            # '모델명'/'품번'/'스타일' 단독 그룹인데 옵션 값이 모두 사이즈 패턴이면 size로 재분류
+            # (판매자가 사이즈 그룹을 모델명 라벨로 잘못 등록한 케이스 구제 — 예: trendmecca)
+            if len(group_types) == 1 and group_types[0] == 'skip':
+                _FREE_SIZE_TOKENS = {'ONE SIZE', 'ONESIZE', '단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI', 'FREE'}
+                _SIZE_RE = re.compile(r'^\(?(XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL|\d+)\)?$', re.IGNORECASE)
+                def _looks_like_size(s: str) -> bool:
+                    s = (s or '').strip()
+                    if not s:
+                        return False
+                    if s.upper() in _FREE_SIZE_TOKENS:
+                        return True
+                    return bool(_SIZE_RE.match(s))
+                _peek = [(c.get('optionName1') or '').strip() for c in (product.get('optionCombinations') or [])]
+                if _peek and all(_looks_like_size(v) for v in _peek):
+                    group_types[0] = 'size'
+
             def _normalize_size(s: str) -> str:
                 s = (s or '').strip()
                 if s.upper() in {'ONE SIZE', 'ONESIZE', '단일사이즈', '단일 사이즈', '단일',
@@ -856,7 +871,7 @@ class StockPriceSynchronizer:
         try:
             with conn.cursor() as cursor:
                 cursor.execute("""
-                    SELECT id, color_value, size_value, stock_type
+                    SELECT id, color_value, size_value, color_value_original, size_value_original, source_option_code, stock_type
                     FROM ace_product_variants
                     WHERE ace_product_id = %s
                 """, (ace_product_id,))
@@ -895,49 +910,57 @@ class StockPriceSynchronizer:
                 })
             return changes
 
-        # 다중 옵션 상품: 기존 로직 (이름으로 매칭)
-        mall_map = {}
+        # 다중 옵션 상품 매칭 (2026-05-21 개편):
+        #   1순위: source_option_code (mall이 부여한 옵션 고유 ID, 번역 영향 0)
+        #   2순위: (color_value_original, size_value_original) 한글 원본 (mall raw 그대로 보존)
+        #   매칭 실패 → skip. 일본어 fallback 제거.
+        # 일본어 fallback이 5,320건+ false delete 사고의 원인이었음 (color_value가 번역으로 덮여 한글 mall raw와 매칭 불가).
+        mall_by_code = {}
+        mall_by_kr = {}
         for item in mall_options:
-            key = (item.get('color', '').strip().lower(), item.get('size', '').strip().lower())
-            mall_map[key] = item['status']
+            code = (item.get('option_code') or '').strip()
+            mc = (item.get('color', '') or '').strip().lower() or 'free'
+            ms = (item.get('size', '') or '').strip().lower() or 'free'
+            if code:
+                mall_by_code[code] = item['status']
+            mall_by_kr[(mc, ms)] = item['status']
 
         for variant in db_variants:
-            db_color = (variant.get('color_value') or '').strip().lower()
-            db_size = (variant.get('size_value') or '').strip().lower()
+            db_code = (variant.get('source_option_code') or '').strip()
+            db_color_kr = (variant.get('color_value_original') or '').strip().lower() or 'free'
+            db_size_kr = (variant.get('size_value_original') or '').strip().lower() or 'free'
             db_status = variant.get('stock_type', 'purchase_for_order')
             db_is_available = db_status != 'out_of_stock'
 
-            key = (db_color, db_size)
-            if key in mall_map:
-                mall_is_available = mall_map[key] == 'in_stock'
-                if db_is_available and not mall_is_available:
-                    changes.append({
-                        'variant_id': variant['id'],
-                        'color': variant.get('color_value'),
-                        'size': variant.get('size_value'),
-                        'old_status': db_status,
-                        'new_status': 'out_of_stock',
-                        'change_type': 'soldout'
-                    })
-                elif not db_is_available and mall_is_available:
-                    changes.append({
-                        'variant_id': variant['id'],
-                        'color': variant.get('color_value'),
-                        'size': variant.get('size_value'),
-                        'old_status': db_status,
-                        'new_status': 'purchase_for_order',
-                        'change_type': 'restock'
-                    })
-            else:
-                if db_is_available:
-                    changes.append({
-                        'variant_id': variant['id'],
-                        'color': variant.get('color_value'),
-                        'size': variant.get('size_value'),
-                        'old_status': db_status,
-                        'new_status': 'out_of_stock',
-                        'change_type': 'not_found'
-                    })
+            mall_status = None
+            if db_code and db_code in mall_by_code:
+                mall_status = mall_by_code[db_code]
+            elif (db_color_kr, db_size_kr) in mall_by_kr:
+                mall_status = mall_by_kr[(db_color_kr, db_size_kr)]
+
+            if mall_status is None:
+                # 매칭 실패 → skip (보수적). 진짜 단종은 별도 명시 도구로 처리.
+                continue
+
+            mall_is_available = mall_status == 'in_stock'
+            if db_is_available and not mall_is_available:
+                changes.append({
+                    'variant_id': variant['id'],
+                    'color': variant.get('color_value'),
+                    'size': variant.get('size_value'),
+                    'old_status': db_status,
+                    'new_status': 'out_of_stock',
+                    'change_type': 'soldout'
+                })
+            elif not db_is_available and mall_is_available:
+                changes.append({
+                    'variant_id': variant['id'],
+                    'color': variant.get('color_value'),
+                    'size': variant.get('size_value'),
+                    'old_status': db_status,
+                    'new_status': 'purchase_for_order',
+                    'change_type': 'restock'
+                })
         return changes
 
     def update_ace_products_price(self, ace_product_id: int, original_price_krw: int,
@@ -1086,6 +1109,9 @@ class StockPriceSynchronizer:
             }
 
         # 전체 품절 → 삭제
+        # (2026-05-21) 과거 5,320건+ false delete 사고의 원인이었던 매칭 키 버그가 근본 해결되어 차단 해제.
+        # 매칭 키: source_option_code 우선 → color_value_original/size_value_original 한글 원본 fallback.
+        # 매칭 실패 시 skip(=DB 안 건드림)으로 false out_of_stock 신규 생성도 차단됨 (detect_stock_changes 참조).
         all_out_of_stock = all(v['stock_type'] == 'out_of_stock' for v in variants)
         if all_out_of_stock:
             return {

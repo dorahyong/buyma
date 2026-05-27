@@ -1,32 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-네이버 11개 mall 일일 자동화
+네이버 21개 mall 일일 자동화
 
 대상 mall:
   smartstore (브랜드 리스트):     premiumsneakers, fabstyle, loutique, t1global, vvano, veroshopmall
   smartstore (전체상품 URL):      dmont, tuttobene, thefactor2
+  smartstore (전체상품 URL, 신규): maniaon, bblue, euroline, unico, kometa,
+                                  larlashoes, thegrande, upset, luxlimit, pano
   brandstore (brand.naver.com):   carpi, joharistore
 
-Phase 1: Collector 직렬 1→11 (네이버 캡챠 회피, 쿠키 공유)
+Phase 1: Collector 직렬 1→21 (네이버 캡챠 회피, 쿠키 공유)
 Phase 2: Converter 순차 → Dedup
 Phase 3: Price(4 workers) + Image(4 workers)  2트랙 병렬
-Phase 4: Register(4 workers 병렬)
-Phase 5: Stock (11 mall 공용 1개 스크립트, Register 결과 반영)
+Phase 4: Translate(4 workers 병렬)
+Phase 5: Register(4 workers 병렬)
+Phase 6: Stock (전체 mall 공용 1개 스크립트, Register 결과 반영)
 
 Stock이 Register 뒤에 오는 이유:
-  - Register 결과로 새로 is_published=1 된 상품을 Stock이 반영 가능
-  - Stock은 은등록된 상품만 대상이라 Register와 겹치지 않음
+  - Collector~Register 흐름이 deleted 상품도 자동 복구 (raw 갱신 → converter 자동 재변환 → register)
+  - Register 결과로 새로 is_published=1 된 상품을 Stock이 즉시 sync 가능
+  - Stock은 등록된 상품만 대상이라 Register와 row 충돌 없음
 
 실행 전제:
-  - WARP OFF (네이버 DNS 차단 회피)
   - naver/naver_cookies.json 사전 로그인
       → python naver/premiumsneakers/premiumsneakers_collector.py --login
 
 사용법:
-    python run_daily_naver.py                     # 전체 실행
-    python run_daily_naver.py --phase 2           # Phase 2부터
-    python run_daily_naver.py --phase 5           # Stock만
-    python run_daily_naver.py --dry-run           # 명령만 출력
+    python run_daily_naver.py                          # 전체 실행
+    python run_daily_naver.py --phase 2                # Phase 2부터
+    python run_daily_naver.py --phase 6                # Stock만
+    python run_daily_naver.py --dry-run                # 명령만 출력
+    python run_daily_naver.py --source bblue           # 특정 mall만 처리
+    python run_daily_naver.py --skip-collect           # Phase 1 Collector 건너뛰고 Phase 2부터 (이미 수집된 raw로)
+    python run_daily_naver.py --skip-stock             # Phase 6 Stock 건너뛰기 (Phase 5 Register까지만)
+    python run_daily_naver.py --source bblue --skip-collect --skip-stock  # 조합 가능
 """
 
 import os
@@ -52,6 +59,8 @@ SOURCES = [
     'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
     'dmont', 'tuttobene', 'thefactor2',
     'carpi', 'joharistore',
+    'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
+    'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano',
 ]
 
 # collector 분류
@@ -71,12 +80,23 @@ COLLECTOR_MAP = {
     'thefactor2':      CATEGORY_COLLECTOR,
     'carpi':           BRANDSTORE_COLLECTOR,
     'joharistore':     BRANDSTORE_COLLECTOR,
+    'maniaon':         CATEGORY_COLLECTOR,
+    'bblue':           CATEGORY_COLLECTOR,
+    'euroline':        CATEGORY_COLLECTOR,
+    'unico':           CATEGORY_COLLECTOR,
+    'kometa':          CATEGORY_COLLECTOR,
+    'larlashoes':      CATEGORY_COLLECTOR,
+    'thegrande':       CATEGORY_COLLECTOR,
+    'upset':           CATEGORY_COLLECTOR,
+    'luxlimit':        CATEGORY_COLLECTOR,
+    'pano':            CATEGORY_COLLECTOR,
 }
 
 # 공용 스크립트
 CONVERTER_SCRIPT = 'kasina/raw_to_converter_kasina.py'
 DEDUP_SCRIPT = 'okmall/dedup_corrector.py'
 PRICE_SCRIPT = 'okmall/buyma_lowest_price_collector.py'
+TRANSLATE_SCRIPT = 'okmall/convert_to_japanese_gemini.py'
 IMAGE_SCRIPT = 'okmall/r2_image_uploader.py'
 REGISTER_SCRIPT = 'okmall/buyma_new_product_register.py'
 NAVER_STOCK_SCRIPT = 'naver/stock_price_synchronizer_naver.py'
@@ -84,6 +104,7 @@ NAVER_STOCK_SCRIPT = 'naver/stock_price_synchronizer_naver.py'
 # 병렬 워커 수
 CONVERT_WORKERS = 4
 PRICE_WORKERS = 4
+TRANSLATE_WORKERS = 4
 IMAGE_WORKERS = 4
 REGISTER_WORKERS = 4
 
@@ -143,12 +164,12 @@ def run_parallel(tasks: list, max_workers: int) -> dict:
 
 
 # =====================================================
-# Phase 1: Collector 직렬 (1→11, 네이버 캡챠 회피)
+# Phase 1: Collector 직렬 (1→21, 네이버 캡챠 회피)
 # =====================================================
 
 def phase1_collect(dry_run: bool = False):
     log("=" * 60)
-    log(f"Phase 1: Collector 직렬 실행 (1→11, 전 {len(SOURCES)}개)")
+    log(f"Phase 1: Collector 직렬 실행 (1→{len(SOURCES)}, 전 {len(SOURCES)}개)")
     log("=" * 60)
 
     for i, src in enumerate(SOURCES, 1):
@@ -167,16 +188,18 @@ def phase1_collect(dry_run: bool = False):
 # Phase 2: Converter 순차 → Dedup
 # =====================================================
 
-def phase2_convert_dedup(dry_run: bool = False):
+def phase2_convert_dedup(dry_run: bool = False, include_unpublished: bool = False):
     log("=" * 60)
-    log(f"Phase 2: Converter ({CONVERT_WORKERS} workers 병렬) + Dedup")
+    log(f"Phase 2: Converter ({CONVERT_WORKERS} workers 병렬) + Dedup"
+        + (" [--include-unpublished]" if include_unpublished else ""))
     log("=" * 60)
 
     # Converter: source-site 단위 병렬 (source 다르면 같은 데이터 안 건드려서 안전)
     def run_convert_for(src, dry_run):
-        return run_script(CONVERTER_SCRIPT,
-                          ['--source-site', src, '--skip-translation'],
-                          dry_run=dry_run)
+        cmd_args = ['--source-site', src, '--skip-translation']
+        if include_unpublished:
+            cmd_args.append('--include-unpublished')
+        return run_script(CONVERTER_SCRIPT, cmd_args, dry_run=dry_run)
 
     tasks = [(src, run_convert_for, (src, dry_run)) for src in SOURCES]
     results = run_parallel(tasks, max_workers=CONVERT_WORKERS)
@@ -235,12 +258,35 @@ def phase3_price_image(dry_run: bool = False):
 
 
 # =====================================================
-# Phase 4: Register (병렬)
+# Phase 4: Translate (병렬)
 # =====================================================
 
-def phase4_register(dry_run: bool = False):
+def phase4_translate(dry_run: bool = False):
     log("=" * 60)
-    log(f"Phase 4: Register ({REGISTER_WORKERS} workers 병렬)")
+    log(f"Phase 4: Translate ({TRANSLATE_WORKERS} workers 병렬)")
+    log("=" * 60)
+
+    def run_translate_for(src, dry_run):
+        return run_script(TRANSLATE_SCRIPT,
+                          ['--source', src, '--price-checked-only'],
+                          dry_run=dry_run)
+
+    tasks = [(src, run_translate_for, (src, dry_run)) for src in SOURCES]
+    results = run_parallel(tasks, max_workers=TRANSLATE_WORKERS)
+    for src, rc in results.items():
+        if rc != 0:
+            log(f"  Translate {src} 실패 (rc={rc})", "WARNING")
+
+    log("Phase 4 완료")
+
+
+# =====================================================
+# Phase 5: Register (병렬)
+# =====================================================
+
+def phase5_register(dry_run: bool = False):
+    log("=" * 60)
+    log(f"Phase 5: Register ({REGISTER_WORKERS} workers 병렬)")
     log("=" * 60)
 
     def run_register_for(src, dry_run):
@@ -252,24 +298,28 @@ def phase4_register(dry_run: bool = False):
         if rc != 0:
             log(f"  Register {src} 실패 (rc={rc})", "WARNING")
 
-    log("Phase 4 완료")
+    log("Phase 5 완료")
 
 
 # =====================================================
-# Phase 5: Stock (11개 mall 공용 1 스크립트, Register 이후)
+# Phase 6: Stock (전체 mall 공용 1 스크립트, Register 이후)
 # =====================================================
 
-def phase5_stock(dry_run: bool = False):
+def phase6_stock(dry_run: bool = False, source: str = None):
     log("=" * 60)
-    log("Phase 5: Stock (11개 mall 공용 — Register 결과 반영)")
+    if source:
+        log(f"Phase 6: Stock ({source}만 — Register 결과 반영)")
+    else:
+        log("Phase 6: Stock (전체 mall 공용 — Register 결과 반영)")
     log("=" * 60)
 
-    # Playwright 단일 세션으로 내부 직렬. --source 없이 11개 전체.
-    rc = run_script(NAVER_STOCK_SCRIPT, [], dry_run=dry_run)
+    # Playwright 단일 세션으로 내부 직렬.
+    extra_args = ['--source', source] if source else []
+    rc = run_script(NAVER_STOCK_SCRIPT, extra_args, dry_run=dry_run)
     if rc != 0:
         log(f"  Stock 실패 (rc={rc})", "WARNING")
 
-    log("Phase 5 완료")
+    log("Phase 6 완료")
 
 
 # =====================================================
@@ -277,10 +327,24 @@ def phase5_stock(dry_run: bool = False):
 # =====================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='네이버 11개 mall 일일 자동화')
-    parser.add_argument('--phase', type=int, default=1, help='시작 Phase (1~5, 기본: 1)')
+    global SOURCES
+    parser = argparse.ArgumentParser(description='네이버 mall 일일 자동화')
+    parser.add_argument('--phase', type=int, default=1, help='시작 Phase (1~6, 기본: 1)')
     parser.add_argument('--dry-run', action='store_true', help='실제 실행 없이 명령만 출력')
+    parser.add_argument('--source', type=str, default=None,
+                        help=f'특정 mall만 처리 (지원: {", ".join(SOURCES)}). 미지정시 21개 전체')
+    parser.add_argument('--skip-collect', action='store_true',
+                        help='Phase 1 Collector 건너뛰기 (이미 수집된 raw로 Phase 2부터)')
+    parser.add_argument('--skip-stock', action='store_true',
+                        help='Phase 6 Stock 건너뛰기 (Phase 5 Register까지만 진행)')
     args = parser.parse_args()
+
+    # --source 지정 시 SOURCES를 1개로 좁힘 (Phase 1~5는 SOURCES 참조, Phase 6는 source 직접 전달)
+    if args.source:
+        if args.source not in SOURCES:
+            log(f"지원하지 않는 --source: {args.source} (지원: {', '.join(SOURCES)})", "ERROR")
+            return
+        SOURCES = [args.source]
 
     start_time = datetime.now()
     log("=" * 60)
@@ -288,23 +352,34 @@ def main():
     log(f"  대상: {len(SOURCES)}개 mall — {', '.join(SOURCES)}")
     log(f"  시작 Phase: {args.phase}")
     log(f"  DRY-RUN: {args.dry_run}")
-    log("  전제: WARP OFF + naver_cookies.json 사전 로그인")
+    log(f"  SKIP-COLLECT: {args.skip_collect}")
+    log(f"  SKIP-STOCK: {args.skip_stock}")
+    log("  전제: naver_cookies.json 사전 로그인")
     log("=" * 60)
 
-    if args.phase <= 1:
+    if args.phase <= 1 and not args.skip_collect:
         phase1_collect(args.dry_run)
+    elif args.phase <= 1 and args.skip_collect:
+        log("Phase 1 Collector 스킵 (--skip-collect)")
 
     if args.phase <= 2:
-        phase2_convert_dedup(args.dry_run)
+        # --skip-collect 시: collector가 raw.updated_at을 갱신 안 했으므로
+        # converter 기본 조건(raw > ace)으로는 미등록 상품 변환 안 됨 → --include-unpublished 강제 전달
+        phase2_convert_dedup(args.dry_run, include_unpublished=args.skip_collect)
 
     if args.phase <= 3:
         phase3_price_image(args.dry_run)
 
     if args.phase <= 4:
-        phase4_register(args.dry_run)
+        phase4_translate(args.dry_run)
 
     if args.phase <= 5:
-        phase5_stock(args.dry_run)
+        phase5_register(args.dry_run)
+
+    if args.phase <= 6 and not args.skip_stock:
+        phase6_stock(args.dry_run, source=args.source)
+    elif args.phase <= 6 and args.skip_stock:
+        log("Phase 6 Stock 스킵 (--skip-stock)")
 
     elapsed = datetime.now() - start_time
     hours, remainder = divmod(int(elapsed.total_seconds()), 3600)

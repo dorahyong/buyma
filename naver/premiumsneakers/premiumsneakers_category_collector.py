@@ -44,11 +44,13 @@ from premiumsneakers_collector import (
     COOKIE_FILE,
     DETAIL_MAX_RETRIES,
 )
+# brand.naver.com 도메인 전체상품 collector 용 /n/v2/ fetcher
+from brand_store_collector import fetch_detail_brand_store
 import premiumsneakers_collector as base
 
 # category_collector 전용 딜레이 (브랜드 collector의 값과 독립) — 보수적 단축
-LIST_DELAY = (0.3, 0.8)
-DETAIL_DELAY = (0.8, 1.2)
+LIST_DELAY = (0.2, 0.5)
+DETAIL_DELAY = (0.5, 1.0)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -79,6 +81,8 @@ STORE_ALL_PRODUCT_URLS = {
     'upset':      'https://smartstore.naver.com/upset/category/43565b8658a8424ead3abf5a6f2b323e?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'luxlimit':   'https://smartstore.naver.com/luxlimit/category/618b4b385c0b41f7a81f8c0bd16e32e4?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
     'pano':       'https://smartstore.naver.com/panokorea/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    # brand.naver.com 도메인 (fetch는 /n/v2/ 사용)
+    'trendmecca': 'https://brand.naver.com/trendmecca/category/af9ae952a4054de0bc4762485e779b02?st=RECENT&dt=IMAGE&page=1&size=80',
 }
 
 PAGE_SIZE = 80
@@ -141,24 +145,29 @@ def get_all_products_url() -> Optional[str]:
 
 
 def ensure_mall_brand(brand_name_en: str) -> None:
-    """mall_brands에 brand_name_en이 없으면 INSERT (is_active=1, buyma_brand_id=NULL)"""
+    """mall_brands에 raw_brand_name이 없으면 INSERT (is_active=1, buyma_brand_id=NULL)"""
     if not brand_name_en:
         return
     with engine.begin() as conn:
         exists = conn.execute(text("""
             SELECT 1 FROM mall_brands
             WHERE mall_name = :site
-              AND UPPER(mall_brand_name_en) = UPPER(:en)
+              AND raw_brand_name = :name
             LIMIT 1
-        """), {'site': base.SOURCE_SITE, 'en': brand_name_en}).fetchone()
+        """), {'site': base.SOURCE_SITE, 'name': brand_name_en}).fetchone()
         if exists:
             return
         conn.execute(text("""
             INSERT INTO mall_brands
-              (mall_name, mall_brand_name_en, is_active, mapping_level, is_mapped)
+              (mall_name, raw_brand_name, mall_brand_name_en,
+               is_active, mapping_level, is_mapped)
             VALUES
-              (:site, :en, 1, 0, 0)
-        """), {'site': base.SOURCE_SITE, 'en': brand_name_en})
+              (:site, :raw, :en, 1, 0, 0)
+        """), {
+            'site': base.SOURCE_SITE,
+            'raw': brand_name_en,
+            'en': brand_name_en,
+        })
         logger.info(f"  [mall_brands] 신규 브랜드 INSERT: {brand_name_en}")
 
 
@@ -250,7 +259,7 @@ async def collect_product_list_all(page, all_products_url: str,
 
     logger.info(f"\n>>> 전체상품 URL: {all_products_url}")
     page_num = 1
-    max_pages = None
+    # max_pages는 로그 표시용 추정치만. 실제 종료는 자연 종료 조건(빈 페이지/중복/다음 버튼 없음)에 일임.
 
     try:
         await page.goto(all_products_url, timeout=30000)
@@ -267,8 +276,10 @@ async def collect_product_list_all(page, all_products_url: str,
             first_id = pnos[0] if pnos else None
 
             if page_num == 1 and total is not None:
-                max_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-                logger.info(f"  총 {total}개 → {max_pages}페이지 예상 (size={PAGE_SIZE})")
+                # 안내용 예상치만 (첫 페이지 실제 발견 개수 기반, break 조건 아님)
+                est_size = len(pnos) or PAGE_SIZE
+                est_pages = max(1, (total + est_size - 1) // est_size)
+                logger.info(f"  총 {total}개 → 약 {est_pages}페이지 예상 (size={est_size}, 추정)")
                 if count_only:
                     results.append({'_count': True, 'total': total})
                     return results
@@ -290,8 +301,7 @@ async def collect_product_list_all(page, all_products_url: str,
 
             if limit and len(results) >= limit:
                 return results[:limit]
-            if max_pages is not None and page_num >= max_pages:
-                break
+            # max_pages 기반 종료 제거 — 자연 종료(빈 페이지/이전 페이지와 100% 중복/다음 버튼 없음)에 일임
             if not pnos or (page_num > 1 and page_seen_overlap == len(pnos)):
                 break
 
@@ -338,13 +348,19 @@ async def collect_product_list_all(page, all_products_url: str,
 # =====================================================
 
 async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
-              dump: bool = False, count_only: bool = False):
+              dump: bool = False, count_only: bool = False,
+              mall_product_id: Optional[str] = None):
     from playwright.async_api import async_playwright
 
-    all_products_url = get_all_products_url()
-    if not all_products_url:
-        logger.error(f"STORE_ALL_PRODUCT_URLS에 '{base.SOURCE_SITE}' 미등록. 코드에 URL 추가 필요.")
-        return
+    # mall_product_id 지정 시 Phase 1 스킵하고 그 1건만 처리 (검증/디버깅용)
+    if mall_product_id:
+        logger.info(f"단일 상품 모드: mall_product_id={mall_product_id} (Phase 1 스킵)")
+        all_products_url = None
+    else:
+        all_products_url = get_all_products_url()
+        if not all_products_url:
+            logger.error(f"STORE_ALL_PRODUCT_URLS에 '{base.SOURCE_SITE}' 미등록. 코드에 URL 추가 필요.")
+            return
 
     skip_ids = get_published_product_ids() if skip_existing else set()
     if skip_existing:
@@ -366,9 +382,14 @@ async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
 
         page = await context.new_page()
 
-        logger.info("\n== Phase 1: 리스트 수집 (전체상품 URL) ==")
-        items = await collect_product_list_all(page, all_products_url, limit, skip_ids,
-                                                count_only=count_only)
+        if mall_product_id:
+            # 단일 상품 모드: Phase 1 스킵
+            items = [{'product_no': str(mall_product_id)}]
+            logger.info(f"\n== Phase 1 스킵: 지정된 mall_product_id 1건 처리 ==")
+        else:
+            logger.info("\n== Phase 1: 리스트 수집 (전체상품 URL) ==")
+            items = await collect_product_list_all(page, all_products_url, limit, skip_ids,
+                                                    count_only=count_only)
 
         if count_only:
             await browser.close()
@@ -385,14 +406,21 @@ async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
 
         logger.info("\n== Phase 2: 상세 수집 ==")
         rows = []
+        first_row = None      # dump용 (batch save로 rows 비워져도 보존)
+        total_collected = 0   # 누적 수집 카운트
         total = len(items)
         new_brands_seen = set()
         new_categories_seen = set()
         for i, item in enumerate(items, 1):
             pno = item['product_no']
             product, benefits = None, None
+            # 도메인별 fetch 분기: brand.naver.com은 /n/v2/, smartstore.naver.com은 /i/v2/
+            is_brandstore = base.STORE_HOME.startswith('https://brand.naver.com')
             for attempt in range(DETAIL_MAX_RETRIES + 1):
-                product, benefits = await fetch_detail(page, pno)
+                if is_brandstore:
+                    product, benefits = await fetch_detail_brand_store(page, pno)
+                else:
+                    product, benefits = await fetch_detail(page, pno)
                 if product:
                     break
                 if attempt < DETAIL_MAX_RETRIES:
@@ -469,23 +497,30 @@ async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
                     ensure_mall_category(cat)
 
             rows.append(row)
+            total_collected += 1
+            if first_row is None:
+                first_row = row
             raw = json.loads(row['raw_json_data'])
             logger.info(
                 f"[{i}/{total}] {row['brand_name_en']} | {row['model_id']} | "
                 f"₩{row['raw_price']:,} (정가 ₩{row['original_price']:,}) | "
                 f"img:{len(raw['images'])} | opt:{len(raw['options'])}"
             )
+            # batch save (10개마다 — 긴 작업 중간 손실 방지)
+            if not dry_run and len(rows) >= 10:
+                save_rows(rows)
+                rows = []
             await asyncio.sleep(random.uniform(*DETAIL_DELAY))
 
         await browser.close()
 
-    logger.info(f"\n== 수집 완료: {len(rows)}/{len(items)} ==")
+    logger.info(f"\n== 수집 완료: {total_collected}/{len(items)} ==")
     logger.info(f"신규 발견 브랜드 수: {len(new_brands_seen)}")
     logger.info(f"신규 발견 카테고리 수: {len(new_categories_seen)}")
 
-    if dump and rows:
+    if dump and first_row:
         logger.info("\n=== 첫 행 전체 덤프 ===")
-        r0 = rows[0]
+        r0 = first_row
         for k, v in r0.items():
             if k == 'raw_json_data':
                 logger.info(f"{k}:")
@@ -493,6 +528,7 @@ async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
             else:
                 logger.info(f"{k}: {v}")
 
+    # 마지막 남은 batch
     if rows and not dry_run:
         save_rows(rows)
     elif dry_run:
@@ -509,6 +545,8 @@ def main():
     parser.add_argument('--login', action='store_true', help='네이버 로그인 → 쿠키 갱신')
     parser.add_argument('--dump', action='store_true', help='수집된 첫 행의 raw_json_data 전체 출력')
     parser.add_argument('--count', action='store_true', help='Phase 1만 실행 — 총 상품 수 집계')
+    parser.add_argument('--mall-product-id', type=str, default=None,
+                        help='Phase 1 스킵하고 특정 mall_product_id(channelProductNo) 1건만 fetch (검증/디버깅용)')
     args = parser.parse_args()
 
     set_source(args.source)
@@ -520,7 +558,8 @@ def main():
     logger.info(f"=== {base.SOURCE_SITE} 전체상품 수집 "
                 f"(Mode: {'DRY-RUN' if args.dry_run else 'NORMAL'}) ===")
     logger.info(f"STORE_HOME: {base.STORE_HOME}")
-    asyncio.run(run(args.limit, args.skip_existing, args.dry_run, args.dump, args.count))
+    asyncio.run(run(args.limit, args.skip_existing, args.dry_run, args.dump, args.count,
+                    mall_product_id=args.mall_product_id))
 
 
 if __name__ == '__main__':
