@@ -578,8 +578,7 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str, 
     return {
         'source_site': SOURCE_SITE,
         'mall_product_id': product_no,
-        'brand_name_en': brand_name_en,
-        'brand_name_kr': brand_name_ko,
+        'brand_name_en': brand_name_en or brand_name_ko,
         'product_name': product_name,
         'p_name_full': product_name,
         'model_id': model_id,
@@ -598,13 +597,13 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str, 
 
 def get_brands_from_database(brand_filter: str = None) -> List[Dict]:
     with engine.connect() as conn:
-        query = "SELECT mall_brand_name_en, mall_brand_name_ko, mall_brand_no FROM mall_brands WHERE mall_name = 'nextzennpack' AND is_active = 1"
+        query = "SELECT mall_brand_name_en, mall_brand_no FROM mall_brands WHERE mall_name = 'nextzennpack' AND is_active = 1"
         params = {}
         if brand_filter:
             query += " AND UPPER(mall_brand_name_en) = :brand"
             params['brand'] = brand_filter.upper()
         result = conn.execute(text(query), params)
-        return [{'name_en': r[0], 'name_ko': r[1], 'cate_no': r[2]} for r in result]
+        return [{'name_en': r[0], 'cate_no': r[1]} for r in result]
 
 
 def get_published_product_ids(brand_name: str = None) -> set:
@@ -618,7 +617,7 @@ def get_published_product_ids(brand_name: str = None) -> set:
             AND a.is_published = 1
         """
         if brand_name:
-            query += " AND (UPPER(r.brand_name_en) = :brand OR UPPER(r.brand_name_kr) = :brand)"
+            query += " AND UPPER(r.brand_name_en) = :brand"
             result = conn.execute(text(query), {"brand": brand_name.upper()})
         else:
             result = conn.execute(text(query))
@@ -630,16 +629,15 @@ def save_to_database(data_list: List[Dict]):
         return
     insert_sql = text("""
         INSERT INTO raw_scraped_data
-        (source_site, mall_product_id, brand_name_en, brand_name_kr,
+        (source_site, mall_product_id, brand_name_en,
          product_name, p_name_full, model_id, category_path,
          original_price, raw_price, stock_status, raw_json_data, product_url)
         VALUES
-        (:source_site, :mall_product_id, :brand_name_en, :brand_name_kr,
+        (:source_site, :mall_product_id, :brand_name_en,
          :product_name, :p_name_full, :model_id, :category_path,
          :original_price, :raw_price, :stock_status, :raw_json_data, :product_url)
         ON DUPLICATE KEY UPDATE
         brand_name_en = VALUES(brand_name_en),
-        brand_name_kr = VALUES(brand_name_kr),
         product_name = VALUES(product_name),
         p_name_full = VALUES(p_name_full),
         model_id = VALUES(model_id),
@@ -689,7 +687,7 @@ def main():
     try:
         for brand_idx, brand in enumerate(brands, 1):
             brand_name_en = brand['name_en']
-            brand_name_ko = brand['name_ko']
+            brand_name_ko = ''
             cate_no = brand['cate_no']
 
             logger.info(f"\n>>> [{brand_idx}/{len(brands)}] 브랜드: {brand_name_en} (cate_no={cate_no})")

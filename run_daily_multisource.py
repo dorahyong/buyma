@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-멀티소스 일일 자동화 (kasina, nextzennpack, labellusso, trendmecca)
+멀티소스 일일 자동화 (kasina, nextzennpack, labellusso)
 
-Phase 1: Collector 4개 병렬 (--skip-existing)
-Phase 2: Converter 4개 순차 → Dedup
-Phase 3: Price(2+2) + Image(2+2) + Stock(2+2)  3트랙 병렬
-Phase 4: Register(2+2)
+Phase 1: Collector 3개 병렬 (--skip-existing)
+Phase 2: Converter 3개 순차 → Dedup
+Phase 3: Price(3) → Translate(3) → Image(3) → Stock(3) 트랙 순차
+Phase 4: Register(3개 병렬)
 
 예상 소요: 약 16~17시간
 
@@ -30,31 +30,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-SOURCES = ['kasina', 'nextzennpack', 'labellusso', 'trendmecca']
-
-# 2+2 병렬 그룹 (데이터 크기 균형: kasina 17k + nextzennpack 2k ≈ labellusso 8k + trendmecca 7k)
-GROUP_A = ['kasina', 'nextzennpack']
-GROUP_B = ['labellusso', 'trendmecca']
+SOURCES = ['kasina', 'nextzennpack', 'labellusso']
 
 # 각 사이트별 스크립트 경로
 COLLECTOR_SCRIPTS = {
     'kasina': 'kasina/kasina_collector.py',
     'nextzennpack': 'nextzennpack/nextzennpack_collector.py',
     'labellusso': 'labellusso/labellusso_collector.py',
-    'trendmecca': 'trendmecca/trendmecca_collector.py',
 }
 
 STOCK_SCRIPTS = {
     'kasina': 'kasina/stock_price_synchronizer_kasina.py',
     'nextzennpack': 'nextzennpack/stock_price_synchronizer_nextzennpack.py',
     'labellusso': 'labellusso/stock_price_synchronizer_labellusso.py',
-    'trendmecca': 'trendmecca/stock_price_synchronizer_trendmecca.py',
 }
 
 # 공용 스크립트
 CONVERTER_SCRIPT = 'kasina/raw_to_converter_kasina.py'
 DEDUP_SCRIPT = 'okmall/dedup_corrector.py'
 PRICE_SCRIPT = 'okmall/buyma_lowest_price_collector.py'
+TRANSLATE_SCRIPT = 'okmall/convert_to_japanese_gemini.py'
 IMAGE_SCRIPT = 'okmall/r2_image_uploader.py'
 REGISTER_SCRIPT = 'okmall/buyma_new_product_register.py'
 
@@ -113,23 +108,14 @@ def run_parallel(tasks: list, max_workers: int = 2) -> dict:
     return results
 
 
-def run_2plus2(run_func, dry_run: bool = False):
-    """2+2 병렬 실행 (Group A → Group B)"""
-    # Group A: 2개 병렬
-    tasks_a = [(src, run_func, (src, dry_run)) for src in GROUP_A]
-    results_a = run_parallel(tasks_a, max_workers=2)
-    for src, rc in results_a.items():
+def run_all(run_func, dry_run: bool = False):
+    """모든 source 병렬 실행"""
+    tasks = [(src, run_func, (src, dry_run)) for src in SOURCES]
+    results = run_parallel(tasks, max_workers=len(SOURCES))
+    for src, rc in results.items():
         if rc != 0:
             log(f"  {src} 실패 (rc={rc})", "WARNING")
-
-    # Group B: 2개 병렬
-    tasks_b = [(src, run_func, (src, dry_run)) for src in GROUP_B]
-    results_b = run_parallel(tasks_b, max_workers=2)
-    for src, rc in results_b.items():
-        if rc != 0:
-            log(f"  {src} 실패 (rc={rc})", "WARNING")
-
-    return {**results_a, **results_b}
+    return results
 
 
 # =====================================================
@@ -137,16 +123,16 @@ def run_2plus2(run_func, dry_run: bool = False):
 # =====================================================
 
 def phase1_collect(dry_run: bool = False):
-    """Phase 1: Collector 4개 병렬"""
+    """Phase 1: Collector 3개 병렬"""
     log("=" * 60)
-    log("Phase 1: Collector 4개 병렬 시작")
+    log("Phase 1: Collector 3개 병렬 시작")
     log("=" * 60)
 
     def run_collector(src, dry_run):
         return run_script(COLLECTOR_SCRIPTS[src], ['--skip-existing'], dry_run=dry_run)
 
     tasks = [(src, run_collector, (src, dry_run)) for src in SOURCES]
-    results = run_parallel(tasks, max_workers=4)
+    results = run_parallel(tasks, max_workers=len(SOURCES))
 
     for src, rc in results.items():
         status = "완료" if rc == 0 else f"실패(rc={rc})"
@@ -156,7 +142,7 @@ def phase1_collect(dry_run: bool = False):
 
 
 def phase2_convert_dedup(dry_run: bool = False):
-    """Phase 2: Converter 4개 순차 → Dedup"""
+    """Phase 2: Converter 3개 순차 → Dedup"""
     log("=" * 60)
     log("Phase 2: Converter + Dedup 시작")
     log("=" * 60)
@@ -176,13 +162,16 @@ def phase2_convert_dedup(dry_run: bool = False):
 
 
 def phase3_price_image_stock(dry_run: bool = False):
-    """Phase 3: Price(2+2) + Image(2+2) + Stock(2+2) 3트랙 병렬"""
+    """Phase 3: Price(3) → Translate(3) → Image(3) → Stock(3) 트랙 순차"""
     log("=" * 60)
-    log("Phase 3: Price + Image + Stock (3트랙 병렬) 시작")
+    log("Phase 3: Price → Translate → Image → Stock (트랙 순차) 시작")
     log("=" * 60)
 
     def run_price(src, dry_run):
         return run_script(PRICE_SCRIPT, ['--source', src, '--new-only'], dry_run=dry_run)
+
+    def run_translate(src, dry_run):
+        return run_script(TRANSLATE_SCRIPT, ['--source', src, '--price-checked-only'], dry_run=dry_run)
 
     def run_image(src, dry_run):
         return run_script(IMAGE_SCRIPT, ['--source', src], dry_run=dry_run)
@@ -190,42 +179,35 @@ def phase3_price_image_stock(dry_run: bool = False):
     def run_stock(src, dry_run):
         return run_script(STOCK_SCRIPTS[src], dry_run=dry_run)
 
-    def track_price(dry_run):
-        log("  [Track Price] 시작")
-        run_2plus2(run_price, dry_run)
-        log("  [Track Price] 완료")
+    log("  [Track Price] 시작")
+    run_all(run_price, dry_run)
+    log("  [Track Price] 완료")
 
-    def track_image(dry_run):
-        log("  [Track Image] 시작")
-        run_2plus2(run_image, dry_run)
-        log("  [Track Image] 완료")
+    log("  [Track Translate] 시작")
+    run_all(run_translate, dry_run)
+    log("  [Track Translate] 완료")
 
-    def track_stock(dry_run):
-        log("  [Track Stock] 시작")
-        run_2plus2(run_stock, dry_run)
-        log("  [Track Stock] 완료")
+    log("  [Track Image] 시작")
+    run_all(run_image, dry_run)
+    log("  [Track Image] 완료")
 
-    # 3트랙 병렬 실행
-    tasks = [
-        ('price', track_price, (dry_run,)),
-        ('image', track_image, (dry_run,)),
-        ('stock', track_stock, (dry_run,)),
-    ]
-    run_parallel(tasks, max_workers=3)
+    log("  [Track Stock] 시작")
+    run_all(run_stock, dry_run)
+    log("  [Track Stock] 완료")
 
     log("Phase 3 완료")
 
 
 def phase4_register(dry_run: bool = False):
-    """Phase 4: Register 2+2"""
+    """Phase 4: Register 3개 병렬"""
     log("=" * 60)
-    log("Phase 4: Register (2+2) 시작")
+    log("Phase 4: Register (3개 병렬) 시작")
     log("=" * 60)
 
     def run_register(src, dry_run):
         return run_script(REGISTER_SCRIPT, ['--source', src], dry_run=dry_run)
 
-    run_2plus2(run_register, dry_run)
+    run_all(run_register, dry_run)
 
     log("Phase 4 완료")
 

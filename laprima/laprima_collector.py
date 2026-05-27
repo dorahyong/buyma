@@ -580,17 +580,20 @@ def _extract_options(soup: BeautifulSoup, html: str) -> Tuple[List[Dict], bool]:
     return options, has_options
 
 
-def _extract_images(soup: BeautifulSoup) -> List[Dict[str, str]]:
-    """상세 페이지에서 이미지 수집.
+def _extract_images(soup: BeautifulSoup) -> List[str]:
+    """상세 페이지에서 이미지 수집 → URL string list 반환.
 
-    1순위: div.thumbnail > img.BigImage (대표 이미지)
+    1순위: div.thumbnail > img.BigImage (대표 이미지) — 순서상 첫 항목
     2순위: 상품 추가이미지 (xans-product-addimage 영역)
     3순위: 상세설명 본문(#detailCnt) 안의 _goods/ 경로 이미지 (ec-data-src)
+
+    nextzennpack/labellusso와 일관된 형태로 string list 반환 (이전: {url, kind} dict list).
     """
-    images: List[Dict[str, str]] = []
+    images: List[str] = []
     seen = set()
 
     def add(url: str, kind: str):
+        # kind는 더 이상 저장 안 함 (다른 mall과 일관성). 순서로 main → thumb → detail 보장.
         if not url:
             return
         if url.startswith('//'):
@@ -598,7 +601,7 @@ def _extract_images(soup: BeautifulSoup) -> List[Dict[str, str]]:
         if url in seen:
             return
         seen.add(url)
-        images.append({'url': url, 'kind': kind})
+        images.append(url)
 
     def _is_ui_chrome(url: str) -> bool:
         # 스킨/UI 아이콘 제외 (/wib/img/, /web/upload/icon_, .gif 등)
@@ -898,8 +901,7 @@ def build_raw_data(list_item: Dict, detail: Dict, category_path: str, html: str)
     return {
         'source_site': SOURCE_SITE,
         'mall_product_id': product_no,
-        'brand_name_en': (detail.get('brand_name_en') or '').strip(),
-        'brand_name_kr': (detail.get('brand_name_ko') or '').strip(),
+        'brand_name_en': (detail.get('brand_name_en') or detail.get('brand_name_ko') or '').strip(),
         'product_name': product_name,
         'p_name_full': product_name,
         'model_id': model_id,
@@ -966,16 +968,15 @@ def save_to_database(rows: List[Dict]):
         return
     insert_sql = text("""
         INSERT INTO raw_scraped_data
-        (source_site, mall_product_id, brand_name_en, brand_name_kr,
+        (source_site, mall_product_id, brand_name_en,
          product_name, p_name_full, model_id, category_path,
          original_price, raw_price, stock_status, raw_json_data, product_url)
         VALUES
-        (:source_site, :mall_product_id, :brand_name_en, :brand_name_kr,
+        (:source_site, :mall_product_id, :brand_name_en,
          :product_name, :p_name_full, :model_id, :category_path,
          :original_price, :raw_price, :stock_status, :raw_json_data, :product_url)
         ON DUPLICATE KEY UPDATE
         brand_name_en = VALUES(brand_name_en),
-        brand_name_kr = VALUES(brand_name_kr),
         product_name = VALUES(product_name),
         p_name_full = VALUES(p_name_full),
         model_id = VALUES(model_id),
@@ -1007,10 +1008,10 @@ def load_brand_lookup_dict() -> int:
     _BRAND_KO_TO_EN = {}
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT mall_brand_name_ko, mall_brand_name_en
+            SELECT raw_brand_name, mall_brand_name_en
             FROM mall_brands
             WHERE mall_name = 'laprima'
-              AND mall_brand_name_ko IS NOT NULL AND mall_brand_name_ko <> ''
+              AND raw_brand_name IS NOT NULL AND raw_brand_name <> ''
               AND mall_brand_name_en IS NOT NULL AND mall_brand_name_en <> ''
               AND mall_brand_name_en REGEXP '^[A-Za-z0-9 .&\\\\-]+$'
         """)).fetchall()
@@ -1031,21 +1032,21 @@ def ensure_mall_brand(brand_name_en: str, brand_name_ko: str) -> bool:
         exists = conn.execute(text("""
             SELECT 1 FROM mall_brands
             WHERE mall_name = 'laprima'
-              AND UPPER(mall_brand_name_en) = UPPER(:en)
+              AND raw_brand_name = :name
             LIMIT 1
-        """), {'en': brand_name_en}).fetchone()
+        """), {'name': brand_name_en}).fetchone()
         if exists:
             return False
         conn.execute(text("""
             INSERT INTO mall_brands
-              (mall_name, mall_brand_name_en, mall_brand_name_ko,
+              (mall_name, raw_brand_name, mall_brand_name_en,
                buyma_brand_id, buyma_brand_name, mapping_level, is_mapped,
                mall_brand_url, is_active, mall_brand_no)
             VALUES
-              ('laprima', :en, :ko,
+              ('laprima', :raw, :en,
                NULL, NULL, 0, 0,
                NULL, 1, NULL)
-        """), {'en': brand_name_en, 'ko': brand_name_ko or None})
+        """), {'raw': brand_name_en, 'en': brand_name_en})
         # 메모리 dict에도 추가 (다음 상품에서 즉시 활용 가능)
         if brand_name_ko:
             _BRAND_KO_TO_EN.setdefault(brand_name_ko, brand_name_en)
@@ -1181,12 +1182,11 @@ def main():
 
                 # mall_brands auto-INSERT
                 en = row['brand_name_en']
-                ko = row['brand_name_kr']
                 if en and en.upper() not in new_brands:
                     new_brands.add(en.upper())
                     if not args.dry_run:
-                        if ensure_mall_brand(en, ko):
-                            logger.info(f"  [mall_brands] 신규 INSERT: en={en!r} ko={ko!r}")
+                        if ensure_mall_brand(en, None):
+                            logger.info(f"  [mall_brands] 신규 INSERT: en={en!r}")
 
                 logger.info(
                     f"  [{idx}/{total}] {row['model_id']} | {int(row['raw_price']):>12,}원 | {row['stock_status']} | "

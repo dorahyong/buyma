@@ -260,7 +260,7 @@ def load_category_size_keys() -> Dict[int, List[str]]:
 
     import csv
     # okmall 디렉토리의 마스터 데이터 참조
-    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'okmall', 'buyma_master_data_20260226', 'size_details.csv')
+    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'buyma_master_data', 'size_details.csv')
     try:
         with open(csv_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)
@@ -895,7 +895,7 @@ class StockPriceSynchronizer:
         try:
             with conn.cursor() as cursor:
                 cursor.execute("""
-                    SELECT id, color_value, size_value, stock_type
+                    SELECT id, color_value, size_value, color_value_original, size_value_original, source_option_code, stock_type
                     FROM ace_product_variants
                     WHERE ace_product_id = %s
                 """, (ace_product_id,))
@@ -934,49 +934,56 @@ class StockPriceSynchronizer:
                 })
             return changes
 
-        # 다중 옵션 상품: 기존 로직 (이름으로 매칭)
-        mall_map = {}
+        # 다중 옵션 상품 매칭 (2026-05-21 개편):
+        #   1순위: source_option_code (mall이 부여한 옵션 고유 ID, 번역 영향 0)
+        #   2순위: (color_value_original, size_value_original) 한글 원본 (mall raw 그대로 보존)
+        #   매칭 실패 → skip. 일본어 fallback 제거.
+        # 일본어 fallback이 5,320건+ false delete 사고의 원인이었음 (color_value가 번역으로 덮여 한글 mall raw와 매칭 불가).
+        mall_by_code = {}
+        mall_by_kr = {}
         for item in mall_options:
-            key = (item.get('color', '').strip().lower(), item.get('size', '').strip().lower())
-            mall_map[key] = item['status']
+            code = (item.get('option_code') or '').strip()
+            mc = (item.get('color', '') or '').strip().lower() or 'free'
+            ms = (item.get('size', '') or '').strip().lower() or 'free'
+            if code:
+                mall_by_code[code] = item['status']
+            mall_by_kr[(mc, ms)] = item['status']
 
         for variant in db_variants:
-            db_color = (variant.get('color_value') or '').strip().lower()
-            db_size = (variant.get('size_value') or '').strip().lower()
+            db_code = (variant.get('source_option_code') or '').strip()
+            db_color_kr = (variant.get('color_value_original') or '').strip().lower() or 'free'
+            db_size_kr = (variant.get('size_value_original') or '').strip().lower() or 'free'
             db_status = variant.get('stock_type', 'purchase_for_order')
             db_is_available = db_status != 'out_of_stock'
 
-            key = (db_color, db_size)
-            if key in mall_map:
-                mall_is_available = mall_map[key] == 'in_stock'
-                if db_is_available and not mall_is_available:
-                    changes.append({
-                        'variant_id': variant['id'],
-                        'color': variant.get('color_value'),
-                        'size': variant.get('size_value'),
-                        'old_status': db_status,
-                        'new_status': 'out_of_stock',
-                        'change_type': 'soldout'
-                    })
-                elif not db_is_available and mall_is_available:
-                    changes.append({
-                        'variant_id': variant['id'],
-                        'color': variant.get('color_value'),
-                        'size': variant.get('size_value'),
-                        'old_status': db_status,
-                        'new_status': 'purchase_for_order',
-                        'change_type': 'restock'
-                    })
-            else:
-                if db_is_available:
-                    changes.append({
-                        'variant_id': variant['id'],
-                        'color': variant.get('color_value'),
-                        'size': variant.get('size_value'),
-                        'old_status': db_status,
-                        'new_status': 'out_of_stock',
-                        'change_type': 'not_found'
-                    })
+            mall_status = None
+            if db_code and db_code in mall_by_code:
+                mall_status = mall_by_code[db_code]
+            elif (db_color_kr, db_size_kr) in mall_by_kr:
+                mall_status = mall_by_kr[(db_color_kr, db_size_kr)]
+
+            if mall_status is None:
+                continue
+
+            mall_is_available = mall_status == 'in_stock'
+            if db_is_available and not mall_is_available:
+                changes.append({
+                    'variant_id': variant['id'],
+                    'color': variant.get('color_value'),
+                    'size': variant.get('size_value'),
+                    'old_status': db_status,
+                    'new_status': 'out_of_stock',
+                    'change_type': 'soldout'
+                })
+            elif not db_is_available and mall_is_available:
+                changes.append({
+                    'variant_id': variant['id'],
+                    'color': variant.get('color_value'),
+                    'size': variant.get('size_value'),
+                    'old_status': db_status,
+                    'new_status': 'purchase_for_order',
+                    'change_type': 'restock'
+                })
         return changes
 
     def update_ace_products_price(self, ace_product_id: int, original_price_krw: int,

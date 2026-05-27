@@ -20,7 +20,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 load_dotenv("C:/Users/hyong/OneDrive/원블록스/buyma/.env")
 
-BRANDS_CSV = os.path.join(os.path.dirname(__file__), "..", "okmall", "buyma_master_data_20260226", "brands.csv")
+BRANDS_CSV = os.path.join(os.path.dirname(__file__), "..", "buyma_master_data", "brands.csv")
 
 
 def remove_special_chars(s):

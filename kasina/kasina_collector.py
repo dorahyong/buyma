@@ -172,7 +172,7 @@ def get_published_product_ids(brand_name: str = None) -> set:
             AND a.is_published = 1
         """
         if brand_name:
-            query += " AND (UPPER(r.brand_name_en) = :brand OR UPPER(r.brand_name_kr) = :brand)"
+            query += " AND UPPER(r.brand_name_en) = :brand"
             result = conn.execute(text(query), {"brand": brand_name.upper()})
         else:
             result = conn.execute(text(query))
@@ -360,8 +360,7 @@ def convert_to_raw_data(item: dict, detail: dict, options_data: dict) -> Optiona
     return {
         'source_site': SOURCE_SITE,
         'mall_product_id': product_no,
-        'brand_name_en': item.get('brandName', ''),
-        'brand_name_kr': item.get('brandNameKo', ''),
+        'brand_name_en': item.get('brandName', '') or item.get('brandNameKo', ''),
         'product_name': item.get('productName', ''),
         'p_name_full': item.get('productNameEn', '') or item.get('productName', ''),
         'model_id': model_id,
@@ -384,16 +383,15 @@ def save_to_database(data_list: List[Dict]):
         return
     insert_sql = text("""
         INSERT INTO raw_scraped_data
-        (source_site, mall_product_id, brand_name_en, brand_name_kr,
+        (source_site, mall_product_id, brand_name_en,
          product_name, p_name_full, model_id, category_path,
          original_price, raw_price, stock_status, raw_json_data, product_url)
         VALUES
-        (:source_site, :mall_product_id, :brand_name_en, :brand_name_kr,
+        (:source_site, :mall_product_id, :brand_name_en,
          :product_name, :p_name_full, :model_id, :category_path,
          :original_price, :raw_price, :stock_status, :raw_json_data, :product_url)
         ON DUPLICATE KEY UPDATE
         brand_name_en = VALUES(brand_name_en),
-        brand_name_kr = VALUES(brand_name_kr),
         product_name = VALUES(product_name),
         p_name_full = VALUES(p_name_full),
         model_id = VALUES(model_id),
@@ -480,6 +478,15 @@ def main():
             if not mgmt_cd:
                 skipped_no_model += 1
                 logger.info(f"  [{idx}/{total}] SKIP (no model_id) | {product_name}")
+                continue
+
+            # STORE_ONLY (오프라인 매장 전용) 사전 체크 — list 응답 customProperties로 판별
+            is_store_only = any(
+                p.get('propName') == 'STORE_ONLY' or p.get('propValue') == 'STORE_ONLY'
+                for p in (item.get('customProperties') or [])
+            )
+            if is_store_only:
+                logger.info(f"  [{idx}/{total}] SKIP (STORE_ONLY) | {mgmt_cd} | {product_name}")
                 continue
 
             # 상세 API
