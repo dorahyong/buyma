@@ -36,7 +36,6 @@ SOURCE_PRIORITY = {
     'okmall': 0,
     'nextzennpack': 1,
     'labellusso': 2,
-    'trendmecca': 3,
     'kasina': 4,
     'loutique': 5,
     'vvano': 6,
@@ -56,7 +55,6 @@ SOURCE_PRIORITY = {
 IMAGE_PRIORITY = {
     'nextzennpack': 0,
     'labellusso': 1,
-    'trendmecca': 2,
     'kasina': 3,
     'loutique': 4,
     'vvano': 5,
@@ -123,7 +121,7 @@ def load_raw_model_ids(conn):
         SELECT DISTINCT source_site, brand_name_en, model_id
         FROM raw_scraped_data
         WHERE model_id IS NOT NULL AND model_id != ''
-        AND source_site IN ('okmall', 'kasina', 'nextzennpack', 'labellusso', 'trendmecca',
+        AND source_site IN ('okmall', 'kasina', 'nextzennpack', 'labellusso',
                             'loutique', 'vvano', 'veroshopmall', 'fabstyle', 'premiumsneakers', 't1global',
                             'carpi', 'dmont', 'tuttobene', 'joharistore', 'thefactor2', '9tems')
     """)

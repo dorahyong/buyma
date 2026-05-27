@@ -300,7 +300,6 @@ def get_products_to_register(conn, limit: int = None, brand: str = None, product
                 ap.raw_data_id,
                 ap.reference_number,
                 ap.name,
-                ap.comments,
                 ap.brand_id,
                 ap.brand_name,
                 ap.category_id,
@@ -447,7 +446,7 @@ def load_category_size_keys() -> Dict[int, List[str]]:
         return _category_size_keys_cache
 
     import csv
-    csv_path = os.path.join(os.path.dirname(__file__), 'buyma_master_data_20260226', 'size_details.csv')
+    csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'buyma_master_data', 'size_details.csv')
     try:
         with open(csv_path, 'r', encoding='utf-8-sig') as f:
             reader = csv.DictReader(f)

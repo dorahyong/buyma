@@ -561,6 +561,8 @@ def update_database(conn, targets: Dict, translation_map: Dict[str, str]) -> Dic
             stats["options"] += 1
 
         # 3. ace_product_variants 업데이트
+        # NOTE: color_value_original / size_value_original 은 절대 건드리지 말 것.
+        #       stock sync 매칭 키로 사용되는 한글 원본이 일본어로 덮이면 false out_of_stock 사고 재발.
         for v in targets["variants"]:
             color_jp = get_translated(v["color_value"])
             size_jp = get_translated(v["size_value"])

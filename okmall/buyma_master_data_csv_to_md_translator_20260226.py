@@ -23,8 +23,8 @@ load_dotenv(Path(__file__).resolve().parent.parent / '.env', override=True)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
 
-BASE_DIR = Path(__file__).resolve().parent
-INPUT_DIR = BASE_DIR / "buyma_master_data_20260226"
+BASE_DIR = Path(__file__).resolve().parent.parent
+INPUT_DIR = BASE_DIR / "buyma_master_data"
 OUTPUT_DIR = INPUT_DIR / "md"
 CACHE_FILE = INPUT_DIR / "translation_cache.json"
 

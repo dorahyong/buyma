@@ -66,25 +66,22 @@ def format_buyma_product_name(brand_name, product_name, model_id=None):
 # ===== mall_brands 매핑 캐시 =====
 def load_brand_mapping(cur):
     """mall_name + brand 키 → brand_info"""
-    cur.execute("""SELECT mall_name, mall_brand_name_en, mall_brand_name_ko, buyma_brand_id, buyma_brand_name
+    cur.execute("""SELECT mall_name, raw_brand_name, mall_brand_name_en, buyma_brand_id, buyma_brand_name
         FROM mall_brands WHERE is_active=1""")
     cache = {}
     for r in cur.fetchall():
         info = {
             'source_brand_en': r['mall_brand_name_en'],
-            'source_brand_kr': r['mall_brand_name_ko'],
             'buyma_brand_id': int(r['buyma_brand_id']) if r['buyma_brand_id'] else 0,
             'buyma_brand_name': r['buyma_brand_name'],
         }
-        if r['mall_brand_name_en']:
-            cache[(r['mall_name'], r['mall_brand_name_en'].upper().strip())] = info
-        if r['mall_brand_name_ko']:
-            cache[(r['mall_name'], r['mall_brand_name_ko'].upper().strip())] = info
+        if r['raw_brand_name']:
+            cache[(r['mall_name'], r['raw_brand_name'].strip())] = info
     return cache
 
 
 def get_brand_info(cache, mall_name, brand_en):
-    key = (mall_name, (brand_en or '').upper().strip())
+    key = (mall_name, (brand_en or '').strip())
     if key in cache:
         info = dict(cache[key])
         if not info.get('buyma_brand_id'):
@@ -105,7 +102,7 @@ print(f'  → {len(brand_cache)} keys')
 
 print('[2/4] 대상 SELECT (raw + 바이마 미등록 ace JOIN)')
 sql = """SELECT ap.id ace_id, ap.source_site, ap.name old_name,
-    rsd.brand_name_en, rsd.brand_name_kr, rsd.product_name, rsd.model_id
+    rsd.brand_name_en, rsd.product_name, rsd.model_id
     FROM ace_products ap
     JOIN raw_scraped_data rsd ON ap.raw_data_id = rsd.id
     WHERE ap.is_published=0"""

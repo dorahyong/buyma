@@ -184,7 +184,7 @@ MEASUREMENT_KEYS_NEED_DOUBLE = {'가슴', '가슴 너비', '가슴너비', '가�
                                 '밑단', '밑단 너비', '밑단너비', '밑단단면', 'hem'}
 
 # size_details.csv 경로 (BUYMA 마스터 데이터)
-SIZE_DETAILS_CSV_PATH = os.path.join(os.path.dirname(__file__), 'buyma_master_data_20260226', 'size_details.csv')
+SIZE_DETAILS_CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'buyma_master_data', 'size_details.csv')
 
 # =====================================================
 # 유틸리티 함수
@@ -452,53 +452,6 @@ def format_buyma_product_name(brand_name: str, product_name: str, model_id: str 
     return f"送料・関税込 | {brand_name} | {full_product_name}"
 
 
-def generate_product_comments(raw_data: Dict, options: List[Dict]) -> str:
-    """
-    바이마 상품 설명(comments) 생성
-
-    최대 3000자 제한
-    """
-    comments_parts = []
-
-    # 1. 브랜드 및 상품 정보
-    comments_parts.append(f"■ 브랜드: {raw_data.get('brand_name_en', '')} ({raw_data.get('brand_name_kr', '')})")
-    comments_parts.append(f"■ 상품명: {raw_data.get('product_name', '')}")
-
-    if raw_data.get('model_id'):
-        comments_parts.append(f"■ 모델번호: {raw_data.get('model_id')}")
-
-    # 2. 카테고리 정보
-    if raw_data.get('category_path'):
-        comments_parts.append(f"■ 카테고리: {raw_data.get('category_path')}")
-
-    # 3. 사이즈 정보
-    if options:
-        comments_parts.append("\n■ 사이즈 옵션:")
-        for opt in options:
-            size_info = f"  - {opt.get('tag_size', 'FREE')}"
-            if opt.get('real_size'):
-                size_info += f" (실측: {opt.get('real_size')})"
-            comments_parts.append(size_info)
-
-    # 4. 구매 안내
-    comments_parts.append("\n■ 구매 안내:")
-    comments_parts.append("  - 정품 100% 보장")
-    comments_parts.append("  - 한국 국내 발송 (빠른 배송)")
-    comments_parts.append("  - 재고 확인 후 구매 부탁드립니다")
-
-    # 5. 주의사항
-    comments_parts.append("\n■ 주의사항:")
-    comments_parts.append("  - 모니터 환경에 따라 색상이 다르게 보일 수 있습니다")
-    comments_parts.append("  - 실측 사이즈는 측정 방법에 따라 1-3cm 오차가 있을 수 있습니다")
-
-    # 최대 3000자 제한
-    full_comments = "\n".join(comments_parts)
-    if len(full_comments) > 3000:
-        full_comments = full_comments[:2997] + "..."
-
-    return full_comments
-
-
 # =====================================================
 # 데이터 변환 클래스
 # =====================================================
@@ -654,16 +607,17 @@ class RawToAceConverter:
 
         with self.engine.connect() as conn:
             result = conn.execute(text("""
-                SELECT mall_brand_name_en, mall_brand_name_ko, buyma_brand_id, buyma_brand_name
+                SELECT raw_brand_name, mall_brand_name_en, buyma_brand_id, buyma_brand_name
                 FROM mall_brands
                 WHERE mall_name = 'okmall' AND is_active = 1
             """))
 
             for row in result:
-                key = row[0].upper() if row[0] else ""
+                key = (row[0] or '').strip()
+                if not key:
+                    continue
                 self._brand_mapping_cache[key] = {
-                    'source_brand_en': row[0],
-                    'source_brand_kr': row[1],
+                    'source_brand_en': row[1],
                     'buyma_brand_id': int(row[2]) if row[2] else 0,
                     'buyma_brand_name': row[3]
                 }
@@ -733,7 +687,7 @@ class RawToAceConverter:
 
     def get_brand_info(self, brand_en: str) -> Dict:
         brand_mapping = self.load_brand_mapping()
-        key = brand_en.upper() if brand_en else ""
+        key = (brand_en or '').strip()
         if key in brand_mapping:
             result = brand_mapping[key]
             # brand_id=0 (바이마 미등록 브랜드)이면 수집처 brand_name_en 사용
@@ -800,7 +754,7 @@ class RawToAceConverter:
         with self.engine.connect() as conn:
             query = """
                 SELECT r.id, r.source_site, r.mall_product_id, r.brand_name_en,
-                       r.brand_name_kr, r.product_name, r.p_name_full, r.model_id,
+                       r.product_name, r.p_name_full, r.model_id,
                        r.category_path, r.original_price, r.raw_price, r.stock_status,
                        r.raw_json_data, r.product_url, r.created_at, r.updated_at
                 FROM raw_scraped_data r
@@ -835,12 +789,12 @@ class RawToAceConverter:
             for row in result:
                 raw_data_list.append({
                     'id': row[0], 'source_site': row[1], 'mall_product_id': row[2],
-                    'brand_name_en': row[3], 'brand_name_kr': row[4], 'product_name': row[5],
-                    'p_name_full': row[6], 'model_id': row[7], 'category_path': row[8],
-                    'original_price': float(row[9]) if row[9] else 0,
-                    'raw_price': float(row[10]) if row[10] else 0,
-                    'stock_status': row[11], 'raw_json_data': row[12],
-                    'product_url': row[13], 'created_at': row[14], 'updated_at': row[15]
+                    'brand_name_en': row[3], 'product_name': row[4],
+                    'p_name_full': row[5], 'model_id': row[6], 'category_path': row[7],
+                    'original_price': float(row[8]) if row[8] else 0,
+                    'raw_price': float(row[9]) if row[9] else 0,
+                    'stock_status': row[10], 'raw_json_data': row[11],
+                    'product_url': row[12], 'created_at': row[13], 'updated_at': row[14]
                 })
             log(f"변환 대상 raw 데이터 {len(raw_data_list)}건 조회 완료")
             return raw_data_list
@@ -859,10 +813,6 @@ class RawToAceConverter:
             model_id=raw_data.get('model_id')
         )
         buyma_name = sanitize_text(buyma_name)
-
-        # 2. 기본 설명 생성 및 정제
-        comments = generate_product_comments(raw_data, options)
-        comments = sanitize_text(comments)
 
         original_price_krw = float(raw_data.get('original_price', 0))
         purchase_price_krw = float(raw_data.get('raw_price', 0))
@@ -940,7 +890,7 @@ class RawToAceConverter:
         ace_product = {
             'raw_data_id': raw_data['id'], 'source_site': raw_data['source_site'],
             'reference_number': generate_reference_number(), 'control': 'publish', 'name': buyma_name,
-            'comments': comments, 'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
+            'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
             'category_id': category_info.get('buyma_category_id', 0), 
             'expected_shipping_fee': expected_shipping_fee,
             'original_price_krw': original_price_krw,
@@ -1068,6 +1018,7 @@ class RawToAceConverter:
             stock_type = 'purchase_for_order' if opt.get('status') == 'in_stock' else 'out_of_stock'
             ace_variants.append({
                 'color_value': color_val, 'size_value': size_val,
+                'color_value_original': color_val, 'size_value_original': size_val,
                 'options_json': json.dumps([{'type': 'color', 'value': color_val}, {'type': 'size', 'value': size_val}], ensure_ascii=False),
                 'stock_type': stock_type, 'stocks': 1 if stock_type == 'purchase_for_order' else 0,
                 'source_option_code': opt.get('option_code'), 'source_stock_status': opt.get('status')
@@ -1076,6 +1027,7 @@ class RawToAceConverter:
             stock_type = 'purchase_for_order' if raw_data.get('stock_status') == 'in_stock' else 'out_of_stock'
             ace_variants.append({
                 'color_value': 'FREE', 'size_value': 'FREE',
+                'color_value_original': 'FREE', 'size_value_original': 'FREE',
                 'options_json': json.dumps([{'type': 'color', 'value': 'FREE'}, {'type': 'size', 'value': 'FREE'}]),
                 'stock_type': stock_type,
                 'stocks': 1 if stock_type == 'purchase_for_order' else 0,
@@ -1099,6 +1051,7 @@ class RawToAceConverter:
                 for color_val in color_values:
                     ace_variants.append({
                         'color_value': color_val, 'size_value': size_val,
+                        'color_value_original': color_val, 'size_value_original': size_val,
                         'options_json': json.dumps([{'type': 'color', 'value': color_val}, {'type': 'size', 'value': size_val}], ensure_ascii=False),
                         'stock_type': 'out_of_stock', 'stocks': 0,
                         'source_option_code': None, 'source_stock_status': 'out_of_stock'
@@ -1178,8 +1131,8 @@ class RawToAceConverter:
                 var['ace_product_id'] = ace_product_id
                 conn.execute(text("""
                     INSERT INTO ace_product_variants
-                    (ace_product_id, color_value, size_value, options_json, stock_type, stocks, source_option_code, source_stock_status)
-                    VALUES (:ace_product_id, :color_value, :size_value, :options_json, :stock_type, :stocks, :source_option_code, :source_stock_status)
+                    (ace_product_id, color_value, size_value, color_value_original, size_value_original, options_json, stock_type, stocks, source_option_code, source_stock_status)
+                    VALUES (:ace_product_id, :color_value, :size_value, :color_value_original, :size_value_original, :options_json, :stock_type, :stocks, :source_option_code, :source_stock_status)
                 """), var)
 
             conn.commit()
@@ -1191,8 +1144,8 @@ class RawToAceConverter:
             product = ace_data['product']
             result = conn.execute(text("""
                 INSERT INTO ace_products (
-                    raw_data_id, source_site, reference_number, control, name, comments,
-                    brand_id, brand_name, category_id, expected_shipping_fee, 
+                    raw_data_id, source_site, reference_number, control, name,
+                    brand_id, brand_name, category_id, expected_shipping_fee,
                     original_price_krw, purchase_price_krw, original_price_jpy, purchase_price_jpy,
                     price, regular_price, reference_price, reference_price_verify_count,
                     margin_amount_krw, margin_rate, buyma_lowest_price, is_lowest_price,
@@ -1200,7 +1153,7 @@ class RawToAceConverter:
                     model_no, theme_id, season_id, colorsize_comments, colorsize_comments_jp,
                     source_model_id, duty, source_product_url, source_original_price, source_sales_price
                 ) VALUES (
-                    :raw_data_id, :source_site, :reference_number, :control, :name, :comments,
+                    :raw_data_id, :source_site, :reference_number, :control, :name,
                     :brand_id, :brand_name, :category_id, :expected_shipping_fee,
                     :original_price_krw, :purchase_price_krw, :original_price_jpy, :purchase_price_jpy,
                     :price, :regular_price, :reference_price, :reference_price_verify_count,
@@ -1220,7 +1173,7 @@ class RawToAceConverter:
 
             for var in ace_data['variants']:
                 var['ace_product_id'] = ace_product_id
-                conn.execute(text("INSERT INTO ace_product_variants (ace_product_id, color_value, size_value, options_json, stock_type, stocks, source_option_code, source_stock_status) VALUES (:ace_product_id, :color_value, :size_value, :options_json, :stock_type, :stocks, :source_option_code, :source_stock_status)"), var)
+                conn.execute(text("INSERT INTO ace_product_variants (ace_product_id, color_value, size_value, color_value_original, size_value_original, options_json, stock_type, stocks, source_option_code, source_stock_status) VALUES (:ace_product_id, :color_value, :size_value, :color_value_original, :size_value_original, :options_json, :stock_type, :stocks, :source_option_code, :source_stock_status)"), var)
 
             conn.commit()
             return ace_product_id

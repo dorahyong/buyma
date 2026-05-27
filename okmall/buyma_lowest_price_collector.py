@@ -226,7 +226,7 @@ class BuymaLowestPriceCollector:
         """DB 연결 생성"""
         return pymysql.connect(**self.db_config)
 
-    def fetch_products_to_check(self, limit: int = None, brand: str = None, source: str = None, new_only: bool = False) -> List[Dict]:
+    def fetch_products_to_check(self, limit: int = None, brand: str = None, source: str = None, new_only: bool = False, product_id: int = None) -> List[Dict]:
         """
         최저가 확인이 필요한 상품 목록 조회
 
@@ -250,8 +250,13 @@ class BuymaLowestPriceCollector:
             """
             params = []
 
+            if product_id:
+                query += " AND id = %s"
+                params.append(product_id)
+
             if new_only:
-                query += " AND buyma_product_id IS NULL"
+                # buyma에 노출 안 되는 상품: 신규(buyma_product_id IS NULL) + 사고로 빠진 상품(is_published=0)
+                query += " AND (buyma_product_id IS NULL OR is_published = 0)"
 
             if brand:
                 query += " AND UPPER(brand_name) LIKE %s"
@@ -433,7 +438,7 @@ class BuymaLowestPriceCollector:
         finally:
             conn.close()
 
-    def run(self, limit: int = None, brand: str = None, source: str = None, dry_run: bool = False, workers: int = DEFAULT_WORKERS, new_only: bool = False) -> Dict:
+    def run(self, limit: int = None, brand: str = None, source: str = None, dry_run: bool = False, workers: int = DEFAULT_WORKERS, new_only: bool = False, product_id: int = None) -> Dict:
         """
         최저가 수집 실행 (병렬 처리)
 
@@ -455,10 +460,10 @@ class BuymaLowestPriceCollector:
             log("*** DRY RUN 모드 - 실제 저장하지 않음 ***", "WARNING")
 
         if new_only:
-            log("*** 신규 상품만 대상 (buyma_product_id IS NULL) ***")
+            log("*** buyma 미노출 상품 대상 (buyma_product_id IS NULL OR is_published=0) ***")
 
         # 대상 상품 조회
-        products = self.fetch_products_to_check(limit=limit, brand=brand, source=source, new_only=new_only)
+        products = self.fetch_products_to_check(limit=limit, brand=brand, source=source, new_only=new_only, product_id=product_id)
 
         if not products:
             log("처리할 상품이 없습니다.")
@@ -576,7 +581,8 @@ def main():
     parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')
     parser.add_argument('--source', type=str, default=None, help='수집처 필터 (예: okmall, kasina)')
     parser.add_argument('--dry-run', action='store_true', help='실제 저장하지 않고 결과만 출력')
-    parser.add_argument('--new-only', action='store_true', help='신규 상품만 (buyma_product_id IS NULL)')
+    parser.add_argument('--id', type=int, default=None, help='특정 ace_products.id 1건만 처리')
+    parser.add_argument('--new-only', action='store_true', help='buyma 미노출 상품 (buyma_product_id IS NULL OR is_published=0) — 신규+사고복구 대상')
     parser.add_argument('--workers', type=int, default=DEFAULT_WORKERS, help=f'병렬 처리 스레드 수 (기본: {DEFAULT_WORKERS})')
 
     args = parser.parse_args()
@@ -589,7 +595,8 @@ def main():
             source=args.source,
             dry_run=args.dry_run,
             workers=args.workers,
-            new_only=args.new_only
+            new_only=args.new_only,
+            product_id=args.id
         )
 
         if result['failed'] > 0:

@@ -28,24 +28,22 @@ cur = conn.cursor()
 
 # 1) mall_brands 캐시 (mall_name + brand 키 → 결정값)
 print('[1/3] mall_brands 캐시 로드')
-cur.execute("""SELECT mall_name, mall_brand_name_en, mall_brand_name_ko, buyma_brand_id, buyma_brand_name
+cur.execute("""SELECT mall_name, raw_brand_name, mall_brand_name_en, buyma_brand_id, buyma_brand_name
     FROM mall_brands WHERE is_active=1""")
-cache = {}  # (mall_name, brand_key_upper) → (brand_id, brand_name)
+cache = {}  # (mall_name, raw_brand_name) → (brand_id, brand_name)
 for r in cur.fetchall():
     # 1순위 buyma_brand_name, 2순위 mall_brand_name_en
     new_brand_name = (r['buyma_brand_name'] or '').strip() or (r['mall_brand_name_en'] or '').strip() or None
     new_brand_id = int(r['buyma_brand_id']) if r['buyma_brand_id'] else 0
     info = (new_brand_id, new_brand_name)
-    if r['mall_brand_name_en']:
-        cache[(r['mall_name'], r['mall_brand_name_en'].upper().strip())] = info
-    if r['mall_brand_name_ko']:
-        cache[(r['mall_name'], r['mall_brand_name_ko'].upper().strip())] = info
+    if r['raw_brand_name']:
+        cache[(r['mall_name'], r['raw_brand_name'].strip())] = info
 print(f'  → {len(cache)} keys')
 
 # 2) ace + raw JOIN하여 매핑 가능한 행 찾기
 print('[2/3] ace + raw JOIN, 매칭')
 sql = """SELECT ap.id, ap.source_site, ap.brand_id old_id, ap.brand_name old_name,
-    rsd.brand_name_en, rsd.brand_name_kr
+    rsd.brand_name_en
     FROM ace_products ap
     JOIN raw_scraped_data rsd ON ap.raw_data_id=rsd.id
     WHERE ap.is_published=0"""
@@ -62,9 +60,8 @@ unchanged = 0
 no_mapping = 0
 for r in rows:
     site = r['source_site']
-    en = (r['brand_name_en'] or '').upper().strip()
-    kr = (r['brand_name_kr'] or '').upper().strip()
-    info = cache.get((site, en)) or cache.get((site, kr))
+    en = (r['brand_name_en'] or '').strip()
+    info = cache.get((site, en))
     if not info:
         no_mapping += 1
         continue

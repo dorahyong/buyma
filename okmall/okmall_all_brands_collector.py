@@ -533,8 +533,7 @@ def extract_product_data(html: str, product_url: str) -> Optional[Dict[str, Any]
     return {
         'source_site': 'okmall',
         'mall_product_id': mall_product_id,
-        'brand_name_en': brand_en,
-        'brand_name_kr': brand_kr,
+        'brand_name_en': brand_en or brand_kr,
         'product_name': product_name,
         'p_name_full': full_name,
         'model_id': model_id,
@@ -569,7 +568,7 @@ def get_published_product_ids(brand_name: str = None) -> set:
             AND a.is_published = 1
         """
         if brand_name:
-            query += " AND (UPPER(r.brand_name_en) = :brand OR UPPER(r.brand_name_kr) = :brand)"
+            query += " AND UPPER(r.brand_name_en) = :brand"
             result = conn.execute(text(query), {"brand": brand_name.upper()})
         else:
             result = conn.execute(text(query))
@@ -626,16 +625,15 @@ def save_to_database(data_list: List[Dict]):
     if not data_list: return
     insert_sql = text("""
         INSERT INTO raw_scraped_data
-        (source_site, mall_product_id, brand_name_en, brand_name_kr,
+        (source_site, mall_product_id, brand_name_en,
          product_name, p_name_full, model_id, category_path,
          original_price, raw_price, stock_status, raw_json_data, product_url)
         VALUES
-        (:source_site, :mall_product_id, :brand_name_en, :brand_name_kr,
+        (:source_site, :mall_product_id, :brand_name_en,
          :product_name, :p_name_full, :model_id, :category_path,
          :original_price, :raw_price, :stock_status, :raw_json_data, :product_url)
         ON DUPLICATE KEY UPDATE
         brand_name_en = VALUES(brand_name_en),
-        brand_name_kr = VALUES(brand_name_kr),
         product_name = VALUES(product_name),
         p_name_full = VALUES(p_name_full),
         model_id = VALUES(model_id),

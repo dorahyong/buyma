@@ -42,7 +42,7 @@
   건수: ~800건
   상태: 처리 완료
   설명: 카테고리별 허용되지 않는 사이즈 상세 키 사용.
-    buyma_master_data_20260226/size_details.csv에 카테고리별 허용 키가 정의되어 있음.
+    buyma_master_data/size_details.csv에 카테고리별 허용 키가 정의되어 있음.
     허용되지 않는 키(袖幅, 重さ 등)가 필터링 없이 API에 전송되어 거부됨.
     CONVERT + REGISTER + SYNC 3곳에 필터링 추가하여 해결
   ────────────────────────────────────────
@@ -78,8 +78,8 @@
   - orchestrator.py - 파이프라인 오케스트레이터
   - raw_to_ace_converter.py - CONVERT 단계 (카테고리 매핑, 가격 계산, 사이즈 변환)
   - buyma_new_product_register.py - REGISTER 단계 (buyma API 호출)
-  - buyma_master_data_20260226/categories.csv - buyma 유효 카테고리 599개
-  - buyma_master_data_20260226/size_details.csv - 카테고리별 허용 사이즈 상세 키
+  - buyma_master_data/categories.csv - buyma 유효 카테고리 599개
+  - buyma_master_data/size_details.csv - 카테고리별 허용 사이즈 상세 키
   - fix_category_mapping.py, fix_category_mapping_v2.py - Error #1 수정 스크립트
 
   DB
@@ -181,7 +181,7 @@
   5. 주의사항
   - buyma category_id는 등록 후 수정 불가 → 잘못된 매핑은 상품 삭제 후 재등록해야 함
   - 자동 추론은 사용하지 않음 (위험) → 반드시 수동 매핑
-  - categories.csv 경로: buyma_master_data_20260226/categories.csv
+  - categories.csv 경로: buyma_master_data/categories.csv
 
 
 -----------------------------------------
@@ -190,7 +190,7 @@
   원인
 
   buyma API에서 상품의 사이즈 옵션에 상세 치수(details)를 보낼 수 있는데,
-  허용되는 키는 category_id별로 다르다. (buyma_master_data_20260226/size_details.csv에 정의)
+  허용되는 키는 category_id별로 다르다. (buyma_master_data/size_details.csv에 정의)
 
   예: category_id=4801 (メンズファッション/ゴルフ/トップス) 허용 키:
       着丈, 肩幅, 胸囲, 袖丈 (4개만)
@@ -260,7 +260,7 @@
   │             파일                 │                  변경 내용                    │
   ├──────────────────────────────────┼──────────────────────────────────────────────┤
   │ raw_to_ace_converter.py          │ CSV 경로를 size_details2.csv →               │
-  │ (CONVERT)                        │ buyma_master_data_20260226/size_details.csv  │
+  │ (CONVERT)                        │ buyma_master_data/size_details.csv  │
   │                                  │ 로 변경 (마스터 원본 사용)                   │
   ├──────────────────────────────────┼──────────────────────────────────────────────┤
   │ buyma_new_product_register.py    │ build_options_array()에 category_id 기반     │
