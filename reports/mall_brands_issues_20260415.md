@@ -109,5 +109,5 @@ WHERE a.is_active=1
 
 ## 5. 참고
 - converter 브랜드 매칭 로직: `kasina/raw_to_converter_kasina.py:870-884, 954-958, 1156`
-- 브랜드 입력 CLI: `okmall/buyma_master_data_20260226/brands.csv` (BUYMA 마스터 20,583개)
+- 브랜드 입력 CLI: `buyma_master_data/brands.csv` (BUYMA 마스터 20,583개)
 - 이번 작업 세션 전체 흐름: 본 리포트와 `reports/worklog_20260414.md` 참조

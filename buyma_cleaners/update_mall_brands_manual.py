@@ -2,7 +2,7 @@
 """
 mall_brands 수동 매핑 일괄 UPDATE
 
-키: (mall_name, mall_brand_name_ko) — mall_brand_url이 NULL인 행 대상
+키: (mall_name, raw_brand_name) — mall_brand_url이 NULL인 행 대상
 UPDATE 컬럼: buyma_brand_id, buyma_brand_name, is_active
 
 사용법:
@@ -75,7 +75,7 @@ def main():
     for mall_name, ko, bid, bname, active in rows:
         cur.execute(
             "SELECT buyma_brand_id, buyma_brand_name, is_active "
-            "FROM mall_brands WHERE mall_name=%s AND mall_brand_name_ko=%s",
+            "FROM mall_brands WHERE mall_name=%s AND raw_brand_name=%s",
             (mall_name, ko),
         )
         matched = cur.fetchall()
@@ -101,7 +101,7 @@ def main():
         if args.apply:
             cur.execute(
                 "UPDATE mall_brands SET buyma_brand_id=%s, buyma_brand_name=%s, is_active=%s "
-                "WHERE mall_name=%s AND mall_brand_name_ko=%s",
+                "WHERE mall_name=%s AND raw_brand_name=%s",
                 (bid, bname, active, mall_name, ko),
             )
             stats['updated'] += cur.rowcount

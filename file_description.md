@@ -50,7 +50,7 @@ run_daily.py (진입점)
 | `../.env` | DB, API 키, R2 인증 등 환경변수 |
 | `colors.csv` | 색상명 → 바이마 색상 매핑 |
 | `ace_tables_create.sql` | DB 스키마 정의 (초기 설정용) |
-| `buyma_master_data_20260226/` | 바이마 API 마스터 데이터 (categories, brands, sizes 등). converter/synchronizer에서 참조 |
+| `buyma_master_data/` | 바이마 API 마스터 데이터 (categories, brands, sizes 등). converter/synchronizer에서 참조. 프로젝트 루트에 위치 |
 | `buyma_master_data_csv_to_md_translator_20260226.py` | 마스터 데이터 CSV를 Gemini로 일→한 번역하여 md/ 생성. 1회성 유틸 (실행 완료) |
 | `logs/{batch_id}.log` | orchestrator 실행 로그 (런타임 생성) |
 

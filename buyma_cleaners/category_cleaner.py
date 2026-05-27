@@ -77,7 +77,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'), ov
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
-CATEGORIES_MD = Path(__file__).resolve().parent.parent / "okmall" / "buyma_master_data_20260226" / "md" / "categories.md"
+CATEGORIES_MD = Path(__file__).resolve().parent.parent / "buyma_master_data" / "md" / "categories.md"
 
 
 def log(message: str, level: str = "INFO") -> None:
