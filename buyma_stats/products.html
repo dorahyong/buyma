@@ -55,6 +55,14 @@
         sortKey: (r) => r.name_ko || '',
         render: (r) => r.name_ko ? `<div title="${esc(r.name_ko)}">${esc(r.name_ko)}</div>` : '<span class="placeholder">—</span>' },
 
+      { key: 'brand_name_en', label: '브랜드명',
+        sortKey: (r) => r.brand_name_en || '',
+        render: (r) => r.brand_name_en ? `<div title="${esc(r.brand_name_en)}">${esc(r.brand_name_en)}</div>` : '<span class="placeholder">—</span>' },
+
+      { key: 'category_path', label: '카테고리',
+        sortKey: (r) => r.category_path || '',
+        render: (r) => r.category_path ? `<div title="${esc(r.category_path)}">${esc(r.category_path)}</div>` : '<span class="placeholder">—</span>' },
+
       { key: 'access',      label: '총 조회수',         cls: 'num',
         sortKey: (r) => r.access_count ?? -1,
         render: (r) => num(r.access_count) },
@@ -571,6 +579,8 @@
         case 'status':           return STATUS_META[r.status]?.label || r.status || '';
         case 'name_ja':          return r.name_ja || '';
         case 'name_ko':          return r.name_ko || '';
+        case 'brand_name_en':    return r.brand_name_en || '';
+        case 'category_path':    return r.category_path || '';
         case 'access':           return r.access_count ?? '';
         case 'cart':             return r.cart_count ?? '';
         case 'fav':              return r.favorite_count ?? '';

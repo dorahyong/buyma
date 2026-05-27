@@ -60,16 +60,21 @@ def _fetch_raw_aggregated(conn) -> List[Dict]:
     """model_id별 집계: 150k 행 대신 N행만 반환."""
     sql = """
         SELECT
-            model_id,
-            MAX(brand_name_en)  AS brand_name_en,
-            MAX(product_name)   AS product_name,
-            MAX(p_name_full)    AS p_name_full,
-            MAX(updated_at)     AS source_updated_at,
-            SUM(stock_status = 'out_of_stock') AS oos_count,
-            COUNT(*)            AS total_source_count
-        FROM raw_scraped_data
-        WHERE model_id IS NOT NULL AND model_id != ''
-        GROUP BY model_id
+            r.model_id,
+            MAX(mb.mall_brand_name_en) AS brand_name_en,
+            MAX(r.category_path)       AS category_path,
+            MAX(r.product_name)        AS product_name,
+            MAX(r.p_name_full)         AS p_name_full,
+            MAX(r.updated_at)          AS source_updated_at,
+            SUM(r.stock_status = 'out_of_stock') AS oos_count,
+            COUNT(*)                   AS total_source_count
+        FROM raw_scraped_data r
+        LEFT JOIN mall_brands mb
+            ON mb.mall_name = r.source_site
+           AND mb.raw_brand_name = r.brand_name_en
+           AND mb.is_active = 1
+        WHERE r.model_id IS NOT NULL AND r.model_id != ''
+        GROUP BY r.model_id
     """
     with conn.cursor() as c:
         c.execute(sql)
@@ -231,6 +236,7 @@ def build_payload(db_config: Dict) -> Dict:
             'name_ja':                    ace0.get('name') if ace0 else None,
             'name_ko':                    raw.get('product_name') or raw.get('p_name_full'),
             'brand_name_en':              raw.get('brand_name_en'),
+            'category_path':              raw.get('category_path'),
             'image_url':                  image_url,
             'source_count':               int(raw.get('total_source_count') or 0),
             'access_count':               bstats.get('access_count') if bstats else None,
