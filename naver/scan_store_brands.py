@@ -477,7 +477,7 @@ def insert_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = Fal
                     INSERT INTO mall_brands
                     (mall_name, raw_brand_name, mall_brand_name_en,
                      mall_brand_url, mall_brand_no, is_active, is_mapped)
-                    VALUES (%s, %s, %s, %s, %s, 1, 0)
+                    VALUES (%s, %s, %s, %s, %s, NULL, 0)
                 """, (
                     source_site,
                     brand_name,
@@ -540,8 +540,8 @@ def insert_mall_categories(source_site: str, categories: List[Dict], dry_run: bo
 
                 cur.execute("""
                     INSERT INTO mall_categories
-                    (mall_name, category_id, gender, depth1, depth2, depth3, full_path)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (mall_name, category_id, gender, depth1, depth2, depth3, full_path, is_active)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
                 """, (
                     source_site,
                     cat['category_key'],

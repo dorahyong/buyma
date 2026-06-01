@@ -1045,7 +1045,7 @@ def ensure_mall_brand(brand_name_en: str, brand_name_ko: str) -> bool:
             VALUES
               ('laprima', :raw, :en,
                NULL, NULL, 0, 0,
-               NULL, 1, NULL)
+               NULL, NULL, NULL)
         """), {'raw': brand_name_en, 'en': brand_name_en})
         # 메모리 dict에도 추가 (다음 상품에서 즉시 활용 가능)
         if brand_name_ko:

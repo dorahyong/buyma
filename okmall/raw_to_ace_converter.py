@@ -685,30 +685,31 @@ class RawToAceConverter:
 
         return self._shipping_config_cache
 
-    def get_brand_info(self, brand_en: str) -> Dict:
+    def get_brand_info(self, brand_en: str):
+        """mall_brands.is_active=1 인 캐시에서 매핑 조회. 캐시 miss = 사용 불가 → None 반환(skip)."""
         brand_mapping = self.load_brand_mapping()
         key = (brand_en or '').strip()
         if key in brand_mapping:
             result = brand_mapping[key]
-            # brand_id=0 (바이마 미등록 브랜드)이면 수집처 brand_name_en 사용
+            # buyma_brand_id=0 (BUYMA 미등록이지만 활성 유지 의도) → raw brand_en 사용
             if not result.get('buyma_brand_id'):
                 result['buyma_brand_name'] = brand_en
             return result
-        return {'buyma_brand_id': 0, 'buyma_brand_name': brand_en}
+        return None
 
-    def get_category_info(self, category_path: str) -> Dict:
+    def get_category_info(self, category_path: str):
+        """mall_categories.is_active=1 인 캐시에서 매핑 조회. miss = 검수 대기 등록 후 skip."""
         category_mapping = self.load_category_mapping()
         if category_path in category_mapping:
             result = category_mapping[category_path]
-            if result.get('buyma_category_id') is None or result.get('buyma_category_id') == 0:
-                result['buyma_category_id'] = 0
+            if not result.get('buyma_category_id'):
+                return None
             return result
 
-        # mall_categories에 없는 새 경로 → buyma_category_id=NULL로 INSERT (수동 매핑 대기)
         if category_path:
             self._register_unmapped_category(category_path)
 
-        return {'buyma_category_id': 0, 'buyma_category_name': None}
+        return None
 
     def _register_unmapped_category(self, category_path: str):
         """미매핑 카테고리 경로를 mall_categories에 등록 (buyma_category_id=NULL)"""
@@ -733,7 +734,7 @@ class RawToAceConverter:
                     conn.execute(text("""
                         INSERT INTO mall_categories
                         (mall_name, category_id, gender, depth1, depth2, depth3, full_path, buyma_category_id, is_active)
-                        VALUES ('okmall', :path, :gender, :d1, :d2, :d3, :path, NULL, 1)
+                        VALUES ('okmall', :path, :gender, :d1, :d2, :d3, :path, NULL, NULL)
                     """), {
                         'path': category_path, 'gender': gender,
                         'd1': depth1, 'd2': depth2, 'd3': depth3
@@ -799,10 +800,17 @@ class RawToAceConverter:
             log(f"변환 대상 raw 데이터 {len(raw_data_list)}건 조회 완료")
             return raw_data_list
 
-    def convert_single_raw_to_ace(self, raw_data: Dict) -> Dict:
-        json_data = safe_json_loads(raw_data.get('raw_json_data', '{}')) or {}
+    def convert_single_raw_to_ace(self, raw_data: Dict):
         brand_info = self.get_brand_info(raw_data.get('brand_name_en', ''))
+        if brand_info is None:
+            log(f"  → 매핑 없는 브랜드 (mall_brands is_active=1 등록 필요): '{raw_data.get('brand_name_en', '')}', skip")
+            return None
         category_info = self.get_category_info(raw_data.get('category_path', ''))
+        if category_info is None:
+            log(f"  → 매핑 없는 카테고리 (검수 대기 큐 등록): '{raw_data.get('category_path', '')}', skip")
+            return None
+
+        json_data = safe_json_loads(raw_data.get('raw_json_data', '{}')) or {}
         options = json_data.get('options', [])
 
         # 1. 상품명 생성 및 정제 (한국어 원본 저장, 배치 번역에서 처리)
@@ -1197,6 +1205,9 @@ class RawToAceConverter:
                 if existing_product:
                     if upsert or not existing_product['is_published']:
                         ace_data = self.convert_single_raw_to_ace(raw_data)
+                        if ace_data is None:
+                            skipped += 1
+                            continue
                         if not dry_run:
                             self.update_ace_data(ace_data, existing_product)
                         updated += 1
@@ -1207,6 +1218,9 @@ class RawToAceConverter:
                 else:
                     # 신규 데이터: INSERT
                     ace_data = self.convert_single_raw_to_ace(raw_data)
+                    if ace_data is None:
+                        skipped += 1
+                        continue
                     if not dry_run:
                         self.save_ace_data(ace_data)
                     success += 1

@@ -145,7 +145,7 @@ def get_all_products_url() -> Optional[str]:
 
 
 def ensure_mall_brand(brand_name_en: str) -> None:
-    """mall_brands에 raw_brand_name이 없으면 INSERT (is_active=1, buyma_brand_id=NULL)"""
+    """mall_brands에 raw_brand_name이 없으면 INSERT (is_active=NULL = 검수 대기, buyma_brand_id=NULL)"""
     if not brand_name_en:
         return
     with engine.begin() as conn:
@@ -162,7 +162,7 @@ def ensure_mall_brand(brand_name_en: str) -> None:
               (mall_name, raw_brand_name, mall_brand_name_en,
                is_active, mapping_level, is_mapped)
             VALUES
-              (:site, :raw, :en, 1, 0, 0)
+              (:site, :raw, :en, NULL, 0, 0)
         """), {
             'site': base.SOURCE_SITE,
             'raw': brand_name_en,
