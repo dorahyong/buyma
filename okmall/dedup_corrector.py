@@ -36,6 +36,7 @@ SOURCE_PRIORITY = {
     'okmall': 0,
     'nextzennpack': 1,
     'labellusso': 2,
+    'trendmecca': 3,
     'kasina': 4,
     'loutique': 5,
     'vvano': 6,
@@ -49,12 +50,24 @@ SOURCE_PRIORITY = {
     'joharistore': 14,
     'thefactor2': 15,
     '9tems': 16,
+    'laprima': 17,
+    'maniaon': 18,
+    'bblue': 19,
+    'euroline': 20,
+    'unico': 21,
+    'kometa': 22,
+    'larlashoes': 23,
+    'thegrande': 24,
+    'upset': 25,
+    'luxlimit': 26,
+    'pano': 27,
 }
 
 # 이미지 우선순위 (okmall 제외, 낮을수록 우선)
 IMAGE_PRIORITY = {
     'nextzennpack': 0,
     'labellusso': 1,
+    'trendmecca': 2,
     'kasina': 3,
     'loutique': 4,
     'vvano': 5,
@@ -68,6 +81,17 @@ IMAGE_PRIORITY = {
     'joharistore': 13,
     'thefactor2': 14,
     '9tems': 15,
+    'laprima': 16,
+    'maniaon': 17,
+    'bblue': 18,
+    'euroline': 19,
+    'unico': 20,
+    'kometa': 21,
+    'larlashoes': 22,
+    'thegrande': 23,
+    'upset': 24,
+    'luxlimit': 25,
+    'pano': 26,
 }
 
 
@@ -121,9 +145,12 @@ def load_raw_model_ids(conn):
         SELECT DISTINCT source_site, brand_name_en, model_id
         FROM raw_scraped_data
         WHERE model_id IS NOT NULL AND model_id != ''
-        AND source_site IN ('okmall', 'kasina', 'nextzennpack', 'labellusso',
-                            'loutique', 'vvano', 'veroshopmall', 'fabstyle', 'premiumsneakers', 't1global',
-                            'carpi', 'dmont', 'tuttobene', 'joharistore', 'thefactor2', '9tems')
+        AND source_site IN ('okmall', 'nextzennpack', 'labellusso', 'trendmecca',
+                            'kasina', 'loutique', 'vvano', 'veroshopmall', 'fabstyle',
+                            'premiumsneakers', 't1global', 'carpi', 'dmont', 'tuttobene',
+                            'joharistore', 'thefactor2', '9tems', 'laprima',
+                            'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
+                            'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano')
     """)
     rows = cur.fetchall()
     logger.info(f"raw_scraped_data에서 {len(rows)}개 (source, brand, model_id) 로드")
