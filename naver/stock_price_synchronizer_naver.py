@@ -1033,6 +1033,12 @@ class StockPriceSynchronizer:
                 cursor.execute("""
                     UPDATE ace_products SET status = %s WHERE id = %s
                 """, (new_status, ace_product_id))
+                # 출품 edit 성공 시 BUYMA에 보낸 available_until(today+90)을 DB에도 반영 (delete payload엔 없음)
+                sent_available_until = request_data.get('product', {}).get('available_until')
+                if response.get('success') and sent_available_until:
+                    cursor.execute("""
+                        UPDATE ace_products SET available_until = %s WHERE id = %s
+                    """, (sent_available_until.replace('/', '-'), ace_product_id))
                 cursor.execute("""
                     INSERT INTO ace_product_api_logs (ace_product_id, api_request_json, api_response_json, last_api_call_at)
                     VALUES (%s, %s, %s, NOW())
