@@ -187,16 +187,47 @@ def crawl_buyma_product_ids() -> List[Dict]:
         url = BUYMA_LIST_URL_TEMPLATE.format(page=page_num)
         log(f"페이지 {page_num} 크롤링 중...")
 
-        try:
-            resp = session.get(url, timeout=30)
-            resp.raise_for_status()
-        except req_lib.RequestException as e:
-            log(f"요청 실패: {e}", "ERROR")
-            break
+        # 5xx / 네트워크 일시 오류 대비 retry (지수 백오프)
+        last_err = None
+        resp = None
+        for attempt in range(1, 4):
+            try:
+                resp = session.get(url, timeout=60)
+                resp.raise_for_status()
+                last_err = None
+                break
+            except req_lib.HTTPError as e:
+                status = e.response.status_code if e.response is not None else None
+                if status and 500 <= status < 600 and attempt < 3:
+                    wait = 5 * attempt
+                    log(f"  → {status} 에러, {wait}초 후 재시도 ({attempt}/3)", "WARN")
+                    time.sleep(wait)
+                    last_err = e
+                    continue
+                last_err = e
+                break
+            except (req_lib.Timeout, req_lib.ConnectionError) as e:
+                if attempt < 3:
+                    wait = 5 * attempt
+                    log(f"  → 네트워크 오류({type(e).__name__}), {wait}초 후 재시도 ({attempt}/3)", "WARN")
+                    time.sleep(wait)
+                    last_err = e
+                    continue
+                last_err = e
+                break
+            except req_lib.RequestException as e:
+                last_err = e
+                break
+
+        if last_err is not None:
+            # 부분 결과로 Phase 2 진입하면 대량 오판정 → 명시적으로 중단
+            raise RuntimeError(
+                f"페이지 {page_num} 크롤링 실패 (수집 {len(all_products)}개에서 중단): {last_err}. "
+                f"buyma_all_product_ids.json 저장하지 않음. 다시 --scan 실행 필요."
+            )
 
         if '/login' in resp.url:
-            log("세션 만료! --login으로 다시 로그인해주세요.", "ERROR")
-            break
+            raise RuntimeError("세션 만료. --login으로 다시 로그인 후 --scan 재실행 필요.")
 
         soup = BeautifulSoup(resp.text, 'html.parser')
         checkboxes = soup.select('input[name="chkitems"]')
