@@ -86,6 +86,14 @@ okmall/buyma_*.csv
 okmall/r2_data.csv
 okmall/size_details.csv
 
+# Buyma 루트 런타임 출력물 (orphan_cleaner 등 실행 시 재생성)
+/buyma_all_product_ids.json
+/buyma_ghost_*.json
+/buyma_ghost_*.csv
+/buyma_orphan_*.json
+/buyma_orphan_*.csv
+/_brand_inactive_published.json
+
 # 브라우저 프로필 (캐시, 쿠키 등)
 smartstore/smartstore_profile/
 
