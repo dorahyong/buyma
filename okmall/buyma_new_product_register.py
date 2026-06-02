@@ -1120,9 +1120,12 @@ def update_product_after_request(conn, product_id: int, request_data: Dict, resp
         if response.get('success'):
             # 요청 성공 - pending 상태 + 불변 필드 백업
             # locked_* 컬럼에 현재 값 저장 (나중에 수정 시 이 값 사용)
+            # BUYMA에 보낸 available_until(today+90)을 DB에도 반영
+            available_until_str = (datetime.now() + timedelta(days=90)).strftime('%Y-%m-%d')
             sql = """
                 UPDATE ace_products
                 SET status = 'pending',
+                    available_until = %s,
                     -- 불변 필드 백업 (Webhook 수신 전 미리 저장)
                     locked_name = COALESCE(locked_name, name),
                     locked_brand_id = COALESCE(locked_brand_id, brand_id),
@@ -1130,7 +1133,7 @@ def update_product_after_request(conn, product_id: int, request_data: Dict, resp
                     locked_reference_number = COALESCE(locked_reference_number, reference_number)
                 WHERE id = %s
             """
-            cursor.execute(sql, (product_id,))
+            cursor.execute(sql, (available_until_str, product_id))
             cursor.execute("""
                 INSERT INTO ace_product_api_logs (ace_product_id, api_request_json, api_response_json, last_api_call_at)
                 VALUES (%s, %s, %s, NOW())
