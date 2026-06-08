@@ -1,3 +1,121 @@
+
+# index.html
+- https://loromoda.net/
+- @index.html
+
+## General
+Request URL
+https://loromoda.net/
+Request Method
+GET
+Status Code
+200 OK
+Remote Address
+210.114.23.160:443
+Referrer Policy
+strict-origin-when-cross-origin
+
+## Response headers
+accept-ranges
+bytes
+cache-control
+no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+content-encoding
+gzip
+content-length
+59902
+content-type
+text/html; charset=utf-8
+date
+Mon, 01 Jun 2026 06:39:23 GMT
+expires
+Mon, 26 Jul 1997 05:00:00 GMT
+last-modified
+Mon, 01 Jun 2026 06:37:32 GMT
+p3p
+CP="NOI ADM DEV PSAi COM NAV OUR OTR STP IND DEM"
+pragma
+no-cache
+referrer-policy
+strict-origin-when-cross-origin
+server
+openresty
+strict-transport-security
+max-age=31536000
+vary
+Accept-Encoding
+x-anigif
+webp
+x-cache
+HIT
+x-cache-valid
+YES
+x-content-type-options
+nosniff
+x-hits
+2
+x-hrpcs-signal
+1
+x-hrpcs-ttl
+300s
+x-hurl
+/loromoda1view_pcKRwebpagent_pc
+x-iscacheurl
+YES
+x-reqid
+2a881c60522cd2822c9d2b8dbe4b9731
+x-ttl
+300.000
+x-via
+magneto-edge-icn02-ktog-136
+x-xss-protection
+1;mode=block
+
+## Request Headers
+:authority
+loromoda.net
+:method
+GET
+:path
+/
+:scheme
+https
+accept
+text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+accept-encoding
+gzip, deflate, br, zstd
+accept-language
+ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7
+cache-control
+no-cache
+cookie
+fb_external_id=1d8286ddf52ff2372769c62edcce539aae310af117faaae7eea6db7eb3f4ce4f; mobile_more_current_page_10=1; ec_ipad_device=F; CUK45=cuk45_loromoda_qdr07egjinn1ar4f3k2d2qptrmosksil; CUK2Y=cuk2y_loromoda_qdr07egjinn1ar4f3k2d2qptrmosksil; CID=CIDRd33290b60ec07a3ad14c8da4c236e6c4; ECSESSID=ubkgd4nj4ujlnes7fd547a82g7k0vnff; CFAE_CID=CFAE_CID.loromoda_1.UVTVT0P.1776999905546; CFAE_CUK1Y=CFAE_CUK1Y.loromoda_1.UVTVT0P.1776999905546; CVID_Y=CVID_Y.5d5d465b555a54586c01.1776999905546; _fbp=fb.1.1776999905556.30454435737700245; siteLT=2559eead-ec69-137e-71ee-7f76a3a81f9a; analytics_longterm=analytics_longterm.loromoda_1.08A5041.1776999905548; wish_id=2d636509009d02d8b613a9376cdf4c73; recent_plist=18769; analytics_session_id=analytics_session_id.loromoda_1.74F1BE3.1780295340829; siteSID=0b79dd5a-1955-5c8d-31a7-068987803682; CVID=CVID.5d5d465b555a54586c01.1780295340829; CIDRd33290b60ec07a3ad14c8da4c236e6c4=40183a44aa9116f8980e955da1292977%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%3A%2Fproduct%2F%25EB%25A1%259C%25EB%25A1%259C%25EB%25AA%25A8%25EB%258B%25A4-%25ED%2594%2584%25EB%259D%25BC%25EB%258B%25A4-%25EB%25A6%25AC%25EB%25B2%2584%25EC%258B%259C%25EB%25B8%2594-%25EB%25A6%25AC%25EB%2582%2598%25EC%259D%25BC%25EB%25A1%25A0-%25EB%2582%25A8%25EC%2584%25B1-%25EB%25B3%25B4%25EB%25A8%25B8-%25EC%259E%2590%25EC%25BC%2593-sgd131-1wq9-f0d9m%2F18769%2Fcategory%2F325%2Fdisplay%2F1%2F%3A%3A1780295340%3A%3A%3A%3Appdp%3A%3A1780295340%3A%3A%3A%3A%3A%3A%3A%3A; basketcount_1=0; basketprice_1=0%EC%9B%90; wishcount_1=0; isviewtype=pc; fb_event_id=event_id.loromoda.1.IUDQF3VV1CTSVG23N6SJZSMNVNZP53X8; vt=1780295936; CFAE_LC=CFAE_LC.loromoda_1.P44YS0X.1780295936933
+pragma
+no-cache
+priority
+u=0, i
+referer
+https://loromoda.net/product/%EB%A1%9C%EB%A1%9C%EB%AA%A8%EB%8B%A4-%ED%94%84%EB%9D%BC%EB%8B%A4-%EB%A6%AC%EB%B2%84%EC%8B%9C%EB%B8%94-%EB%A6%AC%EB%82%98%EC%9D%BC%EB%A1%A0-%EB%82%A8%EC%84%B1-%EB%B3%B4%EB%A8%B8-%EC%9E%90%EC%BC%93-sgd131-1wq9-f0d9m/18769/category/325/display/1/
+sec-ch-ua
+"Chromium";v="146", "Not-A.Brand";v="24", "Google Chrome";v="146"
+sec-ch-ua-mobile
+?0
+sec-ch-ua-platform
+"macOS"
+sec-fetch-dest
+document
+sec-fetch-mode
+navigate
+sec-fetch-site
+same-origin
+sec-fetch-user
+?1
+upgrade-insecure-requests
+1
+user-agent
+Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36
+
+
 # 전체상품 리스트
 - https://loromoda.net/category/BRAND/325/
 - @loromoda_list.html
