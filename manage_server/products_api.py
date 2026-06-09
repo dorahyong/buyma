@@ -11,6 +11,7 @@
 sources / images 팝업은 lazy load (별도 API).
 """
 
+import math
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, Iterable, List, Optional
@@ -52,6 +53,27 @@ def _to_float(v) -> Optional[float]:
         return None
 
 
+# 마진 계산 상수 (fast_price_updater.py / stock_price_synchronizer.py와 동일)
+EXCHANGE_RATE = 9.2
+SALES_FEE_RATE = 0.055
+DEFAULT_SHIPPING_FEE = 15000
+
+def breakeven_price_jpy(purchase_price_krw, shipping_fee_krw=DEFAULT_SHIPPING_FEE) -> Optional[int]:
+    """수집처 판매가(매입가) 기준 마진이 0이 되는 출품가(¥) — 올림 처리.
+
+    마진 = price_jpy*9.2*(1-0.055) - (매입가+배송료) + 매입가/11 = 0 을 역산.
+    """
+    purchase = _to_float(purchase_price_krw)
+    if purchase is None or purchase <= 0:
+        return None
+    ship = _to_float(shipping_fee_krw)
+    if ship is None or ship <= 0:
+        ship = DEFAULT_SHIPPING_FEE
+    net_cost_krw = purchase + ship - purchase / 11
+    denom = EXCHANGE_RATE * (1 - SALES_FEE_RATE)
+    return math.ceil(net_cost_krw / denom)
+
+
 # ─────────────────────────────────────────────
 # 쿼리 함수들
 # ─────────────────────────────────────────────
@@ -88,6 +110,7 @@ def _fetch_ace_products(conn) -> List[Dict]:
                is_active, is_published, is_ready_to_publish, is_lowest_price,
                buyma_lowest_price, buyma_lowest_price_checked_at,
                price, margin_amount_krw, margin_rate,
+               purchase_price_krw, expected_shipping_fee,
                available_until, buyma_registered_at
         FROM ace_products
         WHERE model_no IS NOT NULL AND model_no != ''
@@ -246,7 +269,11 @@ def build_payload(db_config: Dict) -> Dict:
             'sold_count':                 bstats.get('sold_count') if bstats else None,
             'sales_amount_jpy':           int(bstats['sales_amount_jpy']) if bstats and bstats.get('sales_amount_jpy') is not None else None,
             'buyma_lowest_price':         ace0.get('buyma_lowest_price') if ace0 else None,
-            'available_lowest_price_jpy': ace0.get('price') if ace0 else None,
+            # 출품가능 최저가: 수집처 판매가(매입가) 기준 마진이 0이 되는 출품가(¥), 올림
+            'available_lowest_price_jpy': (
+                breakeven_price_jpy(ace0.get('purchase_price_krw'), ace0.get('expected_shipping_fee'))
+                if ace0 else None
+            ),
             'price_yen':                  ace0.get('price') if ace0 else None,
             'margin_amount_krw':          _to_float(ace0.get('margin_amount_krw')) if ace0 else None,
             'margin_rate':                _to_float(ace0.get('margin_rate')) if ace0 else None,
