@@ -76,7 +76,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'), override=True)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 CATEGORIES_MD = Path(__file__).resolve().parent.parent / "buyma_master_data" / "md" / "categories.md"
 
 
@@ -229,7 +229,8 @@ def match_with_gemini(unmapped: list, buyma_categories: list) -> dict:
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.1,
-            "maxOutputTokens": 8192,
+            "maxOutputTokens": 16384,
+            "thinkingConfig": {"thinkingBudget": 0},
         }
     }
 

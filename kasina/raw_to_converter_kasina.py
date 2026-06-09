@@ -200,7 +200,7 @@ MEASUREMENT_REPORT_DIR = os.path.join(OKMALL_DIR, 'logs')
 
 # Gemini API (측정 키 자동 매칭용)
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 # =====================================================
 # 유틸리티 함수
@@ -371,7 +371,8 @@ def match_unknown_keys_with_gemini(unknown_keys: set, target_keys: List[str]) ->
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.1,
-            "maxOutputTokens": 8192,
+            "maxOutputTokens": 16384,
+            "thinkingConfig": {"thinkingBudget": 0},
         }
     }
 

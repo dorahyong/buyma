@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / '.env', override=True)
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 INPUT_DIR = BASE_DIR / "buyma_master_data"
@@ -82,7 +82,8 @@ def translate_batch(texts):
         "generationConfig": {
             "responseMimeType": "application/json",
             "temperature": 0.1,
-            "maxOutputTokens": 8192,
+            "maxOutputTokens": 16384,
+            "thinkingConfig": {"thinkingBudget": 0},
         }
     }
 

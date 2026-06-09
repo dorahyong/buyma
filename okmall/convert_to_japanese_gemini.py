@@ -44,7 +44,7 @@ DB_CONFIG = {
 }
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 # 배치 설정
 BATCH_SIZE = 20  # 한 번에 처리할 상품 수
@@ -404,7 +404,8 @@ def translate_batch_with_gemini(texts: Dict[str, str], max_retries: int = 3) -> 
         "generationConfig": {
             "temperature": 0.1,
             "responseMimeType": "application/json",
-            "maxOutputTokens": 8192 
+            "maxOutputTokens": 16384,
+            "thinkingConfig": {"thinkingBudget": 0},
         }
     }
 
