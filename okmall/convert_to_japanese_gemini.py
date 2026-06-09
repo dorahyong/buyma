@@ -442,6 +442,7 @@ def translate_batch_with_gemini(texts: Dict[str, str], max_retries: int = 3) -> 
             elif response.status_code == 429:
                 wait_time = (attempt + 1) * 10
                 log(f"API 한도 초과, {wait_time}초 대기... ({attempt + 1}/{max_retries})", "WARNING")
+                log(f"  → 429 응답 본문: {response.text[:300]}", "WARNING")
                 time.sleep(wait_time)
             else:
                 log(f"Gemini API 오류 (HTTP {response.status_code}): {response.text[:200]}", "ERROR")
