@@ -348,6 +348,7 @@ Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like 
 ### 공통
 - `<br>` 태그는 공백 또는 제거해서 한 줄 문자열로 변환
 - 가격 `,` + `원` 제거해서 int 파싱
+- `product_name`에서 홍보 문구 `럭키찬스`(따옴표 동반 포함) 제거 후 저장 (collector `convert_to_raw_data`)
 - `brand_name_en`은 판매자 입력이므로 `A.P.C` vs `A.P.C.` 같은 변동 있을 수 있음 — labellusso/nextzennpack과 동일하게 `mall_brands`에서 사전 매핑 권장
 
 <div class="infoArea">
@@ -438,7 +439,8 @@ Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like 
 ```html
 <div class="thumbnail">
     <a href="/product/image_zoom2.html?product_no=30004&amp;cate_no=4138&amp;display_group=1" alt="P000BSKA" onclick="window.open(this.href, 'image_zoom2', 'toolbar=no,scrollbars=auto,resizable=yes,width=450,height=693,left=0,top=0', this);return false;">
-        <img src="//www.9tems.com/web/product/extra/big/202605/a350ad91c32c181d7bfab43fd92c8dd4.jpg" alt="26SS 이세이미야케 바오바오 루센트 숄더백 BB66 AG054 01톰브라운,몽클레어" class="BigImage ">                    </a>
+        <img src="//www.9tems.com/web/product/extra/big/202605/a350ad91c32c181d7bfab43fd92c8dd4.jpg" alt="26SS 이세이미야케 바오바오 루센트 숄더백 BB66 AG054 01톰브라운,몽클레어" class="BigImage ">
+    </a>
     <div id="zoom_wrap"></div>
 </div>
 <div class="xans-element- xans-product xans-product-addimage listImg">

@@ -345,7 +345,7 @@ def parse_detail(html: str) -> Dict[str, Any]:
                 'status': 'out_of_stock' if is_soldout else 'in_stock',
             })
 
-    # 이미지: keyImg BigImage(메인) + listImg ThumbImage(small→big 업스케일)
+    # 이미지: keyImg BigImage(메인) + listImg ThumbImage(extra/small→extra/big 업스케일)
     seen = set()
     for img in soup.select('div.keyImg img.BigImage, div.thumbnail img.BigImage'):
         src = _upscale_image(img.get('src', ''))
@@ -353,7 +353,12 @@ def parse_detail(html: str) -> Dict[str, Any]:
             seen.add(src)
             info['images'].append(src)
     for img in soup.select('div.xans-product-addimage img.ThumbImage'):
-        src = _upscale_image(img.get('src', ''))
+        raw = img.get('src', '')
+        # plain /product/small/ 썸네일은 /product/big/ 버전이 서버에 없어 404 발생 → 스킵.
+        # (/product/extra/small/ 만 /extra/big/ 로 존재. plain small에 해당하는 메인은 keyImg에서 이미 수집됨)
+        if '/product/small/' in raw:
+            continue
+        src = _upscale_image(raw)
         if src and src not in seen:
             seen.add(src)
             info['images'].append(src)
@@ -370,6 +375,10 @@ def convert_to_raw_data(product_no: str, detail: Dict, brand_name_en: str,
     product_name = detail.get('product_name', '')
     if not product_name:
         return None
+
+    # 홍보/이벤트 노이즈 단어 제거 (9tems "럭키찬스") — 따옴표 동반·공백 정리 포함
+    product_name = re.sub(r"\s*럭키찬스'?\s*", " ", product_name)
+    product_name = re.sub(r"\s+", " ", product_name).strip()
 
     model_id = extract_model_id(product_name)
 
