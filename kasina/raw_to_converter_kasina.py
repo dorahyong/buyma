@@ -642,6 +642,13 @@ def convert_season_to_id(season_type: str) -> Optional[int]:
     return season_mapping.get(season, None)
 
 
+def strip_brand_jp(brand_name: str) -> str:
+    """buyma_brand_name 에서 (일본어) 괄호 부분 제거. 'adidas(アディダス)' -> 'adidas'"""
+    if not brand_name:
+        return ""
+    return re.split(r'[\(（]', brand_name)[0].strip()
+
+
 def format_buyma_product_name(brand_name: str, product_name: str, model_id: str = None) -> str:
     """
     바이마 상품명 형식으로 변환
@@ -906,9 +913,6 @@ class RawToAceConverter:
         key = (brand_en or '').strip()
         if key in brand_mapping:
             result = brand_mapping[key]
-            # buyma_brand_id=0 (BUYMA 미등록이지만 활성 유지 의도) → raw brand_en 사용
-            if not result.get('buyma_brand_id'):
-                result['buyma_brand_name'] = brand_en
             return result
         return None
 
@@ -1038,7 +1042,7 @@ class RawToAceConverter:
         # 1. 상품명 생성 및 정제 (한국어 원본 저장, 배치 번역에서 처리)
         product_name = raw_data.get('product_name', '')
         buyma_name = format_buyma_product_name(
-            brand_name=raw_data.get('brand_name_en', ''),
+            brand_name=strip_brand_jp(brand_info.get('buyma_brand_name', '')),
             product_name=product_name,
             model_id=raw_data.get('model_id')
         )
@@ -1061,7 +1065,7 @@ class RawToAceConverter:
         selling_price = 0
 
         available_until = (datetime.now() + timedelta(days=DEFAULT_AVAILABLE_DAYS)).strftime("%Y-%m-%d")
-        brand_name_for_shop = raw_data.get('brand_name_en', '') or brand_info.get('buyma_brand_name', '')
+        brand_name_for_shop = strip_brand_jp(brand_info.get('buyma_brand_name', ''))
         buying_shop_name = BUYING_SHOP_NAME_TEMPLATE.format(brand_name=brand_name_for_shop)
 
         season_type = json_data.get('season')
