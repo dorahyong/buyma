@@ -181,22 +181,22 @@ def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
 # 상태 판정
 # ─────────────────────────────────────────────
 
-def _cannot_secure_lowest(a: Dict) -> bool:
-    """확보불가 판정: 미출품 상태인데 출품가능최저가(마진0 가격)마저
-    바이마최저가와 같거나 높아, 아무리 내려도 최저가 확보가 불가능한 경우만 True.
+def _secure_status(a: Dict) -> Optional[str]:
+    """미출품 ace 행의 최저가 확보 가능 여부.
 
-    - 바이마최저가 없음(경쟁자 없음)   → False (확인필요로 흐름)
-    - 매입가 없어 마진0 가격 계산 불가  → False (확인필요로 흐름)
+    'can'    : 출품가능최저가(마진0 가격) < 바이마최저가 → 가격을 내려 최저가 확보 가능
+    'cannot' : 출품가능최저가 >= 바이마최저가 → 아무리 내려도 확보 불가
+    None     : 판단 대상 아님 (출품중 / 경쟁자 없음 / 매입가 없어 계산 불가)
     """
     if a.get('is_published') != 0:
-        return False
+        return None
     lp = a.get('buyma_lowest_price')
     if not lp:
-        return False
+        return None
     be = breakeven_price_jpy(a.get('purchase_price_krw'), a.get('expected_shipping_fee'))
     if be is None:
-        return False
-    return be >= lp
+        return None
+    return 'cannot' if be >= lp else 'can'
 
 
 def _determine_status(raw_agg: Dict, ace_list: List[Dict],
@@ -210,9 +210,10 @@ def _determine_status(raw_agg: Dict, ace_list: List[Dict],
         if any(a.get('is_ready_to_publish') == 1 and a.get('is_published') == 0
                for a in ace_list):
             return 'waiting'
-        # 확보불가: 출품가능최저가(마진0 가격)마저 바이마최저가 이상이라
-        # 가격을 내려도 최저가 확보가 불가능한 경우만. (경쟁자 없음/매입가 없음은 확인필요로 흐름)
-        if any(_cannot_secure_lowest(a) for a in ace_list):
+        # 확보불가: 확보 불가능한 행은 있는데 확보 가능한 행이 하나도 없을 때만.
+        # (같은 model_no에 중복 ace 행이 있을 수 있음 — 한 행이라도 확보 가능하면 확보불가 아님)
+        secure = [_secure_status(a) for a in ace_list]
+        if 'cannot' in secure and 'can' not in secure:
             return 'no_lowest'
     oos = raw_agg.get('oos_count') or 0
     total = raw_agg.get('total_source_count') or 0
