@@ -533,7 +533,7 @@ Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)
 | **currency** | `meta[property="product:price:currency"]` | — | `KRW` |
 | **category_path (breadcrumb)** | `div.xans-product-headcategory ol li a` | `> ` 조인, 첫 "홈" 제외 | `<ol><li><a>홈</a></li><li><a>BRAND</a></li></ol>` → `홈 > BRAND` (빈약) |
 | **BigImage** | `div.detailArea img.BigImage[src]` | 메인 썸네일 | `//loromoda.net/web/product/big/202604/58d9291feca8891a06f7a698c17c50aa.jpg` |
-| **ThumbImage** | `div.xans-product-addimage img.ThumbImage[src]` | 추가 썸네일 — `/small/` → `/big/` 치환 | `//loromoda.net/web/product/small/202604/a483b7bcb71c96f959121186ce00c399.jpg` |
+| **ThumbImage** | `div.xans-product-addimage img.ThumbImage[src]` | 추가 썸네일 — `/small/` → `/big/` 치환. ★ plain `/product/small/`는 big 없어 404 → 스킵 | `//loromoda.net/web/product/small/202604/a483b7bcb71c96f959121186ce00c399.jpg` |
 | **상세 이미지** | `div#prdDetail img[src]` | 사방넷 CDN 경로만 필터 | `//loromoda123.cafe24.com/%BB%E7%B9%E6%B3%DD%BB%F3%C7%B0%B5%EE%B7%CF/Moncler/2B00013-599DI-F02/1.jpg` |
 
 ### 2-3. 필드 생성 규칙
@@ -611,7 +611,7 @@ if m:
 | 소스 | 셀렉터 | 호스팅 | 비고 |
 |------|--------|--------|------|
 | **A. 메인 썸네일** | `div.detailArea img.BigImage` | `loromoda.net/web/product/big/` | 대표 이미지 1장 |
-| **B. 추가 이미지** | `div.xans-product-addimage img.ThumbImage` | `loromoda.net/web/product/small/` | `/small/` → `/big/` 치환 |
+| **B. 추가 이미지** | `div.xans-product-addimage img.ThumbImage` | `loromoda.net/web/product/small/` | `/small/` → `/big/` 치환. ★ 단 plain `/product/small/`는 `/big/`가 서버에 없어 404 → **스킵** (extra/small만 사용) |
 | **C. 상세 HTML 내 상품 이미지** | `div#prdDetail img[src*="loromoda123.cafe24.com"]` | `loromoda123.cafe24.com` (사방넷 자동 업로드) | 현재 md 문서 방식 |
 
 ### 4-2. C 소스 필터링 (현재 md 방식 보강)
@@ -648,9 +648,12 @@ if big and big.get('src'):
     if url not in _seen: images.append(url); _seen.add(url)
 for thumb in soup.select('div.xans-product-addimage img.ThumbImage'):
     src = thumb.get('src', '')
-    if src:
-        url = absolute_url(src.replace('/small/', '/big/'))
-        if url not in _seen: images.append(url); _seen.add(url)
+    # ★ plain /product/small/ 은 /product/big/ 버전이 서버에 없어 404 → 스킵.
+    #   (/product/extra/small/ 만 /extra/big/ 로 존재. 메인은 A, 상세는 C에서 수집됨)
+    if not src or '/product/small/' in src:
+        continue
+    url = absolute_url(src.replace('/small/', '/big/'))
+    if url not in _seen: images.append(url); _seen.add(url)
 
 # 2) 상세 HTML 내 '사방넷상품등록' 경로 + 해당 model_id 포함 이미지만
 SABANG = '%BB%E7%B9%E6%B3%DD%BB%F3%C7%B0%B5%EE%B7%CF'  # 사방넷상품등록

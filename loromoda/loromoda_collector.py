@@ -412,10 +412,13 @@ def extract_detail_info(html: str, model_id_hint: str = '') -> Dict[str, Any]:
     if big:
         _add(_abs_url(big.get('src', '')))
     # B. 추가 썸네일 (/small/ → /big/)
+    #    plain /product/small/ 은 /product/big/ 버전이 서버에 없어 404 → 스킵.
+    #    (/product/extra/small/ 만 /extra/big/ 로 존재. 메인은 A, 상세 본문은 C에서 수집됨)
     for thumb in soup.select('div.xans-product-addimage img.ThumbImage'):
         src = thumb.get('src', '')
-        if src:
-            _add(_abs_url(src.replace('/small/', '/big/')))
+        if not src or '/product/small/' in src:
+            continue
+        _add(_abs_url(src.replace('/small/', '/big/')))
     # C. 상세 본문 사방넷 상품사진 (ec-data-src 지연로딩, 마지막 1장 제외)
     #    - 상세 이미지는 src가 비어있고 ec-data-src에 실제 URL이 들어있음
     #    - 사방넷상품등록 경로(SABANG_MARKER)가 실제 상품사진, 상세페이지 템플릿은 제외됨
