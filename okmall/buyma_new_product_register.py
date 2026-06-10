@@ -425,10 +425,13 @@ def get_product_variants(conn, ace_product_id: int) -> List[Dict]:
 # =====================================================
 
 def build_images_array(image_rows: List[Dict]) -> List[Dict]:
-    """images 배열 구성"""
+    """images 배열 구성 — position을 1부터 빈칸 없이 연속 재부여.
+    (이미지 업로드 실패로 원본 position에 구멍이 생기면 BUYMA가 422
+     '表示位置番号は歯抜けができないように…' 로 거부함. image_rows는
+     position 정렬돼 있으므로 순서 유지한 채 1,2,3…으로 다시 매김)"""
     return [
-        {"path": row['cloudflare_image_url'], "position": row['position']}
-        for row in image_rows
+        {"path": row['cloudflare_image_url'], "position": idx}
+        for idx, row in enumerate(image_rows, start=1)
     ]
 
 
