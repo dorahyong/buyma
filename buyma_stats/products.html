@@ -100,7 +100,7 @@
         render: (r) => r.status === 'on_sale' ? num(r.price_yen, '¥') : num(0, '¥') },
 
       { key: 'margin',      label: '기대마진',          cls: 'num',
-        sortKey: (r) => r.margin_amount_krw ?? -Infinity,
+        sortKey: (r) => r.expected_margin_krw ?? -Infinity,
         render: (r) => marginCell(r) },
 
       { key: 'sold',        label: '총 판매수',         cls: 'num',
@@ -199,10 +199,11 @@
       return v + '일';
     }
     function marginCell(r) {
-      const v = r.margin_amount_krw;
+      // 기대마진: 저장값이 아니라 실시간 계산값(바이마출품가/최저가 − 출품가능최저가, 원화 환산)
+      const v = r.expected_margin_krw;
       if (v == null) return '<span class="placeholder">—</span>';
       const cls = v < 0 ? 'neg' : '';
-      const rate = (r.margin_rate != null) ? ` (${Number(r.margin_rate).toFixed(1)}%)` : '';
+      const rate = (r.expected_margin_rate != null) ? ` (${Number(r.expected_margin_rate).toFixed(1)}%)` : '';
       return `<span class="${cls}">${Number(v).toLocaleString('ko-KR')}원${rate}</span>`;
     }
     function parseRegDate(s) {
@@ -593,9 +594,9 @@
         case 'lowest_avail':     return r.available_lowest_price_jpy ?? '';
         case 'price':            return r.status === 'on_sale' ? (r.price_yen ?? 0) : 0;
         case 'margin': {
-          if (r.margin_amount_krw == null) return '';
-          const rate = r.margin_rate != null ? ` (${Number(r.margin_rate).toFixed(1)}%)` : '';
-          return `${Number(r.margin_amount_krw).toLocaleString('ko-KR')}원${rate}`;
+          if (r.expected_margin_krw == null) return '';
+          const rate = r.expected_margin_rate != null ? ` (${Number(r.expected_margin_rate).toFixed(1)}%)` : '';
+          return `${Number(r.expected_margin_krw).toLocaleString('ko-KR')}원${rate}`;
         }
         case 'rank':             return r.rank_position != null ? `${r.rank_position}위` : '';
         case 'same_count':       return r.same_count ?? '';

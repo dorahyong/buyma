@@ -56,8 +56,8 @@
     fav_avg:        { label:'일평균 찜수',        type:'number', get:r=>avgOf(r.favorite_count, r.registered_at) },
     rank_position:  { label:'인기순 순위',        type:'number', get:r=>r.rank_position, nodata:true },
     // --- 가격·마진 ---
-    margin_amount_krw: { label:'기대마진 (원)',   type:'number', get:r=>r.margin_amount_krw },
-    margin_rate:    { label:'마진율 (%)',         type:'number', get:r=>r.margin_rate },
+    margin_amount_krw: { label:'기대마진 (원)',   type:'number', get:r=>r.expected_margin_krw },
+    margin_rate:    { label:'마진율 (%)',         type:'number', get:r=>r.expected_margin_rate },
     price_yen:      { label:'바이마 출품가 (¥)',  type:'number', get:r=>r.price_yen },
     buyma_lowest_price:         { label:'바이마 최저가 (¥)',   type:'number', get:r=>r.buyma_lowest_price },
     available_lowest_price_jpy: { label:'출품가능 최저가 (¥)', type:'number', get:r=>r.available_lowest_price_jpy },

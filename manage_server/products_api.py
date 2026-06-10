@@ -74,6 +74,25 @@ def breakeven_price_jpy(purchase_price_krw, shipping_fee_krw=DEFAULT_SHIPPING_FE
     return math.ceil(net_cost_krw / denom)
 
 
+def expected_margin(item: Dict) -> tuple:
+    """기대마진(원) + 마진율(%) 실시간 계산 → (margin_krw, margin_rate).
+
+    기준가 = 출품중이면 바이마출품가(price_yen), 아니면 바이마최저가(buyma_lowest_price).
+    기대마진(원) = (기준가 − 출품가능최저가) × 환율 × (1−판매수수료).
+      ※ 출품가능최저가는 '마진 0이 되는 가격'이므로, 기준가와의 차액을 원화로 환산하면 곧 그 가격의 마진.
+    출품가능최저가나 기준가가 없으면(경쟁자 없음/매입가 없음 등) (None, None).
+    """
+    avail = _to_float(item.get('available_lowest_price_jpy'))
+    base = (_to_float(item.get('price_yen')) if item.get('status') == 'on_sale'
+            else _to_float(item.get('buyma_lowest_price')))
+    if avail is None or base is None:
+        return None, None
+    margin_krw = round((base - avail) * EXCHANGE_RATE * (1 - SALES_FEE_RATE))
+    sales_krw = base * EXCHANGE_RATE
+    rate = round(margin_krw / sales_krw * 100, 2) if sales_krw else None
+    return margin_krw, rate
+
+
 # ─────────────────────────────────────────────
 # 쿼리 함수들
 # ─────────────────────────────────────────────
@@ -270,7 +289,7 @@ def build_payload(db_config: Dict) -> Dict:
         image_url = (img.get('cloudflare_image_url') or
                      img.get('source_image_url')) if img else None
 
-        items.append({
+        item = {
             'model_id':                   model_id,
             'buyma_product_id':           str(bp_id) if bp_id else None,
             'status':                     status,
@@ -309,7 +328,10 @@ def build_payload(db_config: Dict) -> Dict:
             'top1_seller_id':   None,
             'top1_price':       None,
             'top1_name':        None,
-        })
+        }
+        # 기대마진(원)·마진율(%): 저장값이 아니라 (기준가 − 출품가능최저가) 실시간 계산
+        item['expected_margin_krw'], item['expected_margin_rate'] = expected_margin(item)
+        items.append(item)
 
     return {
         'collected_at': datetime.now().isoformat(timespec='seconds'),
