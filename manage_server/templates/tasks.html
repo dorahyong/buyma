@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>관리 작업 · manage</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; font-size: 14px; color: #222; max-width: 980px; }
+    h1 { font-size: 1.2rem; margin: 0 0 4px; }
+    .sub { color: #666; font-size: 13px; margin: 0 0 16px; }
+    .sub a { color: #0969da; }
+    .note {
+      background: #fff8e1; border: 1px solid #f0d98a; border-radius: 8px;
+      padding: 10px 12px; margin-bottom: 16px; font-size: 13px; line-height: 1.6;
+    }
+    .card {
+      border: 1px solid #d0d7de; border-radius: 10px; padding: 16px;
+      margin-bottom: 16px; background: #fff;
+    }
+    .card-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .card-title { font-size: 1.02rem; font-weight: 700; margin: 0; }
+    .card-desc { color: #444; font-size: 13px; line-height: 1.6; margin: 8px 0 12px; }
+    .badge {
+      font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600;
+      border: 1px solid transparent; white-space: nowrap;
+    }
+    .badge-warp { background: #fdecea; color: #b3261e; border-color: #f3c6c1; }
+    .badge-danger { background: #fff0f0; color: #b00; border-color: #f3c6c1; }
+    .opts { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 12px; }
+    .opt { display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+    .opt label { font-weight: 600; color: #444; }
+    .opt input, .opt select { padding: 5px 8px; font-size: 13px; min-width: 160px; }
+    .opt.bool { flex-direction: row; align-items: center; gap: 6px; }
+    .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    button {
+      padding: 7px 14px; font-size: 13px; border-radius: 7px; border: 1px solid #c9c9c9;
+      background: #f6f8fa; cursor: pointer; font-weight: 600;
+    }
+    button:hover:not(:disabled) { background: #eef1f4; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.preview { border-color: #0969da; color: #0969da; }
+    button.apply { border-color: #b00; color: #b00; }
+    button.stop { border-color: #8a6d00; color: #8a6d00; }
+    .status { font-size: 12px; margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: #bbb; display: inline-block; }
+    .dot.running { background: #e6a700; animation: pulse 1s infinite; }
+    .dot.done { background: #1a7f37; }
+    .dot.error, .dot.unknown { background: #b00; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+    .logwrap { margin-top: 12px; display: none; }
+    .logwrap.open { display: block; }
+    pre.log {
+      background: #0d1117; color: #d6dde6; padding: 12px; border-radius: 8px;
+      font-size: 12px; line-height: 1.5; max-height: 360px; overflow: auto;
+      white-space: pre-wrap; word-break: break-all; margin: 0;
+    }
+    .toggle-log { font-size: 12px; background: none; border: none; color: #0969da; padding: 0; cursor: pointer; font-weight: 600; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+    .cleanup-result { font-size: 12px; color: #1a7f37; font-weight: 600; }
+    .cleanup-hint { font-size: 12px; color: #888; }
+    .cookiebox {
+      border: 1px solid #c9d6e5; border-radius: 10px; padding: 14px 16px;
+      margin-bottom: 16px; background: #f3f8ff; font-size: 13px; line-height: 1.7;
+    }
+    .cookiebox h2 { font-size: 0.98rem; margin: 0 0 6px; }
+    .cookiebox ol { margin: 6px 0; padding-left: 20px; }
+    .cookiebox code { background: #fff; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    .step-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .dl {
+      display: inline-block; padding: 6px 12px; border: 1px solid #0969da; color: #0969da;
+      border-radius: 7px; font-weight: 600; text-decoration: none; font-size: 13px;
+    }
+    .cookie-status, .cookie-msg { font-size: 12px; font-weight: 600; }
+    .rec {
+      margin-top: 12px; padding: 10px 12px; border-radius: 8px;
+      background: #fff8e1; border: 1px solid #f0d98a; font-size: 12px; line-height: 1.6;
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .rec button { border-color: #b8860b; color: #8a6d00; }
+    .rec .rec-result { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>관리 작업</h1>
+  <p class="sub">
+    버튼으로 정비 작업을 실행합니다. ·
+    <a href="/manage">DB 조회</a> ·
+    <a href="/manage/products/">상품 통계</a> ·
+    <a href="/manage/logout">로그아웃</a>
+  </p>
+
+  <div class="cookiebox">
+    <h2>바이마 로그인 (크롤링 작업용 쿠키)</h2>
+    고아/유령 정리 같은 크롤링 작업은 로그인 쿠키가 필요합니다. 아래 순서로 준비하세요:
+    <ol>
+      <li><strong>로그인 도구 다운로드</strong> →
+        <a class="dl" href="/manage/tasks/login_tool">buyma_login.py 받기</a></li>
+      <li>받은 <code>buyma_login.py</code> 를 <strong>PC에서 더블클릭</strong>(또는 <code>python buyma_login.py</code>)으로 실행
+        <span style="color:#888">— 크롬 창이 열립니다</span></li>
+      <li>열린 브라우저에서 <strong>직접 로그인</strong>(캡차도 직접) → 같은 폴더에 <code>buyma_cookies.json</code> 생성</li>
+      <li><strong>그 쿠키 파일 업로드</strong>:
+        <span class="step-row">
+          <input type="file" id="cookieFile" accept=".json,application/json">
+          <button id="uploadCookieBtn" type="button">쿠키 업로드</button>
+          <span id="uploadMsg" class="cookie-msg"></span>
+        </span>
+      </li>
+      <li>작업이 다 끝나면
+        <button id="deleteCookieBtn" type="button">서버 쿠키 삭제</button>
+        <span id="deleteMsg" class="cookie-msg"></span>
+        <span style="color:#888">(보안 — 다음엔 재로그인 필요)</span></li>
+    </ol>
+    <div>서버 쿠키 상태: <span id="cookieStatus" class="cookie-status">확인 중…</span></div>
+  </div>
+
+  <div class="note">
+    <strong>실행 방법</strong> — 먼저 <strong>「영향 미리보기」</strong>로 무엇이 바뀌는지(대상 건수/목록)를 확인한 뒤,
+    <strong>「실행」</strong> 버튼으로 실제 작업을 돌립니다. 실행은 한 번에 하나씩만 가능합니다.
+    <span class="badge badge-warp">WARP 필요</span> 표시가 붙은 작업은 서버 환경에 따라 실패할 수 있습니다.
+  </div>
+
+  <div class="toolbar">
+    <button id="cleanupBtn" type="button">임시 로그 정리</button>
+    <span id="cleanupResult" class="cleanup-result"></span>
+    <button id="cleanupArtifactsBtn" type="button">스캔 생성 파일 삭제</button>
+    <span id="cleanupArtifactsResult" class="cleanup-result"></span>
+    <span class="cleanup-hint">로그/상태 파일과 크롤링 스캔 파일(json·csv)을 삭제합니다(실행 중이면 보존, 쿠키는 위 패널에서 따로).</span>
+  </div>
+
+  <div class="scan-line" style="font-size: 13px; margin-bottom: 14px;">
+    📄 크롤링 스캔 파일: <span id="scanStatus" class="cookie-status">확인 중…</span>
+  </div>
+
+  <div id="cards"></div>
+
+  <script>
+    const POLL_MS = 1500;
+
+    async function jget(url) {
+      const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      return r.json();
+    }
+
+    function el(tag, attrs = {}, ...children) {
+      const e = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (k === 'class') e.className = v;
+        else if (k === 'text') e.textContent = v;
+        else e.setAttribute(k, v);
+      }
+      for (const c of children) if (c) e.appendChild(c);
+      return e;
+    }
+
+    function readOptions(card, task) {
+      const out = {};
+      for (const o of task.options || []) {
+        const node = card.querySelector(`[data-flag="${o.flag}"]`);
+        if (!node) continue;
+        if (o.type === 'bool') out[o.flag] = node.checked;
+        else if (node.value.trim() !== '') out[o.flag] = node.value.trim();
+      }
+      return out;
+    }
+
+    function buildCard(task) {
+      const card = el('div', { class: 'card' });
+      card.dataset.taskId = task.id;
+      card.dataset.previewed = '0';
+
+      const head = el('div', { class: 'card-head' });
+      head.appendChild(el('p', { class: 'card-title', text: task.title }));
+      if (task.env === 'needs_warp')
+        head.appendChild(el('span', { class: 'badge badge-warp', text: 'WARP 필요' }));
+      if (task.destructive)
+        head.appendChild(el('span', { class: 'badge badge-danger', text: '데이터 변경' }));
+      card.appendChild(head);
+
+      card.appendChild(el('p', { class: 'card-desc', text: task.description }));
+
+      // 옵션
+      if ((task.options || []).length) {
+        const opts = el('div', { class: 'opts' });
+        for (const o of task.options) {
+          if (o.type === 'bool') {
+            const wrap = el('div', { class: 'opt bool' });
+            const cb = el('input', { type: 'checkbox' });
+            cb.dataset.flag = o.flag;
+            if (o.default) cb.checked = true;
+            wrap.appendChild(cb);
+            wrap.appendChild(el('label', { text: o.label }));
+            opts.appendChild(wrap);
+          } else if (o.type === 'choice') {
+            const wrap = el('div', { class: 'opt' });
+            wrap.appendChild(el('label', { text: o.label }));
+            const sel = el('select');
+            sel.dataset.flag = o.flag;
+            sel.appendChild(el('option', { value: '', text: '(선택 안 함)' }));
+            for (const c of o.choices || []) sel.appendChild(el('option', { value: c, text: c }));
+            wrap.appendChild(sel);
+            opts.appendChild(wrap);
+          } else {
+            const wrap = el('div', { class: 'opt' });
+            wrap.appendChild(el('label', { text: o.label }));
+            const inp = el('input', { type: o.type === 'number' ? 'number' : 'text', placeholder: o.placeholder || '' });
+            inp.dataset.flag = o.flag;
+            wrap.appendChild(inp);
+            opts.appendChild(wrap);
+          }
+        }
+        card.appendChild(opts);
+      }
+
+      // 액션
+      const actions = el('div', { class: 'actions' });
+      const btnPreview = el('button', { class: 'preview', text: task.preview_label || '영향 미리보기' });
+      const btnApply = el('button', { class: 'apply', text: '실행' });
+      btnApply.disabled = true;
+      const btnStop = el('button', { class: 'stop', text: '중지' });
+      btnStop.style.display = 'none';
+      const status = el('div', { class: 'status' });
+      const dot = el('span', { class: 'dot' });
+      const stxt = el('span', { text: '대기' });
+      status.appendChild(dot); status.appendChild(stxt);
+      actions.appendChild(btnPreview);
+      actions.appendChild(btnApply);
+      actions.appendChild(btnStop);
+      actions.appendChild(status);
+      card.appendChild(actions);
+
+      // 로그
+      const toggle = el('button', { class: 'toggle-log', text: '로그 보기 ▾' });
+      toggle.style.display = 'none';
+      const logwrap = el('div', { class: 'logwrap' });
+      const pre = el('pre', { class: 'log' });
+      logwrap.appendChild(pre);
+      card.appendChild(toggle);
+      card.appendChild(logwrap);
+
+      // 작업 후 정리 권유 (실행 완료 시 노출)
+      const rec = el('div', { class: 'rec' });
+      rec.style.display = 'none';
+      card.appendChild(rec);
+
+      toggle.onclick = () => {
+        logwrap.classList.toggle('open');
+        toggle.textContent = logwrap.classList.contains('open') ? '로그 숨기기 ▴' : '로그 보기 ▾';
+      };
+
+      const ui = { card, btnPreview, btnApply, btnStop, dot, stxt, toggle, pre, logwrap, rec, currentJobId: null };
+      btnPreview.onclick = () => run(task, 'preview', ui);
+      btnApply.onclick = () => {
+        if (!confirm(`[${task.title}]\n\n실제로 실행하시겠습니까? 바이마/DB 데이터가 변경됩니다.`)) return;
+        run(task, 'apply', ui);
+      };
+      btnStop.onclick = () => stopCurrent(ui);
+      return ui;
+    }
+
+    function setStatus(ui, cls, text) {
+      ui.dot.className = 'dot ' + cls;
+      ui.stxt.textContent = text;
+    }
+
+    async function run(task, mode, ui) {
+      const options = readOptions(ui.card, task);
+      ui.btnPreview.disabled = true;
+      ui.btnApply.disabled = true;
+      setStatus(ui, 'running', mode === 'preview' ? '미리보기 준비 중…' : '실행 시작 중…');
+      ui.toggle.style.display = '';
+      ui.logwrap.classList.add('open');
+      ui.toggle.textContent = '로그 숨기기 ▴';
+      ui.pre.textContent = '';
+
+      let res;
+      try {
+        const r = await fetch('/manage/tasks/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task_id: task.id, mode, options }),
+        });
+        res = await r.json();
+        if (!r.ok) throw new Error(res.error || '실행 실패');
+      } catch (e) {
+        setStatus(ui, 'error', '오류');
+        ui.pre.textContent = '⚠ ' + e.message;
+        ui.btnPreview.disabled = false;
+        ui.btnApply.disabled = ui.card.dataset.previewed !== '1';
+        return;
+      }
+      ui.currentJobId = res.job_id;
+      ui.btnStop.style.display = '';
+      ui.btnStop.disabled = false;
+      poll(task, mode, ui, res.job_id);
+    }
+
+    async function stopCurrent(ui) {
+      if (!ui.currentJobId) return;
+      if (!confirm('실행 중인 작업을 중지할까요?')) return;
+      ui.btnStop.disabled = true;
+      try {
+        const r = await fetch('/manage/tasks/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ job_id: ui.currentJobId }),
+        });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '중지 실패');
+        setStatus(ui, 'error', '중지 요청됨… 종료 대기');
+      } catch (e) {
+        alert('중지 실패: ' + e.message);
+        ui.btnStop.disabled = false;
+      }
+    }
+
+    async function poll(task, mode, ui, jobId) {
+      const label = mode === 'preview' ? '미리보기' : '실행';
+      while (true) {
+        const log = await jget('/manage/tasks/log?job_id=' + jobId);
+        ui.pre.textContent = log.text || '';
+        ui.pre.scrollTop = ui.pre.scrollHeight;
+        const st = await jget('/manage/tasks/status?job_id=' + jobId);
+        if (st.status === 'running') {
+          setStatus(ui, 'running', label + ' 진행 중…');
+          await new Promise(r => setTimeout(r, POLL_MS));
+          continue;
+        }
+        // 종료
+        const log2 = await jget('/manage/tasks/log?job_id=' + jobId);
+        ui.pre.textContent = log2.text || '';
+        ui.pre.scrollTop = ui.pre.scrollHeight;
+        if (st.status === 'done') {
+          setStatus(ui, 'done', label + ' 완료 ✓');
+          if (mode === 'preview') ui.card.dataset.previewed = '1';
+          else if (mode === 'apply') showCleanupRec(ui);
+        } else if (st.status === 'stopped') {
+          setStatus(ui, 'unknown', label + ' 중지됨');
+        } else if (st.status === 'error') {
+          setStatus(ui, 'error', label + ' 실패 (코드 ' + st.returncode + ')');
+        } else {
+          setStatus(ui, 'unknown', label + ' 상태 불명');
+        }
+        ui.currentJobId = null;
+        ui.btnStop.style.display = 'none';
+        ui.btnPreview.disabled = false;
+        ui.btnApply.disabled = ui.card.dataset.previewed !== '1';
+        refreshScanStatus();  // 스캔/삭제 후 스캔 파일 상태 갱신
+        break;
+      }
+    }
+
+    function showCleanupRec(ui) {
+      const rec = ui.rec;
+      rec.style.display = 'flex';
+      rec.innerHTML = '';
+      rec.appendChild(el('span', { text: '🧹 서버 용량: 작업이 끝났으면 크롤링으로 생성된 스캔 파일(json·csv)을 삭제하세요. (로그인 쿠키는 유지 — 위 패널에서 따로 삭제)' }));
+      const btn = el('button', { type: 'button', text: '스캔 생성 파일 삭제' });
+      const out = el('span', { class: 'rec-result' });
+      rec.appendChild(btn);
+      rec.appendChild(out);
+      btn.onclick = async () => {
+        if (!confirm('크롤링으로 생성된 스캔 파일(json·csv)을 삭제할까요? (로그인 쿠키는 유지됩니다)')) return;
+        btn.disabled = true;
+        out.style.color = '#888'; out.textContent = '삭제 중…';
+        try {
+          const r = await fetch('/manage/tasks/cleanup_artifacts', { method: 'POST' });
+          const j = await r.json();
+          if (!r.ok) throw new Error(j.error || '삭제 실패');
+          out.style.color = '#1a7f37';
+          out.textContent = `${j.deleted}개 삭제 · ${fmtBytes(j.freed_bytes)} 회수`;
+        } catch (e) {
+          out.style.color = '#b00';
+          out.textContent = '⚠ ' + e.message;
+          btn.disabled = false;
+        }
+      };
+    }
+
+    function fmtBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / 1024 / 1024).toFixed(1) + ' MB';
+    }
+
+    document.getElementById('cleanupBtn').onclick = async function () {
+      const btn = this;
+      const out = document.getElementById('cleanupResult');
+      if (!confirm('끝난 작업의 임시 로그/상태 파일을 모두 삭제할까요?\n(실행 중인 작업은 보존됩니다)')) return;
+      btn.disabled = true;
+      out.textContent = '정리 중…';
+      out.style.color = '#888';
+      try {
+        const r = await fetch('/manage/tasks/cleanup', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '정리 실패');
+        out.style.color = '#1a7f37';
+        out.textContent = `${j.deleted}개 삭제 · ${fmtBytes(j.freed_bytes)} 회수`
+          + (j.kept_running ? ` (실행 중 ${j.kept_running}건 보존)` : '');
+      } catch (e) {
+        out.style.color = '#b00';
+        out.textContent = '⚠ ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    document.getElementById('cleanupArtifactsBtn').onclick = async function () {
+      const btn = this;
+      const out = document.getElementById('cleanupArtifactsResult');
+      if (!confirm('크롤링으로 생성된 스캔 파일(json·csv)을 삭제할까요?\n(로그인 쿠키는 유지됩니다. 실행 중인 작업이 있으면 거부됩니다)')) return;
+      btn.disabled = true;
+      out.style.color = '#888'; out.textContent = '삭제 중…';
+      try {
+        const r = await fetch('/manage/tasks/cleanup_artifacts', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '삭제 실패');
+        out.style.color = '#1a7f37';
+        out.textContent = `${j.deleted}개 삭제 · ${fmtBytes(j.freed_bytes)} 회수`;
+        refreshScanStatus();
+      } catch (e) {
+        out.style.color = '#b00';
+        out.textContent = '⚠ ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    async function refreshScanStatus() {
+      const e = document.getElementById('scanStatus');
+      try {
+        const s = await jget('/manage/tasks/scan_status');
+        if (s.incomplete) {
+          e.style.color = '#b8860b';
+          e.textContent = "⚠ 크롤링 미완료(중단됨) — '크롤링 다시 하기' 켜고 미리보기로 이어서 완료하세요. 완료 전엔 삭제/정리가 차단됩니다";
+        } else if (s.exists) {
+          e.style.color = '#1a7f37';
+          e.textContent = `있음 — 최근 스캔 ${s.latest} (${s.files.length}개 파일). 재사용하려면 '크롤링 다시 하기' 체크 해제`;
+        } else {
+          e.style.color = '#b00';
+          e.textContent = "없음 — 첫 작업은 '크롤링 다시 하기'를 켜고 미리보기 하세요";
+        }
+      } catch (err) { e.style.color = '#888'; e.textContent = '확인 실패'; }
+    }
+
+    async function refreshCookieStatus() {
+      const e = document.getElementById('cookieStatus');
+      try {
+        const s = await jget('/manage/tasks/cookie_status');
+        if (s.exists) { e.style.color = '#1a7f37'; e.textContent = '있음 (' + fmtBytes(s.size) + ') — 크롤링 작업 가능'; }
+        else { e.style.color = '#b00'; e.textContent = '없음 — 위 순서로 로그인/업로드 필요'; }
+      } catch (err) { e.style.color = '#888'; e.textContent = '확인 실패'; }
+    }
+
+    document.getElementById('uploadCookieBtn').onclick = async function () {
+      const btn = this;
+      const inp = document.getElementById('cookieFile');
+      const msg = document.getElementById('uploadMsg');
+      if (!inp.files || !inp.files.length) { msg.style.color = '#b00'; msg.textContent = '파일을 선택하세요.'; return; }
+      const fd = new FormData();
+      fd.append('file', inp.files[0]);
+      btn.disabled = true; msg.style.color = '#e6a700'; msg.textContent = '업로드 중…';
+      try {
+        const r = await fetch('/manage/tasks/upload_cookie', { method: 'POST', body: fd });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '업로드 실패');
+        msg.style.color = '#1a7f37'; msg.textContent = '업로드 완료 (' + j.count + '개 쿠키)';
+        refreshCookieStatus();
+      } catch (e) { msg.style.color = '#b00'; msg.textContent = '⚠ ' + e.message; }
+      finally { btn.disabled = false; }
+    };
+
+    document.getElementById('deleteCookieBtn').onclick = async function () {
+      const btn = this;
+      const msg = document.getElementById('deleteMsg');
+      if (!confirm('서버에 저장된 로그인 쿠키를 삭제할까요?\n(다음 크롤링 작업 전에 다시 로그인/업로드 필요)')) return;
+      btn.disabled = true; msg.style.color = '#e6a700'; msg.textContent = '삭제 중…';
+      try {
+        const r = await fetch('/manage/tasks/delete_cookie', { method: 'POST' });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error || '삭제 실패');
+        msg.style.color = '#1a7f37';
+        msg.textContent = j.deleted ? ('삭제됨 (' + fmtBytes(j.freed_bytes) + ')') : '삭제할 쿠키가 없습니다.';
+        refreshCookieStatus();
+      } catch (e) { msg.style.color = '#b00'; msg.textContent = '⚠ ' + e.message; }
+      finally { btn.disabled = false; }
+    };
+
+    refreshCookieStatus();
+    refreshScanStatus();
+
+    (async function init() {
+      const data = await jget('/manage/tasks/list');
+      const root = document.getElementById('cards');
+      const uiByTask = {};
+      for (const task of data.tasks || []) {
+        const ui = buildCard(task);
+        root.appendChild(ui.card);
+        uiByTask[task.id] = { task, ui };
+      }
+      if (!(data.tasks || []).length) {
+        root.appendChild(el('p', { class: 'sub', text: '등록된 작업이 없습니다.' }));
+      }
+      // 새로고침/재접속 시 진행 중인 작업에 화면 자동 재연결
+      try {
+        const rec = await jget('/manage/tasks/recent');
+        const running = (rec.runs || []).find(r => r.status === 'running');
+        if (running && uiByTask[running.task_id]) {
+          const { task, ui } = uiByTask[running.task_id];
+          ui.btnPreview.disabled = true;
+          ui.btnApply.disabled = true;
+          ui.currentJobId = running.job_id;
+          ui.btnStop.style.display = '';
+          ui.btnStop.disabled = false;
+          ui.toggle.style.display = '';
+          ui.logwrap.classList.add('open');
+          ui.toggle.textContent = '로그 숨기기 ▴';
+          setStatus(ui, 'running', (running.mode === 'preview' ? '미리보기' : '실행') + ' 진행 중… (재연결됨)');
+          poll(task, running.mode, ui, running.job_id);
+        }
+      } catch (e) { /* 재연결 실패는 무시 */ }
+    })();
+  </script>
+</body>
+</html>

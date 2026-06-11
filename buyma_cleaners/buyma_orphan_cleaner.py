@@ -87,6 +87,8 @@ BUYMA_ACCESS_TOKEN = os.getenv('BUYMA_ACCESS_TOKEN', '')
 # 파일 경로
 COOKIE_FILE = "buyma_cookies.json"
 BUYMA_IDS_FILE = "buyma_all_product_ids.json"
+# 크롤링 진행상황(중간저장). 존재 = 미완료/중단된 크롤링. 완료 시 삭제됨.
+PROGRESS_FILE = "buyma_crawl_progress.json"
 ORPHAN_IDS_FILE = "buyma_orphan_ids.json"
 ORPHAN_CSV_FILE = "buyma_orphan_products.csv"
 GHOST_IDS_FILE = "buyma_ghost_ids.json"
@@ -167,9 +169,34 @@ async def login_and_save_cookies():
 # Phase 1: 리스트 크롤링 → 상품ID 수집
 # =====================================================
 
+def _save_progress(all_products: List[Dict], next_page: int) -> None:
+    """크롤링 진행상황 중간저장 (다음에 받을 페이지 번호 기준)."""
+    tmp = PROGRESS_FILE + ".tmp"
+    with open(tmp, 'w', encoding='utf-8') as f:
+        json.dump({'products': all_products, 'next_page': next_page}, f, ensure_ascii=False)
+    os.replace(tmp, PROGRESS_FILE)
+
+
+def _load_progress():
+    """중단된 진행상황이 있으면 (products, next_page) 반환, 없으면 None."""
+    if not os.path.exists(PROGRESS_FILE):
+        return None
+    try:
+        with open(PROGRESS_FILE, 'r', encoding='utf-8') as f:
+            d = json.load(f)
+        return d.get('products', []), int(d.get('next_page', 1))
+    except Exception:
+        return None
+
+
 def crawl_buyma_product_ids() -> List[Dict]:
     """
     바이마 출품 리스트 전체를 크롤링하여 상품ID를 수집.
+
+    중간저장/이어하기 지원:
+      - 페이지마다 PROGRESS_FILE 에 진행상황 저장
+      - 중단(stop/네트워크/세션만료) 시 PROGRESS_FILE 이 남아, 다음 --scan 이 이어받음
+      - 끝까지 완료해야만 BUYMA_IDS_FILE 저장 + PROGRESS_FILE 삭제 (=완료 표시)
 
     HTML 셀렉터:
       <input type="checkbox" name="chkitems" value="128400709">
@@ -182,6 +209,12 @@ def crawl_buyma_product_ids() -> List[Dict]:
     log("=" * 60)
     log("Phase 1: 바이마 출품 리스트 크롤링 (rows=100)")
     log("=" * 60)
+
+    # 이어하기: 중단된 진행상황이 있으면 재개
+    prog = _load_progress()
+    if prog is not None:
+        all_products, page_num = prog
+        log(f"이어하기: 기존 {len(all_products)}개 누적 → 페이지 {page_num}부터 재개")
 
     while True:
         url = BUYMA_LIST_URL_TEMPLATE.format(page=page_num)
@@ -221,13 +254,14 @@ def crawl_buyma_product_ids() -> List[Dict]:
 
         if last_err is not None:
             # 부분 결과로 Phase 2 진입하면 대량 오판정 → 명시적으로 중단
+            # (진행상황은 PROGRESS_FILE 에 저장돼 있어 --scan 재실행 시 이어짐)
             raise RuntimeError(
                 f"페이지 {page_num} 크롤링 실패 (수집 {len(all_products)}개에서 중단): {last_err}. "
-                f"buyma_all_product_ids.json 저장하지 않음. 다시 --scan 실행 필요."
+                f"진행상황 저장됨 → --scan 다시 실행하면 페이지 {page_num}부터 이어집니다."
             )
 
         if '/login' in resp.url:
-            raise RuntimeError("세션 만료. --login으로 다시 로그인 후 --scan 재실행 필요.")
+            raise RuntimeError("세션 만료. 쿠키 업로드(또는 --login) 후 --scan 재실행. (진행상황은 저장됨)")
 
         soup = BeautifulSoup(resp.text, 'html.parser')
         checkboxes = soup.select('input[name="chkitems"]')
@@ -263,10 +297,27 @@ def crawl_buyma_product_ids() -> List[Dict]:
             break
 
         page_num += 1
+        # 중간저장 (다음 받을 페이지 기준) — 여기서 중단되면 다음에 이어받음
+        _save_progress(all_products, page_num)
         time.sleep(CRAWL_DELAY)
+
+    # 완료 — 중복 제거(이어하기 중 페이지 변동 대비) 후 최종 저장
+    seen = set()
+    deduped = []
+    for p in all_products:
+        pid = p.get('buyma_product_id')
+        if pid in seen:
+            continue
+        seen.add(pid)
+        deduped.append(p)
+    all_products = deduped
 
     with open(BUYMA_IDS_FILE, 'w', encoding='utf-8') as f:
         json.dump(all_products, f, ensure_ascii=False, indent=2)
+
+    # 완료 표시: 진행파일 삭제 (PROGRESS_FILE 없음 = 크롤링 100% 완료)
+    if os.path.exists(PROGRESS_FILE):
+        os.remove(PROGRESS_FILE)
 
     log(f"\n크롤링 완료! 총 {len(all_products)}개 → {BUYMA_IDS_FILE}")
     return all_products
@@ -414,6 +465,10 @@ def find_ghosts(buyma_products: List[Dict]) -> List[Dict]:
 
 def clean_ghosts(dry_run: bool = False):
     """유령 상품의 is_published를 0으로 업데이트"""
+    if os.path.exists(PROGRESS_FILE):
+        log("크롤링이 완료되지 않았습니다(중단된 크롤링 있음). 부분 데이터로 정리하면 대량 오판정 "
+            "위험이 있어 중단합니다. --scan 으로 끝까지 완료한 뒤 다시 실행하세요.", "ERROR")
+        return
     if not os.path.exists(GHOST_IDS_FILE):
         log("유령 상품 파일 없음. 먼저 --scan을 실행해주세요.", "ERROR")
         return
@@ -540,6 +595,10 @@ def delete_orphans(dry_run: bool = False):
     1. 내부 API로 reference_number 조회
     2. 바이마 쇼퍼 API로 삭제
     """
+    if os.path.exists(PROGRESS_FILE):
+        log("크롤링이 완료되지 않았습니다(중단된 크롤링 있음). 부분 데이터로 삭제하면 대량 오판정 "
+            "위험이 있어 중단합니다. --scan 으로 끝까지 완료한 뒤 다시 실행하세요.", "ERROR")
+        return
     if not os.path.exists(ORPHAN_IDS_FILE):
         log("고아 상품 파일 없음. 먼저 --scan을 실행해주세요.", "ERROR")
         return

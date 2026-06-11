@@ -32,6 +32,7 @@ from auth import configure_auth, register_auth_routes, require_login  # noqa: E4
 import brands_api  # noqa: E402
 import categories_api  # noqa: E402
 import tabs_api  # noqa: E402
+import tasks_api  # noqa: E402
 
 load_dotenv()
 
@@ -383,6 +384,161 @@ def manage_products_tabs_delete(tab_id):
     if not ok:
         return jsonify({"error": "not found"}), 404
     return ('', 204)
+
+
+@app.route("/manage/tasks")
+@require_login
+def manage_tasks_view():
+    return render_template("tasks.html")
+
+
+@app.route("/manage/tasks/list")
+@require_login
+def manage_tasks_list():
+    return jsonify({"tasks": tasks_api.list_tasks()})
+
+
+@app.route("/manage/tasks/run", methods=["POST"])
+@require_login
+def manage_tasks_run():
+    payload = request.get_json(silent=True) or {}
+    task_id = payload.get("task_id")
+    mode = payload.get("mode")
+    options = payload.get("options") or {}
+    try:
+        meta = tasks_api.start_run(task_id, mode, options)
+    except tasks_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 409
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(meta), 201
+
+
+@app.route("/manage/tasks/stop", methods=["POST"])
+@require_login
+def manage_tasks_stop():
+    payload = request.get_json(silent=True) or {}
+    job_id = (payload.get("job_id") or "").strip()
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    try:
+        result = tasks_api.stop_run(job_id)
+    except tasks_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(result)
+
+
+@app.route("/manage/tasks/status")
+@require_login
+def manage_tasks_status():
+    job_id = (request.args.get("job_id") or "").strip()
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    meta = tasks_api.get_run(job_id)
+    if meta is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(meta)
+
+
+@app.route("/manage/tasks/log")
+@require_login
+def manage_tasks_log():
+    job_id = (request.args.get("job_id") or "").strip()
+    if not job_id:
+        return jsonify({"error": "job_id required"}), 400
+    offset = request.args.get("offset", 0)
+    return jsonify(tasks_api.read_log(job_id, offset))
+
+
+@app.route("/manage/tasks/recent")
+@require_login
+def manage_tasks_recent():
+    return jsonify({"runs": tasks_api.list_recent_runs()})
+
+
+@app.route("/manage/tasks/cleanup", methods=["POST"])
+@require_login
+def manage_tasks_cleanup():
+    try:
+        result = tasks_api.cleanup_runs()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(result)
+
+
+@app.route("/manage/tasks/cleanup_artifacts", methods=["POST"])
+@require_login
+def manage_tasks_cleanup_artifacts():
+    try:
+        # 스캔 생성 파일(json·csv)만 삭제. 쿠키는 별도(delete_cookie)로 관리.
+        result = tasks_api.cleanup_artifacts(include_cookie=False)
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 409
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(result)
+
+
+# --- 바이마 로그인 쿠키 (다운로드 / 업로드 / 삭제) ----------------------------
+
+@app.route("/manage/tasks/login_tool")
+@require_login
+def manage_tasks_login_tool():
+    """① PC에서 실행할 로그인 도구(.py) 다운로드."""
+    p = tasks_api.login_tool_path()
+    if not p.exists():
+        return jsonify({"error": "login tool not found"}), 404
+    return send_from_directory(
+        str(p.parent), p.name, as_attachment=True, download_name="buyma_login.py"
+    )
+
+
+@app.route("/manage/tasks/cookie_status")
+@require_login
+def manage_tasks_cookie_status():
+    return jsonify(tasks_api.cookie_status())
+
+
+@app.route("/manage/tasks/scan_status")
+@require_login
+def manage_tasks_scan_status():
+    return jsonify(tasks_api.scan_status())
+
+
+@app.route("/manage/tasks/upload_cookie", methods=["POST"])
+@require_login
+def manage_tasks_upload_cookie():
+    """④ PC에서 만든 buyma_cookies.json 업로드."""
+    f = request.files.get("file")
+    if f is None:
+        return jsonify({"error": "파일이 없습니다."}), 400
+    raw = f.read()
+    if not raw:
+        return jsonify({"error": "빈 파일입니다."}), 400
+    if len(raw) > 2 * 1024 * 1024:
+        return jsonify({"error": "파일이 너무 큽니다(2MB 초과)."}), 400
+    try:
+        result = tasks_api.save_cookie(raw)
+    except tasks_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(result)
+
+
+@app.route("/manage/tasks/delete_cookie", methods=["POST"])
+@require_login
+def manage_tasks_delete_cookie():
+    """⑤ 서버의 로그인 쿠키 삭제(보안)."""
+    try:
+        result = tasks_api.delete_cookie()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify(result)
 
 
 @app.route("/manage")
