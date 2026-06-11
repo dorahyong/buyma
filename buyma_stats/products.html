@@ -64,31 +64,34 @@
         render: (r) => r.category_path ? `<div title="${esc(r.category_path)}">${esc(r.category_path)}</div>` : '<span class="placeholder">—</span>' },
 
       { key: 'access',      label: '총 조회수',         cls: 'num',
+        tip: '매일 새벽 2시 배치로 갱신됩니다.',
         sortKey: (r) => r.access_count ?? -1,
         render: (r) => num(r.access_count) },
 
       { key: 'cart',        label: '총 장바구니수',     cls: 'num',
+        tip: '매일 새벽 2시 배치로 갱신됩니다.',
         sortKey: (r) => r.cart_count ?? -1,
         render: (r) => num(r.cart_count) },
 
       { key: 'fav',         label: '총 찜 수',          cls: 'num',
+        tip: '매일 새벽 2시 배치로 갱신됩니다.',
         sortKey: (r) => r.favorite_count ?? -1,
         render: (r) => num(r.favorite_count) },
 
-      { key: 'fav_avg',     label: '일평균 찜수',       cls: 'num',
-        tip: '누적 찜 수 ÷ 바이마 등록 후 경과일수입니다.',
-        sortKey: (r) => avg(r.favorite_count, r.registered_at) ?? -1,
-        render: (r) => fmt(avg(r.favorite_count, r.registered_at)) },
-
       { key: 'access_avg',  label: '일평균 조회수',     cls: 'num',
-        tip: '누적 조회수 ÷ 바이마 등록 후 경과일수입니다.',
+        tip: '누적 조회수 ÷ 바이마 등록 후 경과일수입니다.\n총 조회수는 매일 새벽 2시 배치로 갱신됩니다.',
         sortKey: (r) => avg(r.access_count, r.registered_at) ?? -1,
         render: (r) => fmt(avg(r.access_count, r.registered_at)) },
 
       { key: 'cart_avg',    label: '일평균 장바구니수', cls: 'num',
-        tip: '누적 장바구니수 ÷ 바이마 등록 후 경과일수입니다.',
+        tip: '누적 장바구니수 ÷ 바이마 등록 후 경과일수입니다.\n총 장바구니수는 매일 새벽 2시 배치로 갱신됩니다.',
         sortKey: (r) => avg(r.cart_count, r.registered_at) ?? -1,
         render: (r) => fmt(avg(r.cart_count, r.registered_at)) },
+
+      { key: 'fav_avg',     label: '일평균 찜수',       cls: 'num',
+        tip: '누적 찜 수 ÷ 바이마 등록 후 경과일수입니다.\n총 찜 수는 매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => avg(r.favorite_count, r.registered_at) ?? -1,
+        render: (r) => fmt(avg(r.favorite_count, r.registered_at)) },
 
       { key: 'lowest_buyma',label: '바이마 최저가',     cls: 'num',
         tip: '바이마에서 같은 상품을 판매하는 셀러들(우리 포함) 중 가장 낮은 판매가입니다.',
@@ -111,10 +114,12 @@
         render: (r) => marginCell(r) },
 
       { key: 'sold',        label: '총 판매수',         cls: 'num',
+        tip: '매일 새벽 3시 30분 배치로 갱신됩니다.',
         sortKey: (r) => r.sold_count ?? -1,
         render: (r) => num(r.sold_count) },
 
       { key: 'sales_amount',label: '총 판매금액',       cls: 'num',
+        tip: '매일 새벽 3시 30분 배치로 갱신됩니다.',
         sortKey: (r) => r.sales_amount_jpy ?? -1,
         render: (r) => num(r.sales_amount_jpy, '¥') },
 
