@@ -513,8 +513,11 @@ Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like 
 - 마지막 페이지 감지: `prdList` 내 카드가 비어있거나 이전과 동일한 pno 반복 → 종료
 
 ### 이미지
-- img src 경로에 "2. 등록 상품사진" 이 포함된 이미지 URL만 추출
+- img src 경로에 "2. 등록 상품사진" 이 포함된 이미지 URL만 추출 (NAS `buonos.synology.me`)
 - nextzennpack처럼 자체 수집해서 `ace_product_images` 테이블에 INSERT
+- ★ **fallback**: "등록 상품사진"이 **없는** 상품(전체의 약 72%)은 **카페24 기본 이미지**(`/web/product/big/`)만 보유 → 그 경우 `div.keyImg img.BigImage`(메인) + `div.xans-product-addimage img.ThumbImage`(추가) 수집.
+  - plain `/product/small/`는 `/product/big/`가 서버에 없어 404 → **스킵**. `/product/extra/small/`만 `/extra/big/`로 치환(9tems/loromoda 동일).
+  - 즉 NAS '등록 상품사진' 우선, 없으면 카페24 기본 이미지로 대체.
 ```html
 <div class="cont">
     <p style="text-align: center; "><img alt="" style="font-size: 9pt; text-align: start;" src="https://buonos.synology.me/4. PARCO/1. 파르코/1. 상세페이지/.jpg"></p><div style="text-align: center;"><br></div><div style="text-align: center;"><br><img alt="" style="font-size: 9pt; text-align: start;" src="https://buonos.synology.me/4. PARCO/1. 파르코/1. 상세페이지/2상단.jpg"><p></p><p></p><div style="text-align: center;"><br></div><div style="text-align: center;">   <br><img alt="" style="font-size: 9pt; text-align: start;" src="https://buonos.synology.me/4. PARCO/1. 파르코/2. 등록 상품사진/100/6303002F 02P178 CN.jpg"><p></p><p></p><div style="text-align: center;"><br></div><div style="text-align: center;"><br><img alt="" style="font-size: 9pt; text-align: start;" src="https://buonos.synology.me/4. PARCO/1. 파르코/1. 상세페이지/3하단.jpg"><p></p><p></p><div style="text-align: center;"><br></div><div <="" div="">

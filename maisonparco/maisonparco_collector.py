@@ -462,6 +462,27 @@ def extract_detail_info(html: str) -> Dict[str, Any]:
         if src not in info['images']:
             info['images'].append(src)
 
+    # ----- fallback: '등록 상품사진'이 없으면 카페24 기본 이미지 수집 -----
+    #   maisonparco 상품 다수는 NAS '등록 상품사진' 없이 카페24 기본 이미지(/web/product/big/)만 보유.
+    #   keyImg 메인 BigImage + addimage ThumbImage 수집. plain /product/small/ 는 /product/big/ 가
+    #   서버에 없어 404 → 스킵(/product/extra/small/ → /extra/big/ 만 사용). 9tems/loromoda와 동일.
+    if not info['images']:
+        def _up(s: str) -> str:
+            if s.startswith('//'):
+                s = 'https:' + s
+            return s.replace('/product/extra/small/', '/product/extra/big/').replace('/product/small/', '/product/big/')
+        for img in soup.select('div.keyImg img.BigImage, div.thumbnail img.BigImage'):
+            u = _up(img.get('src', ''))
+            if u and u not in info['images']:
+                info['images'].append(u)
+        for img in soup.select('div.xans-product-addimage img.ThumbImage'):
+            raw_src = img.get('src', '')
+            if not raw_src or '/product/small/' in raw_src:
+                continue
+            u = _up(raw_src)
+            if u and u not in info['images']:
+                info['images'].append(u)
+
     return info
 
 
@@ -802,6 +823,82 @@ def run_category_fill(args):
     logger.info(f"category_path UPDATE: {updated}개")
 
 
+def run_image_refill(args):
+    """이미지(raw_json_data.images)가 비어있는 maisonparco 상품만 골라 상세를 다시 받아 채움.
+    (수집기 이미지 fallback 패치 후, 전체 재수집 없이 누락분만 보충용)
+    """
+    with engine.connect() as conn:
+        q = ("SELECT mall_product_id, brand_name_en, product_name, category_path, product_url "
+             "FROM raw_scraped_data WHERE source_site = :s "
+             "AND (raw_json_data IS NULL OR raw_json_data NOT LIKE '%\"images\": [%' "
+             "     OR raw_json_data LIKE '%\"images\": []%')")
+        params = {'s': SOURCE_SITE}
+        if args.brand:
+            q += " AND brand_name_en = :b"
+            params['b'] = args.brand
+        rows = conn.execute(text(q), params).fetchall()
+
+    if args.limit:
+        rows = rows[:args.limit]
+    logger.info(f"이미지 없는 상품: {len(rows)}개 (상세 재수집 대상)")
+    if not rows:
+        logger.info("보충할 상품이 없습니다.")
+        return
+
+    session_mgr = SessionManager()
+    filled = 0
+    still_empty = 0
+    batch = []
+    try:
+        for i, row in enumerate(rows, 1):
+            if session_mgr.is_blocked:
+                logger.error("  차단 감지 — 중단")
+                break
+            product_no = str(row[0])
+            brand_en = row[1]
+            cat_path = row[3] or ''
+            detail_url = row[4] or f"{BASE_URL}/product/detail.html?product_no={product_no}&cate_no={LIST_CATE_NO}&display_group=1"
+
+            detail_html, err = session_mgr.fetch_page(detail_url)
+            if err or not detail_html:
+                logger.warning(f"  [{i}/{len(rows)}] 상세 실패: {err} (no={product_no})")
+                time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+                continue
+
+            detail_info = extract_detail_info(detail_html)
+            list_item = {'product_no': product_no, 'product_name': row[2] or '',
+                         'detail_url': detail_url, 'list_image': '', 'cate_no': LIST_CATE_NO}
+            data = convert_to_raw_data(list_item, detail_info, brand_en, cat_path)
+            if not data:
+                time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+                continue
+
+            img_cnt = len(detail_info.get('images', []))
+            if img_cnt > 0:
+                filled += 1
+            else:
+                still_empty += 1
+            if i <= 5 or i % 100 == 0:
+                logger.info(f"  [{i}/{len(rows)}] 이미지 {img_cnt}장 | {data['model_id']} | {data['product_name'][:30]}")
+
+            if not args.dry_run:
+                batch.append(data)
+                if len(batch) >= 10:
+                    save_to_database(batch)
+                    batch = []
+            time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
+
+        if batch and not args.dry_run:
+            save_to_database(batch)
+    finally:
+        session_mgr.close()
+
+    logger.info("\n" + "=" * 60)
+    logger.info("이미지 보충 완료")
+    logger.info(f"  이미지 채워진 상품: {filled} / 여전히 0장: {still_empty}")
+    logger.info("=" * 60)
+
+
 def main():
     parser = argparse.ArgumentParser(description='메종파르코 상품 수집기 (브랜드 기준)')
     parser.add_argument('--brand', type=str, help='특정 브랜드만 처리')
@@ -810,14 +907,17 @@ def main():
     parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품 스킵')
     parser.add_argument('--resume', action='store_true', help='raw에 아직 없는 브랜드만 수집 (중단 재개)')
     parser.add_argument('--categories', action='store_true', help='raw 수집 후 category_path 채우기')
+    parser.add_argument('--refill-images', action='store_true', help='이미지(raw images) 없는 상품만 상세 재수집')
     args = parser.parse_args()
 
     logger.info("=" * 60)
-    mode = 'CATEGORIES' if args.categories else 'BRAND'
+    mode = 'REFILL-IMAGES' if args.refill_images else ('CATEGORIES' if args.categories else 'BRAND')
     logger.info(f"메종파르코 수집 ({mode}, {'DRY-RUN' if args.dry_run else 'NORMAL'})")
     logger.info("=" * 60)
 
-    if args.categories:
+    if args.refill_images:
+        run_image_refill(args)
+    elif args.categories:
         run_category_fill(args)
     else:
         run_brand_collection(args)
