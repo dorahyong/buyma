@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-멀티소스 일일 자동화 (kasina, nextzennpack, labellusso)
+멀티소스 일일 자동화
+대상: kasina, nextzennpack, labellusso, 9tems, brickmansion, loromoda, milaneez, maisonparco (총 8개)
 
-Phase 1: Collector 3개 병렬 (--skip-existing)
-Phase 2: Converter 3개 순차 → Dedup
-Phase 3: Price(3) → Translate(3) → Image(3) → Stock(3) 트랙 순차
-Phase 4: Register(3개 병렬)
+Phase 1: Collector 병렬 (--skip-existing) + 카테고리 단계(CATEGORY_FILL 해당 몰만)
+Phase 2: Converter 순차(--source-site) → Dedup
+Phase 3: Price → Translate → Image → Stock 트랙 순차
+Phase 4: Register(병렬)
+
+※ 카테고리: 9tems·기존 3몰은 수집 중 인라인. brickmansion/loromoda/maisonparco는 --categories,
+   milaneez는 --map-categories 단계가 수집 직후 자동 실행됨(CATEGORY_FILL).
 
 예상 소요: 약 16~17시간
 
@@ -30,19 +34,40 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-SOURCES = ['kasina', 'nextzennpack', 'labellusso']
+SOURCES = ['kasina', 'nextzennpack', 'labellusso',
+           '9tems', 'brickmansion', 'loromoda', 'milaneez', 'maisonparco']
 
 # 각 사이트별 스크립트 경로
 COLLECTOR_SCRIPTS = {
     'kasina': 'kasina/kasina_collector.py',
     'nextzennpack': 'nextzennpack/nextzennpack_collector.py',
     'labellusso': 'labellusso/labellusso_collector.py',
+    '9tems': '9tems/9tems_collector.py',
+    'brickmansion': 'brickmansion/brickmansion_collector.py',
+    'loromoda': 'loromoda/loromoda_collector.py',
+    'milaneez': 'milaneez/milaneez_collector.py',
+    'maisonparco': 'maisonparco/maisonparco_collector.py',
 }
 
 STOCK_SCRIPTS = {
     'kasina': 'kasina/stock_price_synchronizer_kasina.py',
     'nextzennpack': 'nextzennpack/stock_price_synchronizer_nextzennpack.py',
     'labellusso': 'labellusso/stock_price_synchronizer_labellusso.py',
+    '9tems': '9tems/stock_price_synchronizer_9tems.py',
+    'brickmansion': 'brickmansion/stock_price_synchronizer_brickmansion.py',
+    'loromoda': 'loromoda/stock_price_synchronizer_loromoda.py',
+    'milaneez': 'milaneez/stock_price_synchronizer_milaneez.py',
+    'maisonparco': 'maisonparco/stock_price_synchronizer_maisonparco.py',
+}
+
+# 수집 후 카테고리(category_path) 채우는 별도 단계가 필요한 몰만 지정.
+#   9tems / 기존 3몰(kasina/nextzennpack/labellusso)은 수집 중 인라인 처리 → 여기 없음.
+#   collector 스크립트를 해당 플래그로 한 번 더 실행한다.
+CATEGORY_FILL = {
+    'brickmansion': ['--categories'],
+    'loromoda': ['--categories'],
+    'maisonparco': ['--categories'],
+    'milaneez': ['--map-categories'],
 }
 
 # 공용 스크립트
@@ -123,13 +148,18 @@ def run_all(run_func, dry_run: bool = False):
 # =====================================================
 
 def phase1_collect(dry_run: bool = False):
-    """Phase 1: Collector 3개 병렬"""
+    """Phase 1: Collector 병렬(--skip-existing) + 카테고리 단계"""
     log("=" * 60)
-    log("Phase 1: Collector 3개 병렬 시작")
+    log(f"Phase 1: Collector {len(SOURCES)}개 병렬 시작")
     log("=" * 60)
 
     def run_collector(src, dry_run):
-        return run_script(COLLECTOR_SCRIPTS[src], ['--skip-existing'], dry_run=dry_run)
+        rc = run_script(COLLECTOR_SCRIPTS[src], ['--skip-existing'], dry_run=dry_run)
+        # 카테고리 단계가 필요한 몰은 수집 직후 같은 collector를 카테고리 플래그로 한 번 더 실행
+        if rc == 0 and src in CATEGORY_FILL:
+            log(f"  {src} 카테고리 채우기: {' '.join(CATEGORY_FILL[src])}")
+            rc = run_script(COLLECTOR_SCRIPTS[src], CATEGORY_FILL[src], dry_run=dry_run)
+        return rc
 
     tasks = [(src, run_collector, (src, dry_run)) for src in SOURCES]
     results = run_parallel(tasks, max_workers=len(SOURCES))
@@ -199,9 +229,9 @@ def phase3_price_image_stock(dry_run: bool = False):
 
 
 def phase4_register(dry_run: bool = False):
-    """Phase 4: Register 3개 병렬"""
+    """Phase 4: Register 병렬"""
     log("=" * 60)
-    log("Phase 4: Register (3개 병렬) 시작")
+    log(f"Phase 4: Register ({len(SOURCES)}개 병렬) 시작")
     log("=" * 60)
 
     def run_register(src, dry_run):
