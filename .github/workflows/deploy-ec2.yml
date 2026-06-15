@@ -31,7 +31,11 @@ jobs:
             REPO_PATH="${{ secrets.EC2_REPO_PATH }}"
             if [ -z "$REPO_PATH" ]; then REPO_PATH="/home/ubuntu/buyma/buyma"; fi
             cd "$REPO_PATH"
-            git pull origin main
+            # origin/main 을 그대로 따라가도록 강제 정렬.
+            # force-push 등으로 서버 로컬 히스토리가 갈라져도(divergent) pull 에러 없이
+            # 항상 origin/main 상태로 맞춘다. (서버 로컬 변경분은 버려짐 — 배포 타겟이므로 의도된 동작)
+            git fetch origin main
+            git reset --hard origin/main
 
             # manage_server는 시작 시 백그라운드 스레드가 자동으로 캐시를 빌드함.
             # 재시작 직후 ~1~2분간은 /manage/products/data.json이 503 (loading) 응답,
