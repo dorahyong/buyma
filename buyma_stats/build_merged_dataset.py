@@ -244,6 +244,25 @@ def breakeven_price_jpy(purchase_price_krw, shipping_fee_krw=DEFAULT_SHIPPING_FE
     return math.ceil(net_cost_krw / denom)
 
 
+def available_lowest_jpy(ace_list: List[Dict],
+                         stock_by_raw_id: Dict[int, str]) -> Optional[int]:
+    """재고 있는 소싱처(ace 행) 중 출품가능최저가(마진0 가격, ¥)의 최솟값.
+
+    각 소싱처는 ace_products 1행 = raw_scraped_data 1행. 재고가 out_of_stock 인
+    소싱처는 제외하고, 나머지 중 매입가 기준 breakeven 이 가장 낮은 값을 고른다.
+    재고 있는 소싱처가 하나도 없으면 None.
+    """
+    bes: List[int] = []
+    for a in ace_list:
+        if (stock_by_raw_id.get(a.get('raw_data_id')) or '').lower() == 'out_of_stock':
+            continue
+        be = breakeven_price_jpy(a.get('purchase_price_krw'),
+                                 a.get('expected_shipping_fee'))
+        if be is not None:
+            bes.append(be)
+    return min(bes) if bes else None
+
+
 def expected_margin(item: Dict) -> tuple:
     """기대마진(원) + 마진율(%) 실시간 계산 → (margin_krw, margin_rate).
 
@@ -419,10 +438,9 @@ def build_merged(limit: Optional[int] = None) -> Dict:
                 else (ace0.get('buyma_lowest_price') if ace0 else None)
             ),
             'our_market_price':   (market_by_mid.get(model_id) or {}).get('our_market_price'),
-            # ⑫ 출품가능 최저가: 수집처 판매가(매입가) 기준 마진이 0이 되는 출품가(¥), 올림
-            'available_lowest_price_jpy': (
-                breakeven_price_jpy(ace0.get('purchase_price_krw'), ace0.get('expected_shipping_fee'))
-                if ace0 else None
+            # ⑫ 출품가능 최저가: 재고 있는 소싱처(매입가) 중 마진0 출품가(¥)의 최솟값
+            'available_lowest_price_jpy': available_lowest_jpy(
+                ace_list, {r['id']: r.get('stock_status') for r in raw_list}
             ),
             'price_yen': bstats.get('price_yen') if bstats else (ace0.get('price') if ace0 else None),  # ⑬
 

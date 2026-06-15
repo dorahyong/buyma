@@ -125,7 +125,7 @@ def _fetch_raw_aggregated(conn) -> List[Dict]:
 def _fetch_ace_products(conn) -> List[Dict]:
     """ace_products 풀스캔 — IN-chunk 누적보다 6배 빠름 (인덱스 풀스캔)."""
     sql = """
-        SELECT id, model_no, name, buyma_product_id,
+        SELECT id, raw_data_id, model_no, name, buyma_product_id,
                is_active, is_published, is_ready_to_publish, is_lowest_price,
                buyma_lowest_price, buyma_lowest_price_checked_at,
                price, margin_amount_krw, margin_rate,
@@ -159,6 +159,41 @@ def _fetch_first_images(conn) -> Dict[int, Dict]:
         for r in c.fetchall():
             out[r['ace_product_id']] = r
     return out
+
+
+def _fetch_raw_stock(conn) -> Dict[int, str]:
+    """raw_scraped_data.id → stock_status. 출품가능 최저가의 재고 필터용.
+
+    ace_products.raw_data_id 로 소싱처별 재고를 역참조한다 (1:1, uk_raw_data_id).
+    """
+    out: Dict[int, str] = {}
+    with conn.cursor() as c:
+        c.execute("""
+            SELECT id, stock_status FROM raw_scraped_data
+            WHERE model_id IS NOT NULL AND model_id != ''
+        """)
+        for r in c.fetchall():
+            out[r['id']] = r.get('stock_status')
+    return out
+
+
+def _available_lowest_jpy(ace_list: List[Dict],
+                          stock_by_raw_id: Dict[int, str]) -> Optional[int]:
+    """재고 있는 소싱처(ace 행) 중 출품가능최저가(마진0 가격, ¥)의 최솟값.
+
+    각 소싱처는 ace_products 1행 = raw_scraped_data 1행. 재고가 out_of_stock 인
+    소싱처는 제외하고, 나머지 중 매입가 기준 breakeven 이 가장 낮은 값을 고른다.
+    재고 있는 소싱처가 하나도 없으면 None.
+    """
+    bes: List[int] = []
+    for a in ace_list:
+        if (stock_by_raw_id.get(a.get('raw_data_id')) or '').lower() == 'out_of_stock':
+            continue
+        be = breakeven_price_jpy(a.get('purchase_price_krw'),
+                                 a.get('expected_shipping_fee'))
+        if be is not None:
+            bes.append(be)
+    return min(bes) if bes else None
 
 
 def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
@@ -267,6 +302,9 @@ def build_payload(db_config: Dict) -> Dict:
 
         # 4. buyma_stats (풀스캔)
         stats_by_pid = _fetch_buyma_stats(conn)
+
+        # 5. 소싱처별 재고 (출품가능 최저가 계산용)
+        stock_by_raw_id = _fetch_raw_stock(conn)
     finally:
         conn.close()
 
@@ -308,11 +346,8 @@ def build_payload(db_config: Dict) -> Dict:
             'sold_count':                 bstats.get('sold_count') if bstats else None,
             'sales_amount_jpy':           int(bstats['sales_amount_jpy']) if bstats and bstats.get('sales_amount_jpy') is not None else None,
             'buyma_lowest_price':         ace0.get('buyma_lowest_price') if ace0 else None,
-            # 출품가능 최저가: 수집처 판매가(매입가) 기준 마진이 0이 되는 출품가(¥), 올림
-            'available_lowest_price_jpy': (
-                breakeven_price_jpy(ace0.get('purchase_price_krw'), ace0.get('expected_shipping_fee'))
-                if ace0 else None
-            ),
+            # 출품가능 최저가: 재고 있는 소싱처(매입가) 중 마진0 출품가(¥)의 최솟값
+            'available_lowest_price_jpy': _available_lowest_jpy(ace_list, stock_by_raw_id),
             'price_yen':                  ace0.get('price') if ace0 else None,
             'margin_amount_krw':          _to_float(ace0.get('margin_amount_krw')) if ace0 else None,
             'margin_rate':                _to_float(ace0.get('margin_rate')) if ace0 else None,
