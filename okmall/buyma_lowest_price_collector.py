@@ -172,7 +172,7 @@ def calculate_margin_rate(buyma_price_jpy: int, purchase_price_krw,
 
 
 def calculate_target_price_jpy(purchase_price_krw: float, shipping_fee_krw: int = DEFAULT_SHIPPING_FEE,
-                                target_margin_rate: float = 0.20) -> Optional[int]:
+                                target_margin_rate: float = 0.30) -> Optional[int]:
     """
     목표 마진율이 되는 바이마 판매가(엔) 역산
 
@@ -183,7 +183,7 @@ def calculate_target_price_jpy(purchase_price_krw: float, shipping_fee_krw: int 
     Args:
         purchase_price_krw: 매입가 (원)
         shipping_fee_krw: 배송비 (원)
-        target_margin_rate: 목표 마진율 (0.20 = 20%)
+        target_margin_rate: 목표 마진율 (0.30 = 30%)
 
     Returns:
         바이마 판매가 (엔), 계산 불가 시 None
@@ -199,7 +199,7 @@ def calculate_target_price_jpy(purchase_price_krw: float, shipping_fee_krw: int 
 
     total_cost = purchase_price_krw + float(shipping_fee_krw)
     vat_refund = purchase_price_krw / 11.0
-    denominator = (1.0 - SALES_FEE_RATE) - target_margin_rate  # 0.945 - 0.20 = 0.745
+    denominator = (1.0 - SALES_FEE_RATE) - target_margin_rate  # 0.945 - 0.30 = 0.645
 
     if denominator <= 0:
         return None
@@ -492,14 +492,14 @@ class BuymaLowestPriceCollector:
                 is_no_competitor = "검색 결과 없음" in error_msg or "경쟁자 없음" in error_msg
 
                 if is_no_competitor and source_sales_price:
-                    # 경쟁자 없음 → 마진율 20%가 되는 가격으로 설정
+                    # 경쟁자 없음 → 마진율 30%가 되는 가격으로 설정
                     shipping_fee = self.get_shipping_fee(category_id)
                     target_price = calculate_target_price_jpy(source_sales_price, shipping_fee)
                     if target_price:
                         my_price = target_price
                         margin_rate, margin_amount = calculate_margin_rate(my_price, source_sales_price, shipping_fee)
                         margin_str = f"{margin_rate:.2f}% ({margin_amount:,.0f}원)" if margin_rate is not None else "계산불가"
-                        log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 마진20% 가격 설정: {my_price:,}엔 | 마진: {margin_str}")
+                        log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 마진30% 가격 설정: {my_price:,}엔 | 마진: {margin_str}")
                     else:
                         log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 가격 역산 실패")
                     with stats_lock:
@@ -559,7 +559,7 @@ class BuymaLowestPriceCollector:
         log("수집 완료!")
         log(f"  총 처리: {total}건")
         log(f"  성공 (경쟁자 있음): {stats['success']}건")
-        log(f"  경쟁자 없음 (마진20% 설정): {stats['no_competitor']}건")
+        log(f"  경쟁자 없음 (마진30% 설정): {stats['no_competitor']}건")
         log(f"  실패: {stats['failed']}건")
         log("=" * 60)
 
