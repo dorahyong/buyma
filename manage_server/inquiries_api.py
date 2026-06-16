@@ -8,8 +8,10 @@ field_inquiries 테이블:
     product_url      VARCHAR(500)  NULL   소싱처 상품 URL
     mall             VARCHAR(60)   NULL
     brand            VARCHAR(120)  NULL
+    author           VARCHAR(60)   NULL       작성자
     content          TEXT          NOT NULL   문의내용(유일한 필수값)
-    resolved         TINYINT(1)    DEFAULT 0  처리완료 여부
+    status           ENUM          '확인'/'처리중'/'완료' (기본 '확인')
+    responder        VARCHAR(60)   NULL       답변자
     resolution       TEXT          NULL       처리내용
     created_at, updated_at
 
@@ -25,15 +27,18 @@ import pymysql
 CONTENT_MAX_LEN = 5000
 STR_MAX_LEN = 500
 
+VALID_STATUS = ('확인', '처리중', '완료')
+DEFAULT_STATUS = '확인'
+
 # create 시 받을 수 있는 컬럼 (content 만 필수)
 CREATE_COLUMNS = (
-    'buyma_product_id', 'buyma_url', 'product_url', 'mall', 'brand',
-    'content', 'resolved', 'resolution',
+    'buyma_product_id', 'buyma_url', 'product_url', 'mall', 'brand', 'author',
+    'content', 'status', 'responder', 'resolution',
 )
 # update(부분수정) 허용 컬럼
 EDITABLE_COLUMNS = {
-    'buyma_product_id', 'buyma_url', 'product_url', 'mall', 'brand',
-    'content', 'resolved', 'resolution',
+    'buyma_product_id', 'buyma_url', 'product_url', 'mall', 'brand', 'author',
+    'content', 'status', 'responder', 'resolution',
 }
 
 
@@ -70,17 +75,17 @@ def _clean_content(v: Any) -> str:
     return s
 
 
-def _to_bool_int(v: Any) -> int:
-    if isinstance(v, bool):
-        return 1 if v else 0
-    if v is None:
-        return 0
-    return 1 if str(v).strip().lower() in ('1', 'true', 'yes', 'on') else 0
+def _clean_status(v: Any) -> str:
+    if v is None or (isinstance(v, str) and not v.strip()):
+        return DEFAULT_STATUS
+    s = str(v).strip()
+    if s not in VALID_STATUS:
+        raise ValidationError(f'status must be one of {VALID_STATUS}, got {s!r}')
+    return s
 
 
 def _row_to_dict(r: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(r)
-    out['resolved'] = int(r.get('resolved') or 0)
     for k in ('created_at', 'updated_at'):
         v = r.get(k)
         if v is not None and hasattr(v, 'isoformat'):
@@ -92,8 +97,8 @@ def list_inquiries(db_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
     with _connect(db_cfg) as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, "
-                "content, resolved, resolution, created_at, updated_at "
+                "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, author, "
+                "content, status, responder, resolution, created_at, updated_at "
                 "FROM field_inquiries ORDER BY id DESC"
             )
             rows = cur.fetchall()
@@ -110,8 +115,10 @@ def create_inquiry(db_cfg: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str,
         'product_url': _clean_str(payload.get('product_url'), STR_MAX_LEN),
         'mall': _clean_str(payload.get('mall'), 60),
         'brand': _clean_str(payload.get('brand'), 120),
+        'author': _clean_str(payload.get('author'), 60),
         'content': _clean_content(payload.get('content')),
-        'resolved': _to_bool_int(payload.get('resolved')),
+        'status': _clean_status(payload.get('status')),
+        'responder': _clean_str(payload.get('responder'), 60),
         'resolution': _clean_str(payload.get('resolution'), CONTENT_MAX_LEN),
     }
 
@@ -128,8 +135,8 @@ def create_inquiry(db_cfg: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str,
                 )
                 new_id = cur.lastrowid
                 cur.execute(
-                    "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, "
-                    "content, resolved, resolution, created_at, updated_at "
+                    "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, author, "
+                    "content, status, responder, resolution, created_at, updated_at "
                     "FROM field_inquiries WHERE id = %s",
                     (new_id,),
                 )
@@ -153,14 +160,16 @@ def update_inquiry(db_cfg: Dict[str, Any], inquiry_id: int,
             raise ValidationError(f'column not editable: {col!r}')
         if col == 'content':
             val: Any = _clean_content(raw)
-        elif col == 'resolved':
-            val = _to_bool_int(raw)
+        elif col == 'status':
+            val = _clean_status(raw)
         elif col == 'buyma_product_id':
             val = _clean_str(raw, 30)
         elif col == 'mall':
             val = _clean_str(raw, 60)
         elif col == 'brand':
             val = _clean_str(raw, 120)
+        elif col in ('author', 'responder'):
+            val = _clean_str(raw, 60)
         elif col == 'resolution':
             val = _clean_str(raw, CONTENT_MAX_LEN)
         else:  # buyma_url, product_url
@@ -177,8 +186,8 @@ def update_inquiry(db_cfg: Dict[str, Any], inquiry_id: int,
                     params,
                 )
                 cur.execute(
-                    "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, "
-                    "content, resolved, resolution, created_at, updated_at "
+                    "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, author, "
+                    "content, status, responder, resolution, created_at, updated_at "
                     "FROM field_inquiries WHERE id = %s",
                     (inquiry_id,),
                 )

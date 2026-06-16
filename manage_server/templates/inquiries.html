@@ -43,8 +43,12 @@
     th { background: #f6f8fa; font-weight: 700; position: sticky; top: 0; white-space: nowrap; }
     td.content { white-space: pre-wrap; word-break: break-word; min-width: 220px; }
     td a { color: #0969da; word-break: break-all; }
-    tr.resolved { background: #f3f8f3; color: #777; }
-    tr.resolved td.content { text-decoration: none; }
+    tr.st-done { background: #f3f8f3; color: #777; }
+    tr.st-doing { background: #fffaf0; }
+    select.status { padding: 4px 6px; font-size: 12px; border-radius: 6px; border: 1px solid #c9c9c9; font-weight: 600; }
+    select.status.s-확인 { color: #57606a; }
+    select.status.s-처리중 { color: #9a6700; border-color: #e0c060; }
+    select.status.s-완료 { color: #1a7f37; border-color: #a3d3a8; }
     .cnt { color: #666; font-size: 12px; margin-left: 8px; }
     input.res, textarea.res {
       width: 100%; box-sizing: border-box; padding: 5px 7px; font-size: 12px;
@@ -71,6 +75,7 @@
       <div class="fld"><label>buyma_product_id</label><input id="a_bpid" placeholder="예: 133501061"></div>
       <div class="fld"><label>mall</label><input id="a_mall" placeholder="예: okmall, maniaon"></div>
       <div class="fld"><label>brand</label><input id="a_brand" placeholder="예: A.P.C."></div>
+      <div class="fld"><label>작성자</label><input id="a_author" placeholder="문의 작성자"></div>
       <div class="fld"><label>buyma_url</label><input id="a_burl" placeholder="https://www.buyma.com/item/..."></div>
       <div class="fld"><label>product_url (소싱처)</label><input id="a_purl" placeholder="https://smartstore.naver.com/..."></div>
       <div class="fld wide"><label>문의내용 <span class="req">*필수</span></label><textarea id="a_content" placeholder="예: 소싱처 품절인데 바이마에 올라가 있어요"></textarea></div>
@@ -93,14 +98,16 @@
             <th>소싱처</th>
             <th>mall</th>
             <th>brand</th>
+            <th>작성자</th>
             <th>문의내용</th>
-            <th class="nowrap">처리</th>
+            <th class="nowrap">상태</th>
+            <th>답변자</th>
             <th>처리내용</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="10" class="empty">불러오는 중…</td></tr>
+          <tr><td colspan="12" class="empty">불러오는 중…</td></tr>
         </tbody>
       </table>
     </div>
@@ -122,32 +129,48 @@ async function load(){
     const j = await r.json();
     render(j.rows || []);
   }catch(e){
-    $('tbody').innerHTML = `<tr><td colspan="10" class="empty">불러오기 실패: ${esc(e)}</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="12" class="empty">불러오기 실패: ${esc(e)}</td></tr>`;
   }
 }
 
 function render(rows){
   $('cnt').textContent = `${rows.length}건`;
   if(!rows.length){
-    $('tbody').innerHTML = `<tr><td colspan="10" class="empty">문의가 없습니다.</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="12" class="empty">문의가 없습니다.</td></tr>`;
     return;
   }
   $('tbody').innerHTML = rows.map(rowHtml).join('');
 }
 
+const STATUSES = ['확인', '처리중', '완료'];
+
+function trClass(status){
+  if(status === '완료') return 'st-done';
+  if(status === '처리중') return 'st-doing';
+  return '';
+}
+
+function statusSelect(r){
+  const st = r.status || '확인';
+  const opts = STATUSES.map(s => `<option value="${s}" ${s===st?'selected':''}>${s}</option>`).join('');
+  return `<select class="status s-${st}" data-prev="${st}" onchange="changeStatus(${r.id}, this)">${opts}</select>`;
+}
+
 function rowHtml(r){
   const created = (r.created_at||'').slice(0,16);
   const burl = r.buyma_url || (r.buyma_product_id ? `https://www.buyma.com/item/${esc(r.buyma_product_id)}/` : '');
-  return `<tr class="${r.resolved? 'resolved':''}" data-id="${r.id}">
+  return `<tr class="${trClass(r.status)}" data-id="${r.id}">
     <td class="nowrap">${esc(created)}</td>
     <td class="nowrap">${esc(r.buyma_product_id||'')}</td>
     <td>${linkCell(burl, '열기')}</td>
     <td>${linkCell(r.product_url, '열기')}</td>
     <td>${esc(r.mall||'')}</td>
     <td>${esc(r.brand||'')}</td>
+    <td>${esc(r.author||'')}</td>
     <td class="content">${esc(r.content||'')}</td>
-    <td class="nowrap"><label><input type="checkbox" ${r.resolved?'checked':''} onchange="toggleResolved(${r.id}, this)"> 완료</label></td>
-    <td><textarea class="res" placeholder="처리내용" onblur="saveResolution(${r.id}, this)">${esc(r.resolution||'')}</textarea></td>
+    <td class="nowrap">${statusSelect(r)}</td>
+    <td><input class="res" placeholder="답변자" value="${esc(r.responder||'')}" onchange="saveField(${r.id}, 'responder', this)"></td>
+    <td><textarea class="res" placeholder="처리내용" onblur="saveField(${r.id}, 'resolution', this)">${esc(r.resolution||'')}</textarea></td>
     <td class="nowrap"><button class="del" onclick="delRow(${r.id})">삭제</button></td>
   </tr>`;
 }
@@ -163,13 +186,14 @@ async function addRow(){
     product_url: $('a_purl').value.trim(),
     mall: $('a_mall').value.trim(),
     brand: $('a_brand').value.trim(),
+    author: $('a_author').value.trim(),
     content,
   };
   try{
     const r = await fetch('/manage/inquiries', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const j = await r.json();
     if(!r.ok) throw new Error(j.error || r.status);
-    ['a_bpid','a_burl','a_purl','a_mall','a_brand','a_content'].forEach(id => $(id).value='');
+    ['a_bpid','a_burl','a_purl','a_mall','a_brand','a_author','a_content'].forEach(id => $(id).value='');
     msg.className='msg ok'; msg.textContent='추가됨';
     setTimeout(()=>{ msg.textContent=''; }, 1500);
     await load();
@@ -186,23 +210,25 @@ async function patch(id, changes){
   return r.json();
 }
 
-async function toggleResolved(id, el){
+async function changeStatus(id, el){
   const tr = el.closest('tr');
+  const prev = el.dataset.prev || '확인';
   try{
-    await patch(id, {resolved: el.checked ? 1 : 0});
-    tr.classList.toggle('resolved', el.checked);
+    await patch(id, {status: el.value});
+    el.className = 'status s-' + el.value;
+    el.dataset.prev = el.value;
+    tr.className = trClass(el.value);
   }catch(e){
-    el.checked = !el.checked;
-    alert('처리상태 저장 실패: '+e);
+    el.value = prev;
+    alert('상태 저장 실패: '+e);
   }
 }
 
-let _resTimer = {};
-async function saveResolution(id, el){
+async function saveField(id, field, el){
   try{
-    await patch(id, {resolution: el.value});
+    await patch(id, {[field]: el.value});
   }catch(e){
-    alert('처리내용 저장 실패: '+e);
+    alert('저장 실패('+field+'): '+e);
   }
 }
 
