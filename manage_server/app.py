@@ -33,6 +33,7 @@ import brands_api  # noqa: E402
 import categories_api  # noqa: E402
 import tabs_api  # noqa: E402
 import tasks_api  # noqa: E402
+import inquiries_api  # noqa: E402
 
 load_dotenv()
 
@@ -539,6 +540,67 @@ def manage_tasks_delete_cookie():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify(result)
+
+
+@app.route("/manage/inquiries")
+@require_login
+def manage_inquiries_view():
+    return render_template("inquiries.html")
+
+
+@app.route("/manage/inquiries/data.json")
+@require_login
+def manage_inquiries_data():
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        rows = inquiries_api.list_inquiries(db_cfg)
+    except Exception as e:
+        return jsonify({"error": str(e), "rows": []}), 500
+    return jsonify({"rows": rows, "count": len(rows)})
+
+
+@app.route("/manage/inquiries", methods=["POST"])
+@require_login
+def manage_inquiries_create():
+    payload = request.get_json(silent=True) or {}
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        row = inquiries_api.create_inquiry(db_cfg, payload)
+    except inquiries_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"row": row}), 201
+
+
+@app.route("/manage/inquiries/<int:inquiry_id>", methods=["PUT", "PATCH"])
+@require_login
+def manage_inquiries_update(inquiry_id):
+    payload = request.get_json(silent=True) or {}
+    changes = payload.get("changes") if isinstance(payload.get("changes"), dict) else payload
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        row = inquiries_api.update_inquiry(db_cfg, inquiry_id, changes)
+    except inquiries_api.ValidationError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    if row is None:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"row": row})
+
+
+@app.route("/manage/inquiries/<int:inquiry_id>", methods=["DELETE"])
+@require_login
+def manage_inquiries_delete(inquiry_id):
+    db_cfg = {k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'}
+    try:
+        ok = inquiries_api.delete_inquiry(db_cfg, inquiry_id)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    if not ok:
+        return jsonify({"error": "not found"}), 404
+    return ('', 204)
 
 
 @app.route("/manage")
