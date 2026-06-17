@@ -12,6 +12,7 @@ field_inquiries 테이블:
     content          TEXT          NOT NULL   문의내용(유일한 필수값)
     status           ENUM          '확인'/'처리중'/'완료' (기본 '확인')
     responder        VARCHAR(60)   NULL       답변자
+    cause            TEXT          NULL       원인
     resolution       TEXT          NULL       처리내용
     created_at, updated_at
 
@@ -33,12 +34,12 @@ DEFAULT_STATUS = '확인'
 # create 시 받을 수 있는 컬럼 (content 만 필수)
 CREATE_COLUMNS = (
     'buyma_product_id', 'buyma_url', 'product_url', 'mall', 'brand', 'author',
-    'content', 'status', 'responder', 'resolution',
+    'content', 'status', 'responder', 'cause', 'resolution',
 )
 # update(부분수정) 허용 컬럼
 EDITABLE_COLUMNS = {
     'buyma_product_id', 'buyma_url', 'product_url', 'mall', 'brand', 'author',
-    'content', 'status', 'responder', 'resolution',
+    'content', 'status', 'responder', 'cause', 'resolution',
 }
 
 
@@ -98,7 +99,7 @@ def list_inquiries(db_cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, author, "
-                "content, status, responder, resolution, created_at, updated_at "
+                "content, status, responder, cause, resolution, created_at, updated_at "
                 "FROM field_inquiries ORDER BY id DESC"
             )
             rows = cur.fetchall()
@@ -119,6 +120,7 @@ def create_inquiry(db_cfg: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str,
         'content': _clean_content(payload.get('content')),
         'status': _clean_status(payload.get('status')),
         'responder': _clean_str(payload.get('responder'), 60),
+        'cause': _clean_str(payload.get('cause'), CONTENT_MAX_LEN),
         'resolution': _clean_str(payload.get('resolution'), CONTENT_MAX_LEN),
     }
 
@@ -136,7 +138,7 @@ def create_inquiry(db_cfg: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str,
                 new_id = cur.lastrowid
                 cur.execute(
                     "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, author, "
-                    "content, status, responder, resolution, created_at, updated_at "
+                    "content, status, responder, cause, resolution, created_at, updated_at "
                     "FROM field_inquiries WHERE id = %s",
                     (new_id,),
                 )
@@ -170,7 +172,7 @@ def update_inquiry(db_cfg: Dict[str, Any], inquiry_id: int,
             val = _clean_str(raw, 120)
         elif col in ('author', 'responder'):
             val = _clean_str(raw, 60)
-        elif col == 'resolution':
+        elif col in ('cause', 'resolution'):
             val = _clean_str(raw, CONTENT_MAX_LEN)
         else:  # buyma_url, product_url
             val = _clean_str(raw, STR_MAX_LEN)
@@ -187,7 +189,7 @@ def update_inquiry(db_cfg: Dict[str, Any], inquiry_id: int,
                 )
                 cur.execute(
                     "SELECT id, buyma_product_id, buyma_url, product_url, mall, brand, author, "
-                    "content, status, responder, resolution, created_at, updated_at "
+                    "content, status, responder, cause, resolution, created_at, updated_at "
                     "FROM field_inquiries WHERE id = %s",
                     (inquiry_id,),
                 )

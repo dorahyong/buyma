@@ -55,6 +55,10 @@
       border: 1px solid #d0d7de; border-radius: 6px; font-family: inherit;
     }
     textarea.res { min-height: 34px; resize: vertical; }
+    textarea.res.big { min-height: 96px; font-size: 13px; }
+    textarea.res.content-edit { min-height: 72px; }
+    td.bigcol { min-width: 240px; }
+    td.content { min-width: 240px; }
     .nowrap { white-space: nowrap; }
     .empty { color: #888; padding: 18px; text-align: center; }
   </style>
@@ -102,12 +106,13 @@
             <th>문의내용</th>
             <th class="nowrap">상태</th>
             <th>답변자</th>
+            <th>원인</th>
             <th>처리내용</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="12" class="empty">불러오는 중…</td></tr>
+          <tr><td colspan="13" class="empty">불러오는 중…</td></tr>
         </tbody>
       </table>
     </div>
@@ -129,14 +134,14 @@ async function load(){
     const j = await r.json();
     render(j.rows || []);
   }catch(e){
-    $('tbody').innerHTML = `<tr><td colspan="12" class="empty">불러오기 실패: ${esc(e)}</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="13" class="empty">불러오기 실패: ${esc(e)}</td></tr>`;
   }
 }
 
 function render(rows){
   $('cnt').textContent = `${rows.length}건`;
   if(!rows.length){
-    $('tbody').innerHTML = `<tr><td colspan="12" class="empty">문의가 없습니다.</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="13" class="empty">문의가 없습니다.</td></tr>`;
     return;
   }
   $('tbody').innerHTML = rows.map(rowHtml).join('');
@@ -167,10 +172,11 @@ function rowHtml(r){
     <td>${esc(r.mall||'')}</td>
     <td>${esc(r.brand||'')}</td>
     <td>${esc(r.author||'')}</td>
-    <td class="content">${esc(r.content||'')}</td>
+    <td class="content"><textarea class="res content-edit" placeholder="문의내용" onblur="saveField(${r.id}, 'content', this)">${esc(r.content||'')}</textarea></td>
     <td class="nowrap">${statusSelect(r)}</td>
     <td><input class="res" placeholder="답변자" value="${esc(r.responder||'')}" onchange="saveField(${r.id}, 'responder', this)"></td>
-    <td><textarea class="res" placeholder="처리내용" onblur="saveField(${r.id}, 'resolution', this)">${esc(r.resolution||'')}</textarea></td>
+    <td class="bigcol"><textarea class="res big" placeholder="원인" onblur="saveField(${r.id}, 'cause', this)">${esc(r.cause||'')}</textarea></td>
+    <td class="bigcol"><textarea class="res big" placeholder="처리내용" onblur="saveField(${r.id}, 'resolution', this)">${esc(r.resolution||'')}</textarea></td>
     <td class="nowrap"><button class="del" onclick="delRow(${r.id})">삭제</button></td>
   </tr>`;
 }
