@@ -284,10 +284,15 @@ class R2ImageUploader:
         Returns:
             이미지 바이트 데이터 또는 None
         """
+        # 몰별 Referer — 무신사(image.msscdn.net)는 wconcept Referer로 받으면
+        # 실제 사진 대신 "무단사용" 핫링크 차단 배너가 내려온다. 호스트에 맞는 Referer를 보낸다.
+        referer = 'https://www.wconcept.co.kr/'
+        if 'msscdn' in url or 'musinsa' in url:
+            referer = 'https://www.musinsa.com/'
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
             'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
-            'Referer': 'https://www.wconcept.co.kr/'
+            'Referer': referer
         }
 
         for attempt in range(RETRY_COUNT):
