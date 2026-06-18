@@ -66,6 +66,8 @@ CATEGORY_CODE = '105'           # 부티크 = 전체상품
 LIST_API = 'https://api.musinsa.com/api2/dp/v1/plp/goods'
 DETAIL_API = 'https://goods-detail.musinsa.com/api2/goods/{}'
 OPTIONS_API = 'https://goods-detail.musinsa.com/api2/goods/{}/options'
+# 옵션 API에는 사이즈별 품절이 없다. 사이즈별 실시간 재고는 이 POST 엔드포인트에서만 나온다.
+INVENTORY_API = 'https://goods-detail.musinsa.com/api2/goods/{}/options/v2/prioritized-inventories'
 IMAGE_HOST = 'https://image.msscdn.net'   # 상세 imageUrl이 상대경로(/images/...)라 앞에 붙임
 PRODUCT_URL = 'https://www.musinsa.com/products/{}'
 
@@ -145,11 +147,53 @@ def get_detail(session: requests.Session, goods_no) -> Optional[Dict]:
     return data['data']
 
 
+def get_inventory(session: requests.Session, goods_no, option_value_nos: List[int]) -> Dict:
+    """옵션값별 실시간 재고 조회 (POST). → {productVariantId: {'outOfStock': bool, 'remainQuantity': int|None}}
+
+    무신사 옵션 API(basic/optionItems)에는 사이즈별 품절 정보가 없어서, 별도 재고 API를 호출해야 한다.
+    productVariantId 는 optionItems[].no 와 동일하다."""
+    if not option_value_nos:
+        return {}
+    url = INVENTORY_API.format(goods_no)
+    for attempt in range(MAX_RETRY):
+        try:
+            resp = session.post(url, json={'optionValueNos': option_value_nos}, timeout=HTTP_TIMEOUT)
+            if resp.status_code == 200:
+                rows = (resp.json() or {}).get('data') or []
+                return {
+                    r.get('productVariantId'): {
+                        'outOfStock': bool(r.get('outOfStock')),
+                        'remainQuantity': r.get('remainQuantity'),
+                    }
+                    for r in rows if r.get('productVariantId') is not None
+                }
+            if resp.status_code == 429 or resp.status_code >= 500:
+                time.sleep(2 * (attempt + 1))
+                continue
+            return {}
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            time.sleep(2 * (attempt + 1))
+        except ValueError:  # JSON 파싱 실패
+            return {}
+    return {}
+
+
 def get_options(session: requests.Session, goods_no) -> Dict:
     data = fetch_json(session, OPTIONS_API.format(goods_no))
     if not data or not data.get('data'):
         return {}
-    return data['data']
+    d = data['data']
+    # optionItems에 사이즈별 실시간 재고(outOfStock/remainQuantity) 주입
+    items = d.get('optionItems') or []
+    if items:
+        option_value_nos = sorted({n for it in items for n in (it.get('optionValueNos') or [])})
+        inv = get_inventory(session, goods_no, option_value_nos)
+        for it in items:
+            info = inv.get(it.get('no'))
+            if info:
+                it['outOfStock'] = info['outOfStock']
+                it['remainQuantity'] = info['remainQuantity']
+    return d
 
 
 # ===========================================
@@ -429,13 +473,14 @@ def run_collection(args):
                             f"{full_path or '-'} | {data['product_name'][:28]}")
 
             if not args.dry_run:
-                # 브랜드/카테고리 자동 등록 (자체 트랜잭션)
-                try:
-                    with engine.begin() as conn:
-                        ensure_brand(conn, detail, seen_brands)
-                        ensure_category(conn, full_path, category_id, depths, seen_categories)
-                except OperationalError as e:
-                    logger.warning(f"  [DB] 브랜드/카테고리 등록 실패: {str(e)[:80]}")
+                # 브랜드/카테고리 자동 등록 (자체 트랜잭션). --skip-mapping이면 mall_brands/mall_categories 건드리지 않음.
+                if not args.skip_mapping:
+                    try:
+                        with engine.begin() as conn:
+                            ensure_brand(conn, detail, seen_brands)
+                            ensure_category(conn, full_path, category_id, depths, seen_categories)
+                    except OperationalError as e:
+                        logger.warning(f"  [DB] 브랜드/카테고리 등록 실패: {str(e)[:80]}")
                 batch_data.append(data)
                 if len(batch_data) >= 10:
                     save_to_database(batch_data)
@@ -476,6 +521,8 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='DB 저장 없이 테스트')
     parser.add_argument('--skip-existing', action='store_true', help='등록 완료 상품 스킵')
     parser.add_argument('--start-page', type=int, default=1, help='시작 페이지 (재개용)')
+    parser.add_argument('--skip-mapping', action='store_true',
+                        help='mall_brands/mall_categories 자동 등록 건너뛰기 (raw_scraped_data만 갱신)')
     args = parser.parse_args()
 
     logger.info("=" * 60)
