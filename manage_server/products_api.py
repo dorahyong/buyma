@@ -107,6 +107,7 @@ def _fetch_raw_aggregated(conn) -> List[Dict]:
             MAX(r.product_name)        AS product_name,
             MAX(r.p_name_full)         AS p_name_full,
             MAX(r.updated_at)          AS source_updated_at,
+            GROUP_CONCAT(DISTINCT r.source_site) AS malls,
             SUM(r.stock_status = 'out_of_stock') AS oos_count,
             COUNT(*)                   AS total_source_count
         FROM raw_scraped_data r
@@ -336,6 +337,7 @@ def build_payload(db_config: Dict) -> Dict:
             'name_ja':                    ace0.get('name') if ace0 else None,
             'name_ko':                    raw.get('product_name') or raw.get('p_name_full'),
             'brand_name_en':              raw.get('brand_name_en'),
+            'malls':                      [m for m in (raw.get('malls') or '').split(',') if m],
             'category_path':              raw.get('category_path'),
             'image_url':                  image_url,
             'source_count':               int(raw.get('total_source_count') or 0),

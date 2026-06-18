@@ -14,6 +14,18 @@ body { font-family: -apple-system, "Apple SD Gothic Neo", "Helvetica Neue", sans
 .filter-chip { padding: 8px 18px; border: 1px solid #d0d4dc; border-bottom: none; border-radius: 4px 4px 0 0; background: #f5f6f8; color: #4a4a4a; font-size: 13px; cursor: pointer; user-select: none; margin-right: 2px; position: relative; top: 1px; }
 .filter-chip:hover { background: #ebedf0; }
 .filter-chip.active { background: #4a4a4a; color: #fff; border-color: #4a4a4a; font-weight: 600; z-index: 1; top: 0; }
+.facet-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 10px 24px; background: #fff; border-top: 1px solid #e0e2e7; border-bottom: 1px solid #e0e2e7; flex-shrink: 0; }
+.facet-control { display: flex; align-items: center; gap: 6px; }
+.facet-control label { font-size: 12px; font-weight: 600; color: #555; }
+.facet-control select { padding: 6px 10px; border: 1px solid #cdd2da; border-radius: 4px; font-size: 13px; background: #fff; cursor: pointer; outline: none; max-width: 220px; }
+.facet-control select:focus { border-color: #2962ff; }
+.facet-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; flex: 1; }
+.facet-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px 4px 4px; border-radius: 14px; font-size: 12.5px; background: #eef1f6; border: 1px solid #d6dde6; color: #2c2c2c; }
+.facet-chip-label { font-size: 10.5px; font-weight: 700; padding: 1px 6px; border-radius: 9px; color: #fff; }
+.facet-chip-mall .facet-chip-label { background: #1565c0; }
+.facet-chip-brand .facet-chip-label { background: #6a1b9a; }
+.facet-chip-x { cursor: pointer; color: #888; font-size: 11px; padding: 0 2px; user-select: none; }
+.facet-chip-x:hover { color: #d32f2f; }
 .table-wrap { padding: 0 24px 0; overflow: auto; flex: 1; min-height: 0; }
 table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; background: #fff; font-size: 12.5px; }
 th, td { border-right: 1px solid #e3e6eb; border-bottom: 1px solid #e3e6eb; padding: 8px 10px; text-align: left; vertical-align: middle; }

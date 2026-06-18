@@ -18,6 +18,22 @@
 
   <div class="tabs" id="filters"></div>
 
+  <div class="facet-bar" id="facet-bar">
+    <div class="facet-control">
+      <label>몰</label>
+      <select id="facet-mall-select">
+        <option value="">＋ 몰 선택</option>
+      </select>
+    </div>
+    <div class="facet-control">
+      <label>브랜드</label>
+      <select id="facet-brand-select">
+        <option value="">＋ 브랜드 선택</option>
+      </select>
+    </div>
+    <div class="facet-chips" id="facet-chips"></div>
+  </div>
+
   <div id="content"></div>
 
   <div class="modal-overlay" id="modal">
@@ -263,6 +279,8 @@
     let META = {};
     let sortState = { key: null, dir: null };
     let searchQ = '';
+    let selectedMalls = new Set();   // 몰 다중선택 필터
+    let selectedBrands = new Set();  // 브랜드 다중선택 필터
     let pageSize = 100;
     let currentPage = 1;
 
@@ -371,6 +389,12 @@
       let view = DATA.slice();
       const f = window.ACTIVE_FILTER;
       if (f && window.matchFilter) view = view.filter(r => window.matchFilter(r, f));
+      if (selectedMalls.size) {
+        view = view.filter(r => Array.isArray(r.malls) && r.malls.some(m => selectedMalls.has(m)));
+      }
+      if (selectedBrands.size) {
+        view = view.filter(r => r.brand_name_en && selectedBrands.has(r.brand_name_en));
+      }
       if (searchQ) {
         const q = searchQ.toLowerCase();
         view = view.filter(r =>
@@ -590,6 +614,77 @@
     document.getElementById('search').oninput = (e) => { searchQ = e.target.value.trim(); currentPage = 1; renderAll(); };
 
     // =======================================================
+    // 몰 / 브랜드 다중선택 필터 (칩)
+    // =======================================================
+    const FACETS = {
+      mall:  { sel: selectedMalls,  selectEl: 'facet-mall-select',  label: '몰',    cls: 'facet-chip-mall' },
+      brand: { sel: selectedBrands, selectEl: 'facet-brand-select', label: '브랜드', cls: 'facet-chip-brand' },
+    };
+
+    function facetOptionsFor(type) {
+      const vals = new Set();
+      for (const r of DATA) {
+        if (type === 'mall') { (r.malls || []).forEach(m => m && vals.add(m)); }
+        else if (type === 'brand') { if (r.brand_name_en) vals.add(r.brand_name_en); }
+      }
+      return [...vals].sort((a, b) => a.localeCompare(b));
+    }
+
+    function populateFacetSelect(type) {
+      const cfg = FACETS[type];
+      const el = document.getElementById(cfg.selectEl);
+      const placeholder = el.querySelector('option[value=""]');
+      el.innerHTML = '';
+      el.appendChild(placeholder);
+      for (const v of facetOptionsFor(type)) {
+        if (cfg.sel.has(v)) continue;   // 이미 선택된 값은 목록에서 숨김
+        const o = document.createElement('option');
+        o.value = v; o.textContent = v;
+        el.appendChild(o);
+      }
+      el.value = '';
+    }
+
+    function renderFacetChips() {
+      const box = document.getElementById('facet-chips');
+      box.innerHTML = '';
+      for (const type of Object.keys(FACETS)) {
+        const cfg = FACETS[type];
+        for (const v of cfg.sel) {
+          const chip = document.createElement('span');
+          chip.className = 'facet-chip ' + cfg.cls;
+          chip.innerHTML = `<span class="facet-chip-label">${cfg.label}</span>${esc(v)}` +
+            `<span class="facet-chip-x" title="제거">✕</span>`;
+          chip.querySelector('.facet-chip-x').onclick = () => {
+            cfg.sel.delete(v);
+            populateFacetSelect(type);
+            currentPage = 1;
+            renderFacetChips();
+            renderAll();
+          };
+          box.appendChild(chip);
+        }
+      }
+    }
+
+    function setupFacets() {
+      for (const type of Object.keys(FACETS)) {
+        const cfg = FACETS[type];
+        populateFacetSelect(type);
+        document.getElementById(cfg.selectEl).onchange = (e) => {
+          const v = e.target.value;
+          if (!v) return;
+          cfg.sel.add(v);
+          populateFacetSelect(type);
+          currentPage = 1;
+          renderFacetChips();
+          renderAll();
+        };
+      }
+      renderFacetChips();
+    }
+
+    // =======================================================
     // CSV 다운로드 — 현재 필터/검색/정렬 적용된 결과 전체
     // =======================================================
     function csvCellOf(key, r) {
@@ -730,6 +825,7 @@
           return;
         }
         if (window.initFilterTabs) await window.initFilterTabs();
+        setupFacets();
         renderAll();
       } catch (err) {
         document.getElementById('content').innerHTML =
