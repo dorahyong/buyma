@@ -650,6 +650,91 @@ def strip_brand_jp(brand_name: str) -> str:
     return re.split(r'[\(（]', brand_name)[0].strip()
 
 
+_MUSINSA_SIZE_TOKENS = {
+    'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', 'XXXXL', 'XXS', '2XL', '3XL', '4XL', '5XL',
+    'F', 'FREE', 'FREESIZE', 'ONESIZE', 'ONE SIZE', 'UNI', 'UNISEX', 'UNISIZE',
+}
+
+
+def _musinsa_is_size_token(v) -> bool:
+    if not v:
+        return False
+    t = str(v).strip().upper().replace('SIZE', '').strip()
+    if t in _MUSINSA_SIZE_TOKENS:
+        return True
+    if re.fullmatch(r'\d{1,3}(\.\d)?', t):              # 28 / 95 / 230 / 5.5
+        return True
+    if re.fullmatch(r'\d{2,3}\s?(호|CM|MM|INCH)?', t):  # 95호 / 240MM
+        return True
+    return False
+
+
+def _musinsa_looks_like_sizes(vals) -> bool:
+    vals = [v for v in vals if v]
+    if not vals:
+        return False
+    return sum(_musinsa_is_size_token(v) for v in vals) / len(vals) >= 0.5
+
+
+def _musinsa_classify_group(name: str, vals) -> str:
+    """옵션 그룹을 color/size로 분류. 무신사 그룹명은 제각각(S=Size, C=Color 코드,
+    'NONE'/'옵션' 등)이라 이름 키워드 → 값 모양 순으로 판별."""
+    raw = name or ''
+    nm = raw.strip().upper()
+    if '사이즈' in raw or 'SIZE' in nm or nm == 'S':
+        return 'size'
+    if '색상' in raw or '컬러' in raw or 'COLOR' in nm or nm == 'C':
+        return 'color'
+    return 'size' if _musinsa_looks_like_sizes(vals) else 'color'
+
+
+def normalize_musinsa_options(json_data: Dict) -> List[Dict]:
+    """무신사 raw_json을 평평한 옵션 형식 [{color, tag_size, status, option_code}, ...]로 변환.
+
+    무신사는 옵션을 두 군데에 나눠 저장한다:
+      - options:      색상/사이즈 그룹 목록(이름이 'S','C','옵션' 등 제각각이라 못 믿음)
+      - option_items: "Black^S" 같은 실제 조합 + 재고(activated/isDeleted)
+    option_items의 각 optionValue를 그룹명/값모양으로 color·size 축에 배정한다.
+    """
+    items = json_data.get('option_items') or []
+    # 1) 그룹(optionName)별 값 모으기
+    group_values = {}
+    for it in items:
+        for ov in it.get('optionValues', []):
+            group_values.setdefault(ov.get('optionName') or '', []).append(ov.get('name'))
+    # 2) 그룹 → color/size 역할 분류
+    roles = {g: _musinsa_classify_group(g, vals) for g, vals in group_values.items()}
+    # 3) 두 그룹이 같은 역할로 겹치면 값 모양으로 강제 분리
+    groups = list(group_values.keys())
+    if len(groups) == 2 and roles[groups[0]] == roles[groups[1]]:
+        s0 = _musinsa_looks_like_sizes(group_values[groups[0]])
+        s1 = _musinsa_looks_like_sizes(group_values[groups[1]])
+        if s0 and not s1:
+            roles[groups[0]], roles[groups[1]] = 'size', 'color'
+        else:
+            roles[groups[0]], roles[groups[1]] = 'color', 'size'
+    # 4) 평평한 변형 목록 생성
+    flat = []
+    for it in items:
+        color, size = None, None
+        for ov in it.get('optionValues', []):
+            if roles.get(ov.get('optionName') or '') == 'size':
+                size = ov.get('name')
+            else:
+                color = ov.get('name')
+        if 'outOfStock' in it:
+            in_stock = not it.get('outOfStock')   # 재고 API로 주입한 사이즈별 실시간 품절
+        else:
+            in_stock = it.get('activated') and not it.get('isDeleted')  # 재고 미수집 구데이터 폴백
+        flat.append({
+            'color': color or 'FREE',
+            'tag_size': size or 'FREE',
+            'status': 'in_stock' if in_stock else 'out_of_stock',
+            'option_code': it.get('managedCode') or (str(it.get('no')) if it.get('no') else None),
+        })
+    return flat
+
+
 def format_buyma_product_name(brand_name: str, product_name: str, model_id: str = None) -> str:
     """
     바이마 상품명 형식으로 변환
@@ -1038,7 +1123,11 @@ class RawToAceConverter:
             return None
 
         json_data = safe_json_loads(raw_data.get('raw_json_data', '{}')) or {}
-        options = json_data.get('options', [])
+        # 무신사는 옵션 구조가 다름(색상/사이즈 그룹 + option_items). 평평한 형식으로 정규화.
+        if raw_data.get('source_site') == 'musinsa':
+            options = normalize_musinsa_options(json_data)
+        else:
+            options = json_data.get('options', [])
 
         # 1. 상품명 생성 및 정제 (한국어 원본 저장, 배치 번역에서 처리)
         product_name = raw_data.get('product_name', '')
@@ -1241,6 +1330,7 @@ class RawToAceConverter:
         if not sizes: ace_options.append({'option_type': 'size', 'value': 'FREE', 'master_id': 0, 'position': 1, 'details_json': None, 'source_option_value': None})
 
         ace_variants = []
+        seen_variant_keys = set()  # (color, size) 중복 방지 (uk_ace_product_variant 위반 예방)
         for opt in options:
             color_raw = opt.get('color', 'FREE') or 'FREE'
             size_raw = opt.get('tag_size', 'FREE') or 'FREE'
@@ -1251,7 +1341,12 @@ class RawToAceConverter:
                 size_val = 'FREE'
             else:
                 size_val = size_raw.replace('품절 임박', '').replace('품절임박', '').strip()
-                
+
+            # 같은 (색상, 사이즈) 조합은 한 번만 (DB uk 제약 위반 방지)
+            if (color_val, size_val) in seen_variant_keys:
+                continue
+            seen_variant_keys.add((color_val, size_val))
+
             # 사장님 방침: 재고가 있으면 무조건 '주문 후 매입(purchase_for_order)'
             stock_type = 'purchase_for_order' if opt.get('status') == 'in_stock' else 'out_of_stock'
             ace_variants.append({
