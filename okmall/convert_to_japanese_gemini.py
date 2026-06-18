@@ -256,7 +256,16 @@ def collect_translation_targets(conn, brand: str = None, limit: int = None, pric
             SELECT p.id, p.name, p.colorsize_comments
             FROM ace_products p
             WHERE p.is_active = 1
-              AND (p.colorsize_comments_jp IS NULL OR p.colorsize_comments_jp = '')
+              AND (
+                    p.name REGEXP '[가-힣]'
+                    OR (p.colorsize_comments IS NOT NULL AND p.colorsize_comments <> ''
+                        AND (p.colorsize_comments_jp IS NULL OR p.colorsize_comments_jp = ''))
+                    OR EXISTS (SELECT 1 FROM ace_product_options o
+                               WHERE o.ace_product_id = p.id AND o.value REGEXP '[가-힣]')
+                    OR EXISTS (SELECT 1 FROM ace_product_variants v
+                               WHERE v.ace_product_id = p.id
+                                 AND (v.color_value REGEXP '[가-힣]' OR v.size_value REGEXP '[가-힣]'))
+                  )
         """
         params = []
 
@@ -303,7 +312,7 @@ def collect_translation_targets(conn, brand: str = None, limit: int = None, pric
         if product_ids:
             format_strings = ','.join(['%s'] * len(product_ids))
             cursor.execute(f"""
-                SELECT id, ace_product_id, color_value, size_value
+                SELECT id, ace_product_id, color_value, size_value, stock_type
                 FROM ace_product_variants
                 WHERE ace_product_id IN ({format_strings})
             """, product_ids)
@@ -417,7 +426,19 @@ def translate_batch_with_gemini(texts: Dict[str, str], max_retries: int = 3) -> 
 
             if response.status_code == 200:
                 result = response.json()
-                response_text = result["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+                # 응답 구조 방어적 파싱 (가끔 200인데 text가 비어서 옴 → 포기 말고 재시도)
+                cands = result.get("candidates") or []
+                response_text = None
+                if cands:
+                    parts = (cands[0].get("content") or {}).get("parts") or []
+                    if parts and isinstance(parts[0], dict):
+                        response_text = (parts[0].get("text") or "").strip()
+                if not response_text:
+                    finish = cands[0].get("finishReason") if cands else "NO_CANDIDATES"
+                    log(f"빈/비정상 응답 (재시도 {attempt + 1}/{max_retries}) finishReason={finish}", "WARNING")
+                    time.sleep(3 * (attempt + 1))
+                    continue
 
                 # JSON 파싱
                 try:
@@ -430,14 +451,26 @@ def translate_batch_with_gemini(texts: Dict[str, str], max_retries: int = 3) -> 
                     translations = {}
 
                     for item in translated_data.get("items", []):
-                        translations[item["id"]] = item["text"]
+                        if not isinstance(item, dict) or "id" not in item:
+                            continue
+                        # Gemini가 'text' 대신 'text_content' 등으로 키 이름을 바꿔 보내는 경우가 있어
+                        # id를 제외한 값에서 번역결과를 유연하게 추출
+                        val = item.get("text")
+                        if val is None:
+                            val = item.get("text_content")
+                        if val is None:
+                            val = next((v for k, v in item.items()
+                                        if k != "id" and isinstance(v, str)), None)
+                        if val is not None:
+                            translations[item["id"]] = val
 
                     log(f"  → 배치 번역 완료: {len(translations)}개 텍스트")
                     return translations
 
                 except json.JSONDecodeError as e:
-                    log(f"JSON 파싱 실패: {e}", "ERROR")
+                    log(f"JSON 파싱 실패 (재시도 {attempt + 1}/{max_retries}): {e}", "ERROR")
                     log(f"응답 내용: {response_text[:500]}", "DEBUG")
+                    time.sleep(2)
                     # 재시도
 
             elif response.status_code == 429:
@@ -446,15 +479,17 @@ def translate_batch_with_gemini(texts: Dict[str, str], max_retries: int = 3) -> 
                 log(f"  → 429 응답 본문: {response.text[:300]}", "WARNING")
                 time.sleep(wait_time)
             else:
-                log(f"Gemini API 오류 (HTTP {response.status_code}): {response.text[:200]}", "ERROR")
-                return {}
+                log(f"Gemini API 오류 (HTTP {response.status_code}, 재시도 {attempt + 1}/{max_retries}): {response.text[:200]}", "ERROR")
+                time.sleep(3)
+                # 재시도
 
         except requests.exceptions.Timeout:
             log(f"API 타임아웃, 재시도... ({attempt + 1}/{max_retries})", "WARNING")
             time.sleep(5)
         except Exception as e:
-            log(f"번역 실패: {e}", "ERROR")
-            return {}
+            log(f"번역 시도 실패 (재시도 {attempt + 1}/{max_retries}): {e}", "ERROR")
+            time.sleep(2)
+            # 재시도
 
     log("최대 재시도 초과", "ERROR")
     return {}
@@ -538,46 +573,89 @@ def update_database(conn, targets: Dict, translation_map: Dict[str, str]) -> Dic
 
         return processed
 
-    with conn.cursor() as cursor:
-        # 1. ace_products 업데이트
-        for p in targets["products"]:
-            name_jp = get_translated(p["name"])
-            colorsize_jp = get_translated(p["colorsize_comments"])
+    # 옵션/변형을 상품ID별로 묶는다 (상품 단위로 한 트랜잭션에 같이 저장하기 위함)
+    from collections import defaultdict
+    opts_by_pid = defaultdict(list)
+    for o in targets["options"]:
+        opts_by_pid[o["ace_product_id"]].append(o)
+    vars_by_pid = defaultdict(list)
+    for v in targets["variants"]:
+        vars_by_pid[v["ace_product_id"]].append(v)
 
-            cursor.execute("""
-                UPDATE ace_products
-                SET name = %s, colorsize_comments_jp = %s
-                WHERE id = %s
-            """, (name_jp, colorsize_jp, p["id"]))
-            stats["products"] += 1
+    # 로컬↔원격 DB 연결이 불안정해 쓰기 도중 끊기는 일이 잦다.
+    # 상품 단위로 (이름+옵션+변형) 한 묶음씩 저장 → 중간에 끊겨도 상품별로 완결되고, 재실행 시 이어서 처리.
+    # 끊기면 재연결 후 그 묶음을 통째로 재시도(UPDATE가 idempotent라 안전).
+    # NOTE: variants의 color_value_original / size_value_original 은 절대 건드리지 말 것.
+    #       stock sync 매칭 키로 쓰는 한글 원본이 일본어로 덮이면 false out_of_stock 사고 재발.
+    products = targets["products"]
+    manual_review = []  # 번역 후 값이 겹쳐(같은 일본어) 수동 확인이 필요한 항목 — 자동 삭제하지 않음
+    CHUNK_PRODUCTS = 100
+    MAX_RETRY = 8
+    total = len(products)
+    start = 0
+    while start < total:
+        batch = products[start:start + CHUNK_PRODUCTS]
+        for attempt in range(MAX_RETRY):
+            try:
+                conn.ping(reconnect=True)
+                with conn.cursor() as cursor:
+                    for p in batch:
+                        pid = p["id"]
+                        cursor.execute(
+                            "UPDATE ace_products SET name = %s, colorsize_comments_jp = %s WHERE id = %s",
+                            (get_translated(p["name"]), get_translated(p["colorsize_comments"]), pid))
 
-        # 2. ace_product_options 업데이트
-        for o in targets["options"]:
-            value_jp = get_translated(o["value"])
+                        # 옵션: 번역 후 같은 (상품, 타입, 값)이 되면 중복 → 자동 삭제하지 않고 건너뛴 뒤 수동확인 목록에 기록
+                        for o in opts_by_pid.get(pid, []):
+                            try:
+                                cursor.execute(
+                                    "UPDATE ace_product_options SET value = %s WHERE id = %s",
+                                    (get_translated(o["value"]), o["id"]))
+                            except pymysql.err.IntegrityError as ie:
+                                if ie.args and ie.args[0] == 1062:
+                                    manual_review.append({
+                                        "product_id": pid, "kind": "옵션",
+                                        "source": o["value"], "translated": get_translated(o["value"]),
+                                    })
+                                else:
+                                    raise
 
-            cursor.execute("""
-                UPDATE ace_product_options
-                SET value = %s
-                WHERE id = %s
-            """, (value_jp, o["id"]))
-            stats["options"] += 1
+                        # 변형: 번역 후 (색상,사이즈)가 겹치면 → 자동 삭제하지 않고 건너뛴 뒤 수동확인 목록에 기록
+                        for v in vars_by_pid.get(pid, []):
+                            cv = get_translated(v["color_value"])
+                            sv = get_translated(v["size_value"])
+                            try:
+                                cursor.execute(
+                                    "UPDATE ace_product_variants SET color_value = %s, size_value = %s WHERE id = %s",
+                                    (cv, sv, v["id"]))
+                            except pymysql.err.IntegrityError as ie:
+                                if ie.args and ie.args[0] == 1062:
+                                    manual_review.append({
+                                        "product_id": pid, "kind": "변형",
+                                        "source": f'{v["color_value"]} / {v["size_value"]}',
+                                        "translated": f"{cv} / {sv}",
+                                    })
+                                else:
+                                    raise
+                conn.commit()
+                for p in batch:
+                    stats["products"] += 1
+                    stats["options"] += len(opts_by_pid.get(p["id"], []))
+                    stats["variants"] += len(vars_by_pid.get(p["id"], []))
+                break
+            except (pymysql.err.OperationalError, pymysql.err.InterfaceError) as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                wait = min(2 * (attempt + 1), 15)
+                log(f"DB 연결 끊김 (상품 {start}/{total}), {wait}s 후 재연결·재시도 {attempt+1}/{MAX_RETRY}: {str(e)[:80]}", "WARNING")
+                time.sleep(wait)
+        else:
+            raise RuntimeError(f"DB 쓰기 {MAX_RETRY}회 재시도 실패 (상품 {start}/{total}). 네트워크 확인 후 다시 실행하세요.")
+        start += CHUNK_PRODUCTS
 
-        # 3. ace_product_variants 업데이트
-        # NOTE: color_value_original / size_value_original 은 절대 건드리지 말 것.
-        #       stock sync 매칭 키로 사용되는 한글 원본이 일본어로 덮이면 false out_of_stock 사고 재발.
-        for v in targets["variants"]:
-            color_jp = get_translated(v["color_value"])
-            size_jp = get_translated(v["size_value"])
-
-            cursor.execute("""
-                UPDATE ace_product_variants
-                SET color_value = %s, size_value = %s
-                WHERE id = %s
-            """, (color_jp, size_jp, v["id"]))
-            stats["variants"] += 1
-
-        conn.commit()
-
+    stats["manual_review"] = manual_review
     return stats
 
 
@@ -672,6 +750,13 @@ def run_batch_translation(brand: str = None, limit: int = None, dry_run: bool = 
         log(f"  → 상품 업데이트: {stats['products']}개")
         log(f"  → 옵션 업데이트: {stats['options']}개")
         log(f"  → Variants 업데이트: {stats['variants']}개")
+        review = stats.get("manual_review") or []
+        if review:
+            log("=" * 60)
+            log(f"⚠️  수동 확인 필요 {len(review)}건 (번역하니 같은 일본어가 돼 겹침 → 자동 처리 안 함):")
+            for r in review:
+                log(f"    - 상품 {r['product_id']} [{r['kind']}] '{r['source']}' → '{r['translated']}'")
+            log("    (무신사에서 확인 후 어느 쪽을 둘지 직접 정하세요. 정리 전까진 번역 대상에 계속 표시됨)")
         log("=" * 60)
 
     finally:
