@@ -1,39 +1,42 @@
 # -*- coding: utf-8 -*-
 """
-바이마 셀러 판매 실적 수집기 (총판매수 / 총판매금액)
+바이마 셀러 판매 실적 수집기 (총판매수 / 총판매금액)  ※ API 방식
 
-대상 페이지:
-  - https://www.buyma.com/my/orders/?page=N            (진행 중 주문: 受注/배송중)
-  - https://www.buyma.com/my/buyersales/?srt=7&sro=2&p=N  (종료된 거래: 수령완료/취소)
-      ※ 사이트 첫 진입 URL은 /my/buyersales/?tab=b 이며, 위 srt/sro 조합으로 재해석됨
+[변경 이력]
+  이전: /my/orders, /my/buyersales 페이지를 HTML로 긁어 집계 (쿠키 로그인 의존)
+        → 백업: buyma_self_sales_collector_html_backup.py
+  현재: BUYMA Personal Shopper API(주문조회)로 수집 (액세스 토큰 사용)
 
-수집 규칙:
-  - 두 페이지를 끝까지 긁어 取引ID 기준 dedup
-  - "取引キャンセル" 행은 제외
-  - 결과 = (수령완료 거래) ∪ (배송중 거래)
-  - buyma_product_id 별로 SUM(amount), COUNT(*) 집계
-  - buyma_product_stats.sold_count, sales_amount_jpy UPSERT
+[동작]
+  1) 주문조회 API(GET /api/v1/orders.json?status=any)로 최근 주문 전체 수집
+     - BUYMA는 약 4개월치 최근 주문만 반환(롤링 윈도우 추정)
+  2) buyma_self_orders 테이블에 주문을 "현재 상태와 함께" UPSERT
+     - 한번 들어온 주문은 영구 보관 → 4개월 지나 API에서 빠져도 유지(진짜 누적)
+     - 매번 status를 최신으로 갱신 → 나중에 취소되면 자동 반영
+  3) buyma_self_orders 내 모든 상품을 재계산(취소는 제외=0으로 빠짐)
+     - sold_count = 취소 아닌 거래 건수 (수량 amount 아님, HTML 방식과 동일)
+     - sales_amount_jpy = 취소 아닌 SUM(subtotal_price)
+     - 전부 취소된 상품은 0으로 갱신 → 취소 박제 자동 보정
+     - 단, 4개월 창에서 사라진 옛 상품(주문표에 없음)은 손대지 않아 보존
+  4) buyma_product_stats 에 UPSERT (화면이 읽는 테이블, 형식 그대로)
 
-쿠키: buyma_stats/.buyma_cookies.json (buyma_self_stats_collector.py와 동일)
+집계 규칙(이전 HTML 방식과 동일하게 유지):
+  - 취소(canceled / forcibly_canceled) 제외, 그 외 전부 판매로 인정
+  - 주문 1건 = 카운트 1
 
 사용법:
-    python3 buyma_self_sales_collector.py                 # 전체 누적
-    python3 buyma_self_sales_collector.py --max-pages 2   # 각 페이지 2장씩만(테스트)
+    python3 buyma_self_sales_collector.py
 """
 
 import os
-import re
 import sys
-import json
 import time
 import argparse
-from collections import defaultdict
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import pymysql
-import requests as req_lib
-from bs4 import BeautifulSoup
+import requests
 from dotenv import load_dotenv
 
 if sys.platform == 'win32':
@@ -46,28 +49,31 @@ if sys.platform == 'win32':
 # 설정
 # =====================================================
 
-BUYMA_BASE_URL = "https://www.buyma.com"
-
-ORDERS_URL_TEMPLATE     = f"{BUYMA_BASE_URL}/my/orders/?page={{page}}"
-BUYERSALES_URL_TEMPLATE = f"{BUYMA_BASE_URL}/my/buyersales/?srt=7&sro=2&p={{page}}"
-
-SCRIPT_DIR  = os.path.dirname(os.path.abspath(__file__))
-COOKIE_FILE = os.path.join(SCRIPT_DIR, '.buyma_cookies.json')
-
-CRAWL_DELAY   = 1.0
-PAGE_TIMEOUT  = 60
-PAGE_RETRY    = 3
-RETRY_BACKOFF = 5
-
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(os.path.dirname(SCRIPT_DIR), '.env'))
 
+BUYMA_MODE         = int(os.getenv('BUYMA_MODE', 1))  # 1: 본환경, 2: 샌드박스
+BUYMA_API_BASE_URL = os.getenv('BUYMA_API_BASE_URL', 'https://personal-shopper-api.buyma.com/')
+BUYMA_SANDBOX_URL  = os.getenv('BUYMA_SANDBOX_URL', 'https://sandbox.personal-shopper-api.buyma.com/')
+BUYMA_ACCESS_TOKEN = os.getenv('BUYMA_ACCESS_TOKEN', '')
+API_BASE_URL       = BUYMA_API_BASE_URL if BUYMA_MODE == 1 else BUYMA_SANDBOX_URL
+
+PER_PAGE      = 100
+API_TIMEOUT   = 30
+API_RETRY     = 3
+RETRY_BACKOFF = 5
+PAGE_DELAY    = 0.3
+
+# 취소 계열 = 판매에서 제외
+CANCEL_STATUSES = ('canceled', 'forcibly_canceled')
+
 DB_CONFIG = {
-    'host':     os.getenv('DB_HOST'),
-    'port':     int(os.getenv('DB_PORT', 3306)),
-    'user':     os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_NAME'),
-    'charset':  'utf8mb4',
+    'host':       os.getenv('DB_HOST'),
+    'port':       int(os.getenv('DB_PORT', 3306)),
+    'user':       os.getenv('DB_USER'),
+    'password':   os.getenv('DB_PASSWORD'),
+    'database':   os.getenv('DB_NAME'),
+    'charset':    'utf8mb4',
     'autocommit': False,
 }
 
@@ -78,264 +84,171 @@ def log(msg: str, level: str = "INFO") -> None:
 
 
 # =====================================================
-# 세션
+# API 수집
 # =====================================================
 
-def create_session() -> req_lib.Session:
-    if not os.path.exists(COOKIE_FILE):
-        log(f"쿠키 파일 없음: {COOKIE_FILE}", "ERROR")
-        log("갱신: buyma_cleaners/buyma_orphan_cleaner.py --login 후 결과를 이 경로로 복사", "ERROR")
-        sys.exit(2)
-
-    with open(COOKIE_FILE, 'r', encoding='utf-8') as f:
-        pw_cookies = json.load(f)
-
-    session = req_lib.Session()
-    session.cookies.update({c['name']: c['value'] for c in pw_cookies})
-    session.headers.update({
-        'User-Agent': (
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
-            '(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
-        ),
-        'Accept-Language': 'ja,en;q=0.9',
-        'Referer': f'{BUYMA_BASE_URL}/my/',
-    })
-    return session
-
-
-_END_SENTINEL = object()  # 404 = 마지막 페이지 넘어섬 신호
-
-
-def _fetch_page(session: req_lib.Session, url: str, page_num: int):
+def _fetch_page(url: str, params: dict):
+    """1페이지 요청 (재시도 포함). (json, link헤더) 반환."""
+    headers = {"X-Buyma-Personal-Shopper-Api-Access-Token": BUYMA_ACCESS_TOKEN}
     last_err = None
-    for attempt in range(1, PAGE_RETRY + 1):
+    for attempt in range(1, API_RETRY + 1):
         try:
-            resp = session.get(url, timeout=PAGE_TIMEOUT)
-            # 404는 끝페이지 — 재시도 없이 즉시 종료 신호
-            if resp.status_code == 404:
-                return _END_SENTINEL
+            resp = requests.get(url, headers=headers, params=params, timeout=API_TIMEOUT)
+            if resp.status_code in (401, 403):
+                log("토큰 인증/권한 거부됨. 주문조회 권한을 확인하세요.", "ERROR")
+                log(resp.text[:300], "ERROR")
+                sys.exit(3)
             resp.raise_for_status()
-            return resp
-        except req_lib.RequestException as e:
+            return resp.json(), resp.headers.get("Link", "")
+        except requests.RequestException as e:
             last_err = e
             wait = RETRY_BACKOFF * attempt
-            log(f"  ↻ 페이지 {page_num} 시도 {attempt}/{PAGE_RETRY} 실패 ({e}). {wait}s 대기", "WARN")
+            log(f"  ↻ page={params.get('page')} 시도 {attempt}/{API_RETRY} 실패 ({e}). {wait}s 대기", "WARN")
             time.sleep(wait)
-    log(f"  ✗ 페이지 {page_num} 최종 실패: {last_err}", "ERROR")
-    return None
+    log(f"  ✗ page={params.get('page')} 최종 실패: {last_err}", "ERROR")
+    sys.exit(1)
 
 
-# =====================================================
-# 행 파싱
-# =====================================================
+def fetch_all_orders() -> List[Dict]:
+    """주문조회 API 전체 페이지 수집."""
+    if not BUYMA_ACCESS_TOKEN:
+        log("BUYMA_ACCESS_TOKEN 이 .env 에 없습니다.", "ERROR")
+        sys.exit(2)
 
-# imgdata/item/{cat}/0{buyma_product_id}/{imageid}/...
-_RE_PID_IN_IMG = re.compile(r'imgdata/item/\d+/0?(\d{9,10})/')
-# orders: tr class "trade_row_dt_tr_{id}"
-_RE_TRADE_ORDERS = re.compile(r'trade_row_dt_tr_(\d+)')
-# buyersales: 본문 "取引ID 34732217"
-_RE_TRADE_BUYERSALES = re.compile(r'取引ID[^\d]*(\d+)')
-# 금액: "¥36,113" 또는 "11,894円"
-_RE_AMOUNT_YEN_PREFIX = re.compile(r'¥\s*([\d,]+)')
-_RE_AMOUNT_YEN_SUFFIX = re.compile(r'([\d,]+)\s*円')
-# 날짜: "2026/05/22" — buyersales의 발송일이 진짜 날짜인지 판정용.
-# 발송 전이거나 취소된 거래는 "取引キャンセル" 또는 "-"가 들어옴.
-_RE_DATE = re.compile(r'^\d{4}/\d{1,2}/\d{1,2}')
-
-
-def _extract_buyma_product_id(tr) -> Optional[str]:
-    for im in tr.find_all('img'):
-        src = im.get('src') or im.get('data-src') or ''
-        m = _RE_PID_IN_IMG.search(src)
-        if m:
-            return m.group(1)
-    return None
-
-
-def _extract_amount_jpy(tr) -> Optional[int]:
-    """행 내 td 중 가장 먼저 잡히는 ¥/円 금액 → int."""
-    for td in tr.find_all(['th', 'td']):
-        txt = td.get_text(separator=' ', strip=True)
-        if not txt:
-            continue
-        m = _RE_AMOUNT_YEN_PREFIX.search(txt) or _RE_AMOUNT_YEN_SUFFIX.search(txt)
-        if m:
-            try:
-                return int(m.group(1).replace(',', ''))
-            except ValueError:
-                return None
-    return None
-
-
-def _is_cancelled(tr) -> bool:
-    return '取引キャンセル' in tr.get_text()
-
-
-def parse_orders_page(soup: BeautifulSoup) -> List[Dict]:
-    """ /my/orders/ 한 페이지 → 거래 list."""
-    t = soup.find('table', class_='orders-table')
-    if not t:
-        return []
-    rows = []
-    for tr in t.find_all('tr', class_='orders-table-tr-main'):
-        if _is_cancelled(tr):
-            continue
-        trade_id = None
-        for cls in tr.get('class', []):
-            m = _RE_TRADE_ORDERS.match(cls)
-            if m:
-                trade_id = m.group(1)
-                break
-        pid    = _extract_buyma_product_id(tr)
-        amount = _extract_amount_jpy(tr)
-        if not (trade_id and pid and amount is not None):
-            continue
-        rows.append({
-            'trade_id':         trade_id,
-            'buyma_product_id': pid,
-            'amount_jpy':       amount,
-            'source':           'orders',
-        })
-    return rows
-
-
-def parse_buyersales_page(soup: BeautifulSoup) -> List[Dict]:
-    """ /my/buyersales/ 한 페이지 → 거래 list.
-
-    "発送日(td[6])이 진짜 날짜인 행"만 카운트.
-    - 진짜 취소 / 발송 전 거래는 발송일 칸에 "取引キャンセル" 또는 "-" 가 들어와서 자동 제외.
-    - 발송 전 진행중 주문은 orders 페이지에 있으므로 그쪽에서 잡힘 (取引ID로 dedup).
-    """
-    rows = []
-    for tr in soup.find_all('tr'):
-        if not tr.find('img', src=re.compile(r'^https://cdn-images\.buyma\.com/')):
-            continue
-        tds = tr.find_all(['th', 'td'])
-        if len(tds) < 7:
-            continue
-        shipped_text = tds[6].get_text(strip=True)
-        if not _RE_DATE.match(shipped_text):
-            continue
-        body_text = tr.get_text(separator=' ', strip=True)
-        m_tid = _RE_TRADE_BUYERSALES.search(body_text)
-        trade_id = m_tid.group(1) if m_tid else None
-        pid    = _extract_buyma_product_id(tr)
-        amount = _extract_amount_jpy(tr)
-        if not (trade_id and pid and amount is not None):
-            continue
-        rows.append({
-            'trade_id':         trade_id,
-            'buyma_product_id': pid,
-            'amount_jpy':       amount,
-            'source':           'buyersales',
-        })
-    return rows
-
-
-# =====================================================
-# 크롤링 루프
-# =====================================================
-
-def crawl(session: req_lib.Session,
-          label: str,
-          url_template: str,
-          parse_fn,
-          max_pages: Optional[int]) -> List[Dict]:
-    all_rows: List[Dict] = []
-    consecutive_empty = 0
+    url = f"{API_BASE_URL}api/v1/orders.json"
+    orders: List[Dict] = []
     page = 1
-
     while True:
-        if max_pages and page > max_pages:
-            log(f"[{label}] max-pages={max_pages} 도달. 중단")
+        params = {"status": "any", "per_page": PER_PAGE, "page": page}
+        batch, link = _fetch_page(url, params)
+        if isinstance(batch, dict):
+            batch = batch.get("orders") or batch.get("data") or []
+        if not batch:
             break
-
-        url = url_template.format(page=page)
-        log(f"[{label}] 페이지 {page} 요청...")
-
-        resp = _fetch_page(session, url, page)
-        if resp is _END_SENTINEL:
-            log(f"[{label}]   → 404 (페이지 {page-1}이 마지막). 종료")
+        orders.extend(batch)
+        log(f"  · page {page}: {len(batch)}건 (누적 {len(orders)})")
+        if 'rel="next"' not in link:
             break
-        if resp is None:
-            consecutive_empty += 1
-            if consecutive_empty >= 3:
-                log(f"[{label}] 연속 3페이지 실패. 종료.", "ERROR")
-                break
-            page += 1
-            time.sleep(CRAWL_DELAY)
-            continue
-
-        if '/login' in resp.url:
-            log("=" * 60, "ERROR")
-            log("세션 만료 — 쿠키 무효. 배치 중단.", "ERROR")
-            log("갱신: buyma_cleaners/buyma_orphan_cleaner.py --login 후 쿠키 복사", "ERROR")
-            log("=" * 60, "ERROR")
-            sys.exit(3)
-
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        page_rows = parse_fn(soup)
-
-        if not page_rows:
-            log(f"[{label}]   → 행 없음. 종료 (페이지 {page})")
-            break
-
-        all_rows.extend(page_rows)
-        log(f"[{label}]   → {len(page_rows)}건 (누적 {len(all_rows)})")
-
-        consecutive_empty = 0
         page += 1
-        time.sleep(CRAWL_DELAY)
+        time.sleep(PAGE_DELAY)
+    return orders
 
-    return all_rows
+
+def _parse_ordered_at(o: Dict) -> Optional[str]:
+    """ISO('2026-06-18T10:46:57.000+09:00') → 'YYYY-MM-DD HH:MM:SS' (KST)."""
+    raw = o.get("ordered_at") or o.get("pre_ordered_at")
+    if not raw or len(raw) < 19:
+        return None
+    return raw[:19].replace("T", " ")
 
 
 # =====================================================
-# 집계 & UPSERT
+# DB: 주문 저장(누적) & 집계
 # =====================================================
 
-def aggregate_by_product(rows: List[Dict]) -> Dict[str, Tuple[int, int]]:
-    """ buyma_product_id → (sold_count, sales_amount_jpy)."""
-    seen_trade: set = set()
-    agg: Dict[str, List[int]] = defaultdict(lambda: [0, 0])
+DDL_ORDERS = """
+CREATE TABLE IF NOT EXISTS buyma_self_orders (
+    order_id          BIGINT       NOT NULL COMMENT '거래ID(주문ID)',
+    buyma_product_id  VARCHAR(32)  NOT NULL,
+    subtotal_price    BIGINT       DEFAULT NULL COMMENT '소계(엔, 수량반영)',
+    amount            INT          DEFAULT NULL COMMENT '수량',
+    status            VARCHAR(32)  DEFAULT NULL,
+    ordered_at        DATETIME     DEFAULT NULL,
+    updated_at        DATETIME     DEFAULT NULL COMMENT '마지막 수집 시각',
+    PRIMARY KEY (order_id),
+    KEY idx_product (buyma_product_id),
+    KEY idx_status  (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+"""
 
-    for r in rows:
-        tid = r['trade_id']
-        if tid in seen_trade:
+UPSERT_ORDER = """
+INSERT INTO buyma_self_orders
+    (order_id, buyma_product_id, subtotal_price, amount, status, ordered_at, updated_at)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+ON DUPLICATE KEY UPDATE
+    buyma_product_id = VALUES(buyma_product_id),
+    subtotal_price   = VALUES(subtotal_price),
+    amount           = VALUES(amount),
+    status           = VALUES(status),
+    ordered_at       = VALUES(ordered_at),
+    updated_at       = VALUES(updated_at)
+"""
+
+# 주문창 안의 "모든" 상품을 재계산하되, 취소는 0으로 빠지게 집계.
+#   → 전부 취소된 상품은 sold_count=0 으로 갱신되어 자동 보정됨(박제 방지).
+#   → 4개월 창에서 완전히 사라진 옛 상품(이 표에 없음)은 건드리지 않아 보존됨.
+_CANCEL_PH = ','.join(['%s'] * len(CANCEL_STATUSES))
+AGG_SQL = f"""
+SELECT buyma_product_id,
+       SUM(CASE WHEN status NOT IN ({_CANCEL_PH}) THEN 1 ELSE 0 END) AS sold_count,
+       COALESCE(SUM(CASE WHEN status NOT IN ({_CANCEL_PH})
+                         THEN subtotal_price ELSE 0 END), 0)         AS sales_amount_jpy
+FROM buyma_self_orders
+GROUP BY buyma_product_id
+"""
+
+UPSERT_STATS = """
+INSERT INTO buyma_product_stats
+    (buyma_product_id, sold_count, sales_amount_jpy, stats_collected_at)
+VALUES (%s, %s, %s, %s)
+ON DUPLICATE KEY UPDATE
+    sold_count        = VALUES(sold_count),
+    sales_amount_jpy  = VALUES(sales_amount_jpy),
+    stats_collected_at = VALUES(stats_collected_at)
+"""
+
+
+def store_and_aggregate(orders: List[Dict]) -> None:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 주문 → UPSERT 파라미터
+    order_params = []
+    skipped = 0
+    for o in orders:
+        oid = o.get("id")
+        prod = o.get("product") or {}
+        pid = prod.get("id")
+        if oid is None or pid is None:
+            skipped += 1
             continue
-        seen_trade.add(tid)
-        pid    = r['buyma_product_id']
-        amount = r['amount_jpy']
-        agg[pid][0] += 1
-        agg[pid][1] += amount
-
-    return {pid: (cnt, amt) for pid, (cnt, amt) in agg.items()}
-
-
-def upsert_sales(per_product: Dict[str, Tuple[int, int]]) -> None:
-    if not per_product:
-        log("UPSERT 대상 없음")
-        return
+        order_params.append((
+            oid,
+            str(pid),
+            int(o.get("subtotal_price") or 0),
+            int(o.get("amount") or 0),
+            o.get("status"),
+            _parse_ordered_at(o),
+            now,
+        ))
+    if skipped:
+        log(f"상품ID/주문ID 없는 주문 {skipped}건 제외")
 
     log(f"DB 접속 → {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
     conn = pymysql.connect(**DB_CONFIG)
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    sql = """
-        INSERT INTO buyma_product_stats
-            (buyma_product_id, sold_count, sales_amount_jpy, stats_collected_at)
-        VALUES (%s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-            sold_count        = VALUES(sold_count),
-            sales_amount_jpy  = VALUES(sales_amount_jpy),
-            stats_collected_at = VALUES(stats_collected_at)
-    """
-    params = [(pid, cnt, amt, now) for pid, (cnt, amt) in per_product.items()]
-
     try:
         with conn.cursor() as c:
-            c.executemany(sql, params)
+            c.execute(DDL_ORDERS)
+
+            # 1) 주문 누적 저장 (상태 갱신 포함)
+            if order_params:
+                c.executemany(UPSERT_ORDER, order_params)
+            log(f"buyma_self_orders UPSERT: {len(order_params)}건")
+
+            # 2) 주문창 내 모든 상품 재계산 (취소는 0으로 빠짐 → 박제 자동 보정)
+            c.execute(AGG_SQL, CANCEL_STATUSES + CANCEL_STATUSES)
+            rows = c.fetchall()  # (pid, cnt, amt)
+
+            # 3) buyma_product_stats UPSERT
+            stats_params = [(r[0], int(r[1]), int(r[2]), now) for r in rows]
+            if stats_params:
+                c.executemany(UPSERT_STATS, stats_params)
+
         conn.commit()
-        log(f"UPSERT 완료: {len(params)}건 (stats_collected_at={now})")
+
+        total_cnt = sum(p[1] for p in stats_params)
+        total_amt = sum(p[2] for p in stats_params)
+        log(f"buyma_product_stats UPSERT: {len(stats_params)}개 상품")
+        log(f"총 판매수: {total_cnt} / 총 판매금액: ¥{total_amt:,} (취소 제외 누적)")
     except Exception:
         conn.rollback()
         raise
@@ -349,30 +262,37 @@ def upsert_sales(per_product: Dict[str, Tuple[int, int]]) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='바이마 자사 판매 실적 수집 → buyma_product_stats UPSERT'
+        description='바이마 자사 판매 실적 수집(API) → buyma_self_orders 누적 → buyma_product_stats UPSERT'
     )
-    parser.add_argument('--max-pages', type=int, default=None,
-                        help='테스트용: 각 페이지 N장씩만 (기본: 전체)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='DB 변경 없이 수집/집계 결과만 출력')
     args = parser.parse_args()
 
     log("=" * 60)
-    log("바이마 자사 판매 실적 수집 시작")
+    log(f"바이마 자사 판매 실적 수집 시작 (API / {'본환경' if BUYMA_MODE == 1 else '샌드박스'})")
     log("=" * 60)
 
-    session = create_session()
+    orders = fetch_all_orders()
+    log(f"API 주문 수집: {len(orders)}건")
 
-    orders_rows     = crawl(session, 'orders',     ORDERS_URL_TEMPLATE,     parse_orders_page,     args.max_pages)
-    buyersales_rows = crawl(session, 'buyersales', BUYERSALES_URL_TEMPLATE, parse_buyersales_page, args.max_pages)
+    if args.dry_run:
+        from collections import defaultdict
+        agg = defaultdict(lambda: [0, 0])
+        seen = set()
+        for o in orders:
+            oid = o.get("id"); prod = o.get("product") or {}; pid = prod.get("id")
+            if oid in seen or pid is None:
+                continue
+            seen.add(oid)
+            if o.get("status") in CANCEL_STATUSES:
+                continue
+            agg[str(pid)][0] += 1
+            agg[str(pid)][1] += int(o.get("subtotal_price") or 0)
+        tc = sum(v[0] for v in agg.values()); ta = sum(v[1] for v in agg.values())
+        log(f"[DRY-RUN] 상품 {len(agg)}개 / 총 판매수 {tc} / 총 판매금액 ¥{ta:,} (DB 변경 안 함)")
+        return
 
-    log(f"orders     수집: {len(orders_rows)}건")
-    log(f"buyersales 수집: {len(buyersales_rows)}건 (취소 제외)")
-
-    per_product = aggregate_by_product(orders_rows + buyersales_rows)
-    total_cnt = sum(c for c, _ in per_product.values())
-    total_amt = sum(a for _, a in per_product.values())
-    log(f"상품 수: {len(per_product)} / 총 판매수: {total_cnt} / 총 판매금액: ¥{total_amt:,}")
-
-    upsert_sales(per_product)
+    store_and_aggregate(orders)
 
     log("=" * 60)
     log("완료")
