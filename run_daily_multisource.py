@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 멀티소스 일일 자동화
-대상: kasina, nextzennpack, labellusso, 9tems, brickmansion, loromoda, milaneez, maisonparco (총 8개)
+대상: kasina, nextzennpack, labellusso, 9tems, brickmansion, loromoda, milaneez, maisonparco, musinsa (총 9개)
 
 Phase 1: Collector 병렬 (--skip-existing) + 카테고리 단계(CATEGORY_FILL 해당 몰만)
 Phase 2: Converter 순차(--source-site) → Dedup
@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SOURCES = ['kasina', 'nextzennpack', 'labellusso',
-           '9tems', 'brickmansion', 'loromoda', 'milaneez', 'maisonparco']
+           '9tems', 'brickmansion', 'loromoda', 'milaneez', 'maisonparco', 'musinsa']
 
 # 각 사이트별 스크립트 경로
 COLLECTOR_SCRIPTS = {
@@ -47,6 +47,7 @@ COLLECTOR_SCRIPTS = {
     'loromoda': 'loromoda/loromoda_collector.py',
     'milaneez': 'milaneez/milaneez_collector.py',
     'maisonparco': 'maisonparco/maisonparco_collector.py',
+    'musinsa': 'musinsa_boutique/musinsa_collector.py',
 }
 
 STOCK_SCRIPTS = {
@@ -58,6 +59,7 @@ STOCK_SCRIPTS = {
     'loromoda': 'loromoda/stock_price_synchronizer_loromoda.py',
     'milaneez': 'milaneez/stock_price_synchronizer_milaneez.py',
     'maisonparco': 'maisonparco/stock_price_synchronizer_maisonparco.py',
+    'musinsa': 'musinsa_boutique/stock_price_synchronizer_musinsa.py',
 }
 
 # 수집 후 카테고리(category_path) 채우는 별도 단계가 필요한 몰만 지정.
