@@ -104,7 +104,7 @@ def upsert_brands(brands):
                 conn.execute(text("""
                     UPDATE mall_brands
                     SET mall_brand_name_en=:en, raw_brand_name=:en,
-                        mall_brand_url=:url, is_active=1, updated_at=NOW()
+                        mall_brand_url=:url, updated_at=NOW()
                     WHERE mall_name=:s AND mall_brand_no=:no
                 """), {'en': b['en'], 'url': url_path, 's': SOURCE_SITE, 'no': b['cate_no']})
                 updated += 1
@@ -113,7 +113,7 @@ def upsert_brands(brands):
                     INSERT INTO mall_brands
                     (mall_name, mall_brand_name_en, raw_brand_name, mall_brand_no,
                      mall_brand_url, is_active, is_mapped, created_at, updated_at)
-                    VALUES (:s, :en, :en, :no, :url, 1, 0, NOW(), NOW())
+                    VALUES (:s, :en, :en, :no, :url, NULL, 0, NOW(), NOW())
                 """), {'s': SOURCE_SITE, 'en': b['en'], 'no': b['cate_no'], 'url': url_path})
                 inserted += 1
     return inserted, updated

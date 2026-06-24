@@ -281,7 +281,7 @@ def ensure_brand(conn, detail: Dict, seen: set) -> None:
           (mall_name, mall_brand_name_en, raw_brand_name, mall_brand_no, mall_brand_url,
            buyma_brand_id, buyma_brand_name, mapping_level, is_mapped, is_active)
         VALUES
-          (:m, :en, :raw, NULL, :url, NULL, NULL, 0, 0, 1)
+          (:m, :en, :raw, NULL, :url, NULL, NULL, 0, 0, NULL)
     """), {
         'm': SOURCE_SITE, 'en': name_en, 'raw': name_en,
         'url': f'https://www.musinsa.com/brand/{code}' if code else None,
@@ -300,12 +300,11 @@ def ensure_category(conn, full_path: str, category_id: str, depths: List[str], s
            full_path, mall_category_url, is_active, created_at)
         VALUES
           (:m, :cid, 'unisex', :d1, :d2, :d3, :d4,
-           :fp, :url, 1, NOW())
+           :fp, :url, NULL, NOW())
         ON DUPLICATE KEY UPDATE
           category_id = VALUES(category_id),
           depth1 = VALUES(depth1), depth2 = VALUES(depth2),
-          depth3 = VALUES(depth3), depth4 = VALUES(depth4),
-          is_active = 1
+          depth3 = VALUES(depth3), depth4 = VALUES(depth4)
     """), {
         'm': SOURCE_SITE, 'cid': category_id,
         'd1': d[0], 'd2': d[1], 'd3': d[2], 'd4': d[3],

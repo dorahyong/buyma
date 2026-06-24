@@ -460,7 +460,7 @@ def insert_mall_category(leaf: Dict):
             INSERT INTO mall_categories
             (mall_name, category_id, gender, depth1, depth2, full_path,
              mall_category_url, is_active, created_at)
-            VALUES (:m, :cid, :g, :d1, :d2, :fp, :url, 1, NOW())
+            VALUES (:m, :cid, :g, :d1, :d2, :fp, :url, NULL, NOW())
         """), {
             'm': SOURCE_SITE, 'cid': leaf['cate_no'], 'g': leaf['gender'],
             'd1': leaf['depth1'], 'd2': leaf['depth2'] or None,
