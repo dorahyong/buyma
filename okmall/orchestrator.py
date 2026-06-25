@@ -140,6 +140,7 @@ class Orchestrator:
     def get_or_create_batch(self) -> str:
         """실행 중인 배치를 가져오거나 새로 생성 (날짜 기반 초기화)"""
         with self.db_lock:
+            self.conn.ping(reconnect=True)  # 긴 작업(수집 등) 중 유휴 타임아웃으로 끊긴 DB연결 자동 복구
             with self.conn.cursor() as cursor:
                 today = date.today().strftime("%Y%m%d")
                 
@@ -186,6 +187,7 @@ class Orchestrator:
     
     def get_target_brands(self) -> List[Dict]:
         """처리 대상 브랜드 목록 조회"""
+        self.conn.ping(reconnect=True)  # 끊긴 DB연결 자동 복구
         with self.conn.cursor() as cursor:
             sql = """SELECT mall_name, mall_brand_name_en, buyma_brand_name 
                      FROM mall_brands 
@@ -304,6 +306,7 @@ class Orchestrator:
     def get_stage_status(self, mall: str, brand: str, stage: str) -> str:
         """단계 상태 조회"""
         with self.db_lock:
+            self.conn.ping(reconnect=True)  # 긴 작업(수집 등) 중 유휴 타임아웃으로 끊긴 DB연결 자동 복구
             with self.conn.cursor() as cursor:
                 cursor.execute(
                     """SELECT status FROM pipeline_control
@@ -320,6 +323,7 @@ class Orchestrator:
                            status: str, error_msg: Optional[str] = None):
         """단계 상태 업데이트"""
         with self.db_lock:
+            self.conn.ping(reconnect=True)  # 긴 작업(수집 등) 중 유휴 타임아웃으로 끊긴 DB연결 자동 복구
             with self.conn.cursor() as cursor:
                 sql = """
                     INSERT INTO pipeline_control 
@@ -467,6 +471,7 @@ class Orchestrator:
     def finish_batch(self):
         """배치 정상 완료 처리"""
         with self.db_lock:
+            self.conn.ping(reconnect=True)  # 긴 작업(수집 등) 중 유휴 타임아웃으로 끊긴 DB연결 자동 복구
             with self.conn.cursor() as cursor:
                 # 성공 브랜드 수 계산 (마지막 단계 기준)
                 cursor.execute(
@@ -502,10 +507,11 @@ class Orchestrator:
         
         try:
             with self.db_lock:
+                self.conn.ping(reconnect=True)  # 끊긴 DB연결 자동 복구
                 with self.conn.cursor() as cursor:
                     cursor.execute(
-                        """UPDATE pipeline_batches 
-                           SET status = 'FAILED', 
+                        """UPDATE pipeline_batches
+                           SET status = 'FAILED',
                                end_time = NOW() 
                            WHERE batch_id = %s""",
                         (self.batch_id,)

@@ -1108,6 +1108,8 @@ class RawToAceConverter:
                     source_sales_price = :source_sales_price,
                     colorsize_comments = :colorsize_comments,
                     colorsize_comments_jp = :colorsize_comments_jp,
+                    -- 재수집됨(=수집처에 다시 존재) → deleted였으면 해제하여 재등록 가능하게
+                    status = CASE WHEN status = 'deleted' THEN NULL ELSE status END,
                     updated_at = NOW()
                 WHERE id = :ace_product_id
             """), {

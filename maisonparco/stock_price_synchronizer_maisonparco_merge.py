@@ -1,31 +1,33 @@
 # -*- coding: utf-8 -*-
 """
-재고 및 가격 동기화 스크립트 (네이버 21개 mall 공용)
+재고 및 가격 동기화 스크립트 (메종파르코 버전)
 
-대상 mall (smartstore 19 + brandstore 2 = 21, 실제 목록은 아래 NAVER_MALLS):
-  - smartstore: premiumsneakers, fabstyle, loutique, t1global, vvano, veroshopmall,
-                dmont, tuttobene, thefactor2,
-                maniaon, bblue, euroline, unico, kometa,
-                larlashoes, thegrande, upset, luxlimit, pano
-  - brandstore: carpi, joharistore
+바이마에 등록된 상품의 재고와 가격을 메종파르코(maisonparco.com)에서 재수집하여
+ace 테이블을 업데이트하고 바이마 API로 상품을 수정합니다.
 
-수집 방식: Playwright 단일 브라우저 + XHR 캡처
-  - products API (상품 JSON): salePrice, optionCombinations, saleStatus
-  - product-benefits API (쿠폰 적용가): optimalDiscount.totalDiscountResult.summary.totalPayAmount
-  - URL prefix: smartstore는 /i/v2/, brandstore는 /n/v2/
+처리 흐름:
+1. ace_products에서 바이마 등록 상품 조회 (is_published=1, buyma_product_id 있음)
+2. 메종파르코 상세 페이지 재방문 → 현재 가격/재고 수집
+3. ace_products 가격 UPDATE
+4. ace_product_variants 재고 UPDATE
+5. 바이마 최저가 수집
+6. 마진 계산 (buyma_product_register.py와 동일)
+7. 변경 여부 판단 후 바이마 API 호출
 
-실행 전제:
-  - naver_cookies.json 존재 (없으면 premiumsneakers_collector.py --login 으로 갱신)
-  - MAX_WORKERS=1 (Playwright 세션 1개 공유, 직렬 처리)
+API 호출 기준:
+- 재고 변동 (품절/재입고)
+- 가격 변동 (price, reference_price)
+- 마진 <= 0 (손해) → 삭제 요청
+- 전체 품절 → 삭제 요청
 
 사용법:
-    python stock_price_synchronizer_naver.py                         # 11개 mall 전부
-    python stock_price_synchronizer_naver.py --source premiumsneakers
-    python stock_price_synchronizer_naver.py --source carpi --dry-run
-    python stock_price_synchronizer_naver.py --brand NIKE
-    python stock_price_synchronizer_naver.py --id 121147
+    python stock_price_synchronizer_maisonparco.py                    # 전체 실행
+    python stock_price_synchronizer_maisonparco.py --brand BURBERRY   # 특정 브랜드만
+    python stock_price_synchronizer_maisonparco.py --limit 100        # 최대 100개만
+    python stock_price_synchronizer_maisonparco.py --dry-run          # 테스트 (API 호출 안함)
+    python stock_price_synchronizer_maisonparco.py --force            # 변경 없어도 강제 API 호출
 
-기반: kasina/stock_price_synchronizer_kasina.py (가격/마진/BUYMA API 로직 동일)
+작성일: 2026-03-30
 """
 
 import os
@@ -48,12 +50,14 @@ import requests
 from bs4 import BeautifulSoup
 import pymysql
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
 
-# 표준 출력 인코딩 설정 (윈도우 환경 대응)
-if sys.platform == 'win32':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
+# [MERGE] reconcile 엔진(okmall/)을 여기서 import.
+#   buyma_new_product_register 가 win32 stdout/stderr utf-8 wrap 까지 처리하므로,
+#   여기서 또 감싸면 안 됨 — 이중 wrap → 버퍼 닫힘(I/O operation on closed file) 버그.
+#   stdout wrap 은 bnpr 한 곳만, import 도 모듈 로드 시 한 번만.
+#   reconcile 모듈들은 okmall/ 에 있으므로 sys.path 에 추가 후 import.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'okmall'))
+import reconcile_runner  # noqa: E402  (stdout utf-8 wrap 부수효과 포함)
 
 # .env 파일 로드
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'), override=True)
@@ -117,27 +121,89 @@ BUYMA_FIXED_VALUES = {
 }
 
 # =====================================================
-# 네이버 설정
+# 메종파르코 설정
 # =====================================================
+BASE_URL = 'https://www.maisonparco.com'
 
-# 11개 mall 분류
-NAVER_MALLS = [
-    'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
-    'dmont', 'tuttobene', 'thefactor2',
-    'carpi', 'joharistore',
-    'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
-    'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano',
+BROWSER_PROFILES = [
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    },
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    },
+    {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'Cache-Control': 'max-age=0',
+    },
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.8,en-US;q=0.5,en;q=0.3',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Cache-Control': 'max-age=0',
+    },
+    {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Microsoft Edge";v="120"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'Cache-Control': 'max-age=0',
+    },
 ]
-SMARTSTORE_MALLS = {
-    'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
-    'dmont', 'tuttobene', 'thefactor2',
-    'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
-    'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano',
-}
-BRANDSTORE_MALLS = {'carpi', 'joharistore'}
-
-# 쿠키 파일 (naver/ 디렉토리)
-COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'naver_cookies.json')
 
 BUYMA_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
@@ -149,14 +215,14 @@ BUYMA_HEADERS = {
 BUYMA_SEARCH_URL = "https://www.buyma.com/r/-O3/{model_no}/"
 
 # 딜레이 설정
-REQUEST_DELAY_MIN = 0.2  # 네이버 상세 페이지 방문 간 최소 딜레이
-REQUEST_DELAY_MAX = 0.6  # 네이버 상세 페이지 방문 간 최대 딜레이
-API_CALL_DELAY = 0.2     # 바이마 API 호출 후 딜레이
-DETAIL_PAGE_TIMEOUT = 30000
-DETAIL_MAX_RETRIES = 2
+REQUEST_DELAY_MIN = 1.0   # 메종파르코 요청 간 최소 딜레이
+REQUEST_DELAY_MAX = 2.0   # 메종파르코 요청 간 최대 딜레이
+API_CALL_DELAY = 0.2      # 바이마 API 호출 후 딜레이
+SESSION_REFRESH_INTERVAL = 30
+MAX_CONSECUTIVE_TIMEOUTS = 5
 
-# 병렬 처리 설정 (Playwright 단일 세션 공유 → 직렬)
-MAX_WORKERS = 1
+# 병렬 처리 설정
+MAX_WORKERS = 2  # 동시 처리 스레드 수
 
 # 마진 계산 상수 (buyma_product_register.py와 동일)
 EXCHANGE_RATE = 9.2
@@ -396,119 +462,6 @@ def calculate_margin(price_jpy: int, purchase_price_krw: float,
 
 
 # =====================================================
-# 네이버 상품 상세 fetch (Playwright XHR 가로채기)
-# =====================================================
-
-def _mall_type(source_site: str) -> str:
-    """mall_name → 'smartstore' 또는 'brandstore'"""
-    if source_site in BRANDSTORE_MALLS:
-        return 'brandstore'
-    return 'smartstore'
-
-
-def _extract_product_no(product_url: str) -> Optional[str]:
-    """네이버 상품 URL에서 product_no 추출
-    예: https://smartstore.naver.com/<store>/products/12345 → '12345'
-        https://brand.naver.com/<store>/products/12345 → '12345'
-    """
-    m = re.search(r'/products/(\d+)', product_url)
-    return m.group(1) if m else None
-
-
-def fetch_naver_detail(page, product_url: str, source_site: str) -> Tuple[Optional[Dict], Optional[Dict], Optional[str]]:
-    """상품 상세 페이지 방문 → 두 XHR(products + product-benefits) 가로채기
-
-    Returns:
-        (product_json, benefits_json, error)
-          - error == "NOT_FOUND": 404 (상품 삭제)
-          - error == "CAPTCHA": 캡챠 감지
-          - error == "TIMEOUT" / "LOAD_FAIL" 등: 일시적 오류
-    """
-    product_no = _extract_product_no(product_url)
-    if not product_no:
-        return None, None, f"URL에서 product_no 추출 실패: {product_url}"
-
-    mall_type = _mall_type(source_site)
-    prefix = '/n/v2' if mall_type == 'brandstore' else '/i/v2'
-
-    product_re = re.compile(rf'{prefix}/channels/[^/]+/products/{product_no}(\?|$)')
-    benefits_re = re.compile(rf'{prefix}/channels/[^/]+/product-benefits/{product_no}(\?|$)')
-
-    captured = []
-
-    def on_response(response):
-        url = response.url
-        if product_re.search(url) or benefits_re.search(url):
-            captured.append(response)
-
-    page.on('response', on_response)
-    try:
-        try:
-            store_home = '/'.join(product_url.split('/')[:4])
-            page.goto(product_url, referer=store_home, timeout=DETAIL_PAGE_TIMEOUT)
-            page.wait_for_load_state('domcontentloaded', timeout=10000)
-            try:
-                page.wait_for_load_state('networkidle', timeout=8000)
-            except Exception:
-                pass
-        except Exception as e:
-            return None, None, f"LOAD_FAIL: {e}"
-
-        # 캡챠 체크
-        try:
-            page_title = page.title()
-        except Exception:
-            page_title = ''
-        if '보안' in page_title or 'captcha' in page_title.lower():
-            return None, None, "CAPTCHA"
-
-        product = None
-        benefits = None
-        product_status = None
-        for resp in captured:
-            url = resp.url
-            if benefits_re.search(url):
-                if resp.status == 200:
-                    try:
-                        benefits = resp.json()
-                    except Exception as e:
-                        log(f"  [DIAG] benefits json fail: {type(e).__name__}: {e}", "WARNING")
-            elif product_re.search(url):
-                product_status = resp.status
-                if resp.status == 200:
-                    try:
-                        product = resp.json()
-                    except Exception as e:
-                        log(f"  [DIAG] product json fail: {type(e).__name__}: {e}", "WARNING")
-                        try:
-                            body_preview = (resp.text() or '')[:200]
-                            log(f"  [DIAG] product body[:200]: {body_preview!r}", "WARNING")
-                        except Exception as e2:
-                            log(f"  [DIAG] product text() fail: {type(e2).__name__}: {e2}", "WARNING")
-
-        if product is None:
-            if product_status == 404:
-                return None, None, "NOT_FOUND"
-            try:
-                cur_url = page.url
-            except Exception:
-                cur_url = '?'
-            captured_urls = [r.url for r in captured]
-            log(
-                f"  [DIAG] XHR_MISS pno={product_no} title={page_title!r} "
-                f"cur_url={cur_url} captured={len(captured)} product_status={product_status}",
-                "WARNING"
-            )
-            for u in captured_urls[:5]:
-                log(f"    captured_url: {u}", "WARNING")
-            return None, None, "XHR_MISS"
-
-        return product, benefits, None
-    finally:
-        page.remove_listener('response', on_response)
-
-
-# =====================================================
 # 재고/가격 동기화 클래스
 # =====================================================
 
@@ -518,77 +471,105 @@ class StockPriceSynchronizer:
         self.buyma_session = requests.Session()
         self.buyma_session.headers.update(BUYMA_HEADERS)
 
-        # 403 차단 플래그 (스레드 간 공유 — Playwright 공용이지만 인터페이스 호환용)
+        # 403 차단 플래그 (스레드 간 공유)
         self.is_blocked = False
         self.block_lock = threading.Lock()
 
-        # Playwright: sync 모드로 브라우저 1개 기동, 쿠키 로드, 페이지 재사용
-        self._pw = None
-        self.browser = None
-        self.context = None
-        self.page = None
-
-    def start_playwright(self):
-        """Playwright 브라우저 기동 + 쿠키 로드 (run 직전 호출)"""
-        if self.page is not None:
-            return
-        self._pw = sync_playwright().start()
-        self.browser = self._pw.chromium.launch(headless=False)
-        self.context = self.browser.new_context(
-            viewport={'width': 1280, 'height': 900},
-            locale='ko-KR',
-            user_agent=(
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/146.0.0.0 Safari/537.36'
-            ),
-        )
-        if os.path.exists(COOKIE_FILE):
-            with open(COOKIE_FILE, 'r', encoding='utf-8') as f:
-                self.context.add_cookies(json.load(f))
-            log(f"쿠키 로드: {COOKIE_FILE}")
-        else:
-            log(f"쿠키 없음 ({COOKIE_FILE}) — premiumsneakers_collector.py --login 필요할 수 있음", "WARNING")
-        self.page = self.context.new_page()
-
-    def stop_playwright(self):
-        """Playwright 종료 (run 종료 후 호출)"""
-        try:
-            if self.browser is not None:
-                self.browser.close()
-        except Exception:
-            pass
-        try:
-            if self._pw is not None:
-                self._pw.stop()
-        except Exception:
-            pass
-        self._pw = None
-        self.browser = None
-        self.context = None
-        self.page = None
+        # ★★★ 메종파르코 세션 관리 ★★★
+        self.mall_session = None
+        self.mall_profile = None
+        self.mall_request_count = 0
+        self.consecutive_timeout_count = 0
+        self.session_lock = threading.Lock()
 
     def get_connection(self) -> pymysql.Connection:
         return pymysql.connect(**DB_CONFIG)
 
     # -------------------------------------------------
+    # ★★★ 메종파르코 세션 관리 ★★★
+    # -------------------------------------------------
+    def _create_new_session(self) -> Tuple[bool, Optional[str]]:
+        """
+        새 메종파르코 세션 생성 + 메인 페이지 방문
+
+        Returns:
+            Tuple[bool, Optional[str]]: (성공 여부, 에러 메시지)
+        """
+        try:
+            # 기존 세션 종료
+            if self.mall_session:
+                self.mall_session.close()
+
+            # 새 세션 생성
+            self.mall_session = requests.Session()
+
+            # 랜덤 브라우저 프로필 선택
+            self.mall_profile = random.choice(BROWSER_PROFILES).copy()
+
+            # 메인 페이지 방문 헤더 설정
+            main_headers = self.mall_profile.copy()
+            main_headers['Referer'] = 'https://www.google.com/'
+            main_headers['Sec-Fetch-Site'] = 'cross-site'
+
+            self.mall_session.headers.update(main_headers)
+
+            # 메인 페이지 방문 (쿠키 획득)
+            log(f"  [세션] 새 세션 시작 - 메인 페이지 방문 중...")
+            main_response = self.mall_session.get(f'{BASE_URL}/index.html', timeout=15)
+
+            if main_response.status_code != 200:
+                return False, f"메인 페이지 접속 실패: {main_response.status_code}"
+
+            # 세션 내 이동용 헤더로 변경
+            product_headers = self.mall_profile.copy()
+            product_headers['Referer'] = f'{BASE_URL}/'
+            product_headers['Sec-Fetch-Site'] = 'same-origin'
+            self.mall_session.headers.update(product_headers)
+
+            # 카운터 초기화
+            self.mall_request_count = 0
+
+            # 짧은 대기 (사람처럼)
+            time.sleep(random.uniform(0.5, 1.5))
+
+            log(f"  [세션] 새 세션 준비 완료 (쿠키 획득됨)")
+            return True, None
+
+        except requests.exceptions.Timeout:
+            return False, "메인 페이지 타임아웃"
+        except Exception as e:
+            return False, f"세션 생성 오류: {str(e)}"
+
+    def _fetch_product_page(self, product_url: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        현재 세션으로 상품 페이지 접속
+
+        Returns:
+            Tuple[Optional[str], Optional[str]]: (HTML 내용, 에러 메시지)
+        """
+        try:
+            response = self.mall_session.get(product_url, timeout=30)
+            response.raise_for_status()
+            return response.text, None
+
+        except requests.exceptions.Timeout:
+            return None, "요청 타임아웃"
+        except requests.exceptions.RequestException as e:
+            error_msg = str(e)
+            if '403' in error_msg:
+                return None, "접근 차단됨 (403)"
+            return None, f"요청 오류: {error_msg}"
+        except Exception as e:
+            return None, f"오류: {str(e)}"
+
+    # -------------------------------------------------
     # 1. 동기화 대상 상품 조회
     # -------------------------------------------------
-    def get_products_to_sync(self, limit: int = None, brand: str = None, product_id: int = None,
-                              source: str = None) -> List[Dict]:
+    def get_products_to_sync(self, limit: int = None, brand: str = None, product_id: int = None) -> List[Dict]:
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
-                # source_site 필터: --source로 단일 mall, 미지정시 11개 전체
-                if source:
-                    if source not in NAVER_MALLS:
-                        raise ValueError(f"지원하지 않는 source: {source} (지원: {NAVER_MALLS})")
-                    source_list = [source]
-                else:
-                    source_list = NAVER_MALLS
-                placeholders = ','.join(['%s'] * len(source_list))
-
-                sql = f"""
+                sql = """
                     SELECT
                         ap.id,
                         ap.buyma_product_id,
@@ -597,7 +578,6 @@ class StockPriceSynchronizer:
                         ap.brand_name,
                         ap.model_no,
                         ap.category_id,
-                        ap.source_site,
                         ap.source_product_url,
                         ap.original_price_krw,
                         ap.purchase_price_krw,
@@ -611,9 +591,9 @@ class StockPriceSynchronizer:
                       AND ap.buyma_product_id IS NOT NULL
                       AND ap.source_product_url IS NOT NULL
                       AND ap.is_active = 1
-                      AND ap.source_site IN ({placeholders})
+                      AND ap.source_site = 'maisonparco'
                 """
-                params = list(source_list)
+                params = []
 
                 if product_id:
                     sql += " AND ap.id = %s"
@@ -635,148 +615,133 @@ class StockPriceSynchronizer:
             conn.close()
 
     # -------------------------------------------------
-    # 2. 네이버에서 가격/재고 수집 (Playwright XHR 캡처)
+    # 2. 메종파르코에서 가격/재고 수집 (HTML 스크래핑)
     # -------------------------------------------------
-    def collect_from_naver(self, product_url: str, source_site: str) -> Tuple[Dict, Optional[str]]:
+    def collect_from_maisonparco(self, product_url: str) -> Tuple[Dict, Optional[str]]:
         """
-        네이버 스마트/브랜드스토어 상품 상세 XHR 캡처로 가격/재고 수집
+        메종파르코(maisonparco) 상세 페이지에서 가격/재고 수집 (maisonparco 수집기와 동일 방식)
 
-        - products XHR: salePrice, optionCombinations[].stockQuantity, saleStatus, statusType
-        - product-benefits XHR: optimalDiscount.totalDiscountResult.summary.totalPayAmount (쿠폰 적용가)
-
-        Returns:
-            (result, error): result = {'original_price', 'sale_price', 'options'[]}
+        - 가격: #span_product_price_text(판매가) / #span_product_price_custom strike(정가)
+        - 재고: option_stock_data JS 변수. 키(P0000 옵션코드)는 DB source_option_code 와 일치 확인됨(4/4).
+          재고판정 = is_selling=='T' and stock_number>0 (★ maisonparco 수집기와 동일하게 is_display 미체크).
+          option_stock_data 없는 단일 상품은 FREE 하나로 처리.
         """
-        # 재시도 루프 (XHR_MISS / LOAD_FAIL 대응)
-        product = None
-        benefits = None
-        last_err = None
-        for attempt in range(DETAIL_MAX_RETRIES + 1):
-            product, benefits, err = fetch_naver_detail(self.page, product_url, source_site)
-            if product is not None:
-                last_err = None
-                break
-            last_err = err
-            if err == "NOT_FOUND":
-                return {}, "상품 삭제됨 (404)"
-            if err == "CAPTCHA":
-                # 캡챠는 전체 세션 차단 — 바로 중단 (스레드 공유 차단 플래그 셋)
-                with self.block_lock:
-                    self.is_blocked = True
-                return {}, f"캡챠 감지: {err}"
-            if attempt < DETAIL_MAX_RETRIES:
-                time.sleep(5 * (attempt + 1))
+        with self.session_lock:
+            # 세션 교체 필요 여부 확인
+            if self.mall_session is None or self.mall_request_count >= SESSION_REFRESH_INTERVAL:
+                success, error = self._create_new_session()
+                if not success:
+                    return {}, error
 
-        if product is None:
-            return {}, f"일시적 오류 (스킵): {last_err}"
+            # 상품 페이지 접속
+            html, error = self._fetch_product_page(product_url)
+
+            # 요청 카운터 증가
+            self.mall_request_count += 1
+
+            # 타임아웃 연속 감지
+            if error and "타임아웃" in error:
+                self.consecutive_timeout_count += 1
+                log(f"  [타임아웃] 연속 {self.consecutive_timeout_count}회", "WARNING")
+
+                if self.consecutive_timeout_count >= MAX_CONSECUTIVE_TIMEOUTS:
+                    return {}, "타임아웃 차단 감지 (연속 5회)"
+            else:
+                self.consecutive_timeout_count = 0
+
+        if error:
+            return {}, error
+
+        if not html:
+            return {}, "빈 응답"
 
         try:
+            soup = BeautifulSoup(html, 'html.parser')
+
             result = {'original_price': 0, 'sale_price': 0, 'options': []}
 
-            # 가격
-            original_price = int(product.get('salePrice') or 0)
-            sale_price = original_price
+            # --- 가격 추출 (maisonparco: #span_product_price_text=판매가, #span_product_price_custom strike=정가) ---
+            sale_elem = soup.select_one('tr.product_price_css #span_product_price_text') or soup.select_one('#span_product_price_text')
+            sale_price = parse_price(sale_elem.get_text(' ', strip=True)) if sale_elem else None
 
-            # 쿠폰 적용가 (1순위: benefits.optimalDiscount)
-            if benefits:
+            custom_elem = soup.select_one('tr.product_custom_css #span_product_price_custom strike') or soup.select_one('#span_product_price_custom strike')
+            original_price = parse_price(custom_elem.get_text(strip=True)) if custom_elem else None
+
+            # 판매가 없으면 정가로, 정가 없으면 판매가로 보완
+            if not sale_price:
+                sale_price = original_price
+            if not original_price:
+                original_price = sale_price
+
+            result['original_price'] = original_price or 0
+            result['sale_price'] = sale_price or 0
+
+            if not sale_price or sale_price <= 0:
+                return {}, "가격 추출 실패"
+
+            # --- 전체 품절 여부 (is_soldout_icon='T' → 모든 옵션 품절) ---
+            som = re.search(r"var\s+is_soldout_icon\s*=\s*'([^']*)'", html)
+            product_soldout = bool(som and som.group(1) == 'T')
+
+            # 사이즈 정규화 함수
+            ONE_SIZE_VARIANTS = ('단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'ONESIZE', 'FREE')
+
+            def normalize_size(size_val: str) -> str:
+                s = size_val.strip()
+                return 'FREE' if s.upper() in [x.upper() for x in ONE_SIZE_VARIANTS] else s
+
+            # --- 옵션/재고: option_stock_data (maisonparco 수집기와 동일: is_selling + stock_number>0) ---
+            #   ★ maisonparco는 option_stock_data 키(P0000…)가 DB source_option_code 와 일치 확인됨(2/2) →
+            #     option_code 채워 1순위 코드 매칭. (혹시 stale이어도 detect_stock_changes 2순위 사이즈가 보완)
+            #   ★ is_display 는 체크하지 않음(maisonparco 수집기 정책과 동일).
+            stock_data = {}
+            stock_match = re.search(r"option_stock_data\s*=\s*'(.*?)'\s*;", html, re.DOTALL)
+            if stock_match:
                 try:
-                    pay = (((benefits.get('optimalDiscount') or {})
-                            .get('totalDiscountResult') or {})
-                            .get('summary') or {}).get('totalPayAmount')
-                    if pay and pay > 0:
-                        sale_price = int(pay)
-                except Exception:
-                    pass
+                    stock_data = json.loads(stock_match.group(1).replace('\\"', '"'))
+                except (json.JSONDecodeError, ValueError):
+                    stock_data = {}
 
-            # fallback: product.benefitsView.discountedSalePrice
-            if sale_price == original_price:
-                bv = product.get('benefitsView') or {}
-                d = bv.get('discountedSalePrice') or 0
-                if d and 0 < d < original_price:
-                    sale_price = int(d)
-
-            result['original_price'] = original_price
-            result['sale_price'] = sale_price
-
-            # 판매 상태 체크
-            # product.statusType: 'SALE'(판매중) 이외는 판매 종료 취급
-            status_type = (product.get('statusType') or product.get('saleStatus') or '').upper()
-            if status_type and status_type not in ('SALE', 'ONSALE', 'READY'):
-                return {}, "판매 종료 상품"
-
-            # 옵션별 재고 (optionCombinations)
-            # group_types: product.options[].groupName 으로 색상/사이즈 분별
-            opt_groups = product.get('options') or []
-            group_types = []
-            for g in opt_groups:
-                gname = (g.get('groupName') or '').strip()
-                gname_up = gname.upper()
-                if '색상' in gname or '컬러' in gname or 'COLOR' in gname_up:
-                    group_types.append('color')
-                elif '모델' in gname or 'MODEL' in gname_up or '품번' in gname or '스타일' in gname:
-                    group_types.append('skip')
-                else:
-                    group_types.append('size')
-
-            # '모델명'/'품번'/'스타일' 단독 그룹인데 옵션 값이 모두 사이즈 패턴이면 size로 재분류
-            # (판매자가 사이즈 그룹을 모델명 라벨로 잘못 등록한 케이스 구제 — 예: trendmecca)
-            if len(group_types) == 1 and group_types[0] == 'skip':
-                _FREE_SIZE_TOKENS = {'ONE SIZE', 'ONESIZE', '단일사이즈', '단일 사이즈', '단일', '원사이즈', '원 사이즈', 'UNI', 'FREE'}
-                _SIZE_RE = re.compile(r'^\(?(XS|S|M|L|XL|XXL|XXXL|2XL|3XL|4XL|5XL|\d+)\)?$', re.IGNORECASE)
-                def _looks_like_size(s: str) -> bool:
-                    s = (s or '').strip()
-                    if not s:
-                        return False
-                    if s.upper() in _FREE_SIZE_TOKENS:
-                        return True
-                    return bool(_SIZE_RE.match(s))
-                _peek = [(c.get('optionName1') or '').strip() for c in (product.get('optionCombinations') or [])]
-                if _peek and all(_looks_like_size(v) for v in _peek):
-                    group_types[0] = 'size'
-
-            def _normalize_size(s: str) -> str:
-                s = (s or '').strip()
-                if s.upper() in {'ONE SIZE', 'ONESIZE', '단일사이즈', '단일 사이즈', '단일',
-                                 '원사이즈', '원 사이즈', 'UNI', 'FREE'}:
-                    return 'FREE'
-                return s
-
-            combos = product.get('optionCombinations') or []
-            for i, c in enumerate(combos):
-                n1 = (c.get('optionName1') or '').strip()
-                n2 = (c.get('optionName2') or '').strip()
-                names = [n for n in [n1, n2] if n]
-
-                color_val = ''
-                size_val = ''
-                for idx, name in enumerate(names):
-                    gtype = group_types[idx] if idx < len(group_types) else 'size'
-                    if gtype == 'color':
-                        color_val = name
-                    elif gtype == 'skip':
-                        continue
-                    else:
-                        size_val = _normalize_size(name)
-
-                if not size_val and not color_val:
-                    size_val = 'FREE'
-                if not size_val:
-                    size_val = 'FREE'
-
-                stock = int(c.get('stockQuantity') or 0)
+            for opt_key, opt_info in stock_data.items():
+                if not isinstance(opt_info, dict):
+                    continue
+                opt_value = opt_info.get('option_value', '')
+                is_selling = opt_info.get('is_selling', 'F')
+                stock_number = int(opt_info.get('stock_number', 0) or 0)
+                in_stock = (is_selling == 'T' and stock_number > 0 and not product_soldout)
                 result['options'].append({
-                    'color': color_val or '',
-                    'size': size_val,
-                    'option_code': str(c.get('id', i)),
-                    'status': 'in_stock' if stock > 0 else 'out_of_stock',
+                    'color': '',
+                    'size': normalize_size(opt_value),
+                    'option_code': opt_key,
+                    'status': 'in_stock' if in_stock else 'out_of_stock'
                 })
+
+            # fallback: option_stock_data 없으면 select#product_option_id1 (코드 불안정 → 사이즈 매칭)
+            if not result['options']:
+                option_select = soup.select_one('select#product_option_id1')
+                if option_select:
+                    for opt in option_select.select('option'):
+                        val = opt.get('value', '')
+                        if not val or val in ('*', '**'):
+                            continue
+                        opt_text = opt.get_text(strip=True)
+                        if re.match(r'^[-=]{3,}$', opt_text):
+                            continue
+                        is_soldout = product_soldout or ('품절' in opt_text) or (opt.get('disabled') is not None)
+                        result['options'].append({
+                            'color': '',
+                            'size': normalize_size(re.sub(r'\s*\[품절\]\s*', '', opt_text).strip()),
+                            'option_code': '',
+                            'status': 'out_of_stock' if is_soldout else 'in_stock'
+                        })
 
             # 옵션 없는 단일 상품
             if not result['options']:
-                stock = int(product.get('stockQuantity') or 0)
                 result['options'].append({
-                    'color': '', 'size': 'FREE',
-                    'option_code': '', 'status': 'in_stock' if stock > 0 else 'out_of_stock'
+                    'color': '',
+                    'size': 'FREE',
+                    'option_code': '',
+                    'status': 'out_of_stock' if product_soldout else 'in_stock'
                 })
 
             return result, None
@@ -884,7 +849,7 @@ class StockPriceSynchronizer:
     def detect_stock_changes(self, db_variants: List[Dict], mall_options: List[Dict]) -> List[Dict]:
         changes = []
 
-        # 단일 옵션 상품 처리: DB 1개, 카시나 1개이면 이름 상관없이 직접 매칭
+        # 단일 옵션 상품 처리: DB 1개, 수집처 1개이면 이름 상관없이 직접 매칭
         if len(db_variants) == 1 and len(mall_options) == 1:
             variant = db_variants[0]
             mall_opt = mall_options[0]
@@ -941,7 +906,6 @@ class StockPriceSynchronizer:
                 mall_status = mall_by_kr[(db_color_kr, db_size_kr)]
 
             if mall_status is None:
-                # 매칭 실패 → skip (보수적). 진짜 단종은 별도 명시 도구로 처리.
                 continue
 
             mall_is_available = mall_status == 'in_stock'
@@ -1023,6 +987,64 @@ class StockPriceSynchronizer:
                     WHERE id = %s
                 """, (ace_product_id,))
                 conn.commit()
+        finally:
+            conn.close()
+
+    # ====================================================
+    # [MERGE] 재고0 표시 + reconcile push (BUYMA 직접 건드리지 않음)
+    # ====================================================
+    def _mark_all_out_of_stock(self, ace_product_id: int) -> None:
+        """maisonparco 품절/삭제/흠집 → 이 ace 의 옵션 전부 out_of_stock 표시.
+        BUYMA 직접 삭제 대신(다른 몰 있으면 winner 이동) → reconcile 이 판단."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    UPDATE ace_product_variants
+                    SET stock_type='out_of_stock', source_stock_status='out_of_stock'
+                    WHERE ace_product_id=%s
+                """, (ace_product_id,))
+                conn.commit()
+        finally:
+            conn.close()
+
+    def _reconcile_published(self, products: List[Dict]) -> None:
+        """이번 회차에 refresh 한 상품들의 그룹만 reconcile 이 BUYMA push (옵션합침+싼몰).
+        ★ 이번 synced 상품에 한정 (maisonparco published 전체 아님) → --limit/--id 테스트 안전.
+        그룹락으로 multi-PC 안전. push 결정(edit/retire)은 reconcile 이 담당."""
+        import reconcile_runner as rr
+        import reconcile_buyma_push as push
+        from dedup_corrector_merge import canonicalize
+        model_nos = [p['model_no'] for p in products if p.get('model_no')]
+        if not model_nos:
+            return
+        conn = push.get_connection()
+        try:
+            with conn.cursor() as cur:
+                fmt = ','.join(['%s'] * len(model_nos))
+                cur.execute(f"SELECT DISTINCT model_no, brand_id FROM ace_products WHERE model_no IN ({fmt})",
+                            model_nos)
+                rows = cur.fetchall()
+            seen, groups = set(), []
+            for r in rows:
+                key = (r['brand_id'], canonicalize(r['model_no']))
+                if key in seen:
+                    continue
+                seen.add(key)
+                groups.append((r['model_no'], r['brand_id']))
+            log(f"[MERGE] reconcile push 대상(이번 refresh 그룹): {len(groups)}건")
+            ok = err = skip = 0
+            for model_no, brand_id in groups:
+                res = rr.process_one_group(conn, model_no, brand_id, dry_run=False, scope='published')
+                resp = res.get('response') or {}
+                if res.get('skipped'):
+                    skip += 1
+                elif resp.get('success'):
+                    ok += 1
+                elif resp:
+                    err += 1
+                time.sleep(0.4)
+            log(f"[MERGE] reconcile 완료: 성공 {ok} / 실패 {err} / 스킵 {skip}")
         finally:
             conn.close()
 
@@ -1117,9 +1139,6 @@ class StockPriceSynchronizer:
             }
 
         # 전체 품절 → 삭제
-        # (2026-05-21) 과거 5,320건+ false delete 사고의 원인이었던 매칭 키 버그가 근본 해결되어 차단 해제.
-        # 매칭 키: source_option_code 우선 → color_value_original/size_value_original 한글 원본 fallback.
-        # 매칭 실패 시 skip(=DB 안 건드림)으로 false out_of_stock 신규 생성도 차단됨 (detect_stock_changes 참조).
         all_out_of_stock = all(v['stock_type'] == 'out_of_stock' for v in variants)
         if all_out_of_stock:
             return {
@@ -1419,45 +1438,29 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
         add_log(f"\n[{idx}/{total}] {product['brand_name']} - {product['name'][:30]} ...(상품번호: {product['model_no']})")
 
         try:
-            # 1. 네이버 XHR로 가격/재고 수집
-            mall_data, error = self.collect_from_naver(
-                product['source_product_url'], product['source_site']
-            )
+            # 1. 메종파르코에서 가격/재고 수집
+            mall_data, error = self.collect_from_maisonparco(product['source_product_url'])
             if error:
-                add_log(f"  [{product['source_site']}] 수집 실패: {error}", "WARNING")
+                add_log(f"  메종파르코 수집 실패: {error}", "WARNING")
 
-                # 일시적 API 오류 → 삭제하지 않고 스킵
+                # 일시적 오류 → 삭제하지 않고 스킵
                 if "일시적 오류" in error:
-                    add_log(f"  → API 일시적 오류, 이번 회차 스킵")
+                    add_log(f"  → 일시적 오류, 이번 회차 스킵")
                     with stats_lock:
                         stats['skipped'] += 1
                     log_batch(logs)
                     return
 
-                # 상품 삭제(404) 또는 판매 종료 → 바이마에서도 삭제
-                add_log(f"  → 수집처에서 상품 삭제/종료됨 → 바이마 삭제 요청")
-
-                # 바이마 삭제 API 호출
+                # [MERGE] 바이마 직접 삭제 안 함 — maisonparco 옵션만 재고0 표시.
+                #   maisonparco만 품절/삭제이어도 다른 몰 있으면 winner 이동, 없으면 reconcile 이 retire.
+                add_log(f"  → 수집처 삭제/종료 → maisonparco 재고0 표시 (BUYMA 반영은 reconcile)")
                 if not dry_run:
-                    api_data = self.get_product_data_for_api(product['id'])
-                    request_json = self.build_buyma_request(api_data, is_delete=True)
-
-                    add_log(f"  바이마 API 호출 중... (삭제)")
-                    result = self.call_buyma_api(request_json)
-                    self.update_product_after_api_call(product['id'], request_json, result)
-
-                    with stats_lock:
-                        if result.get('success'):
-                            add_log(f"  API 성공 (삭제)")
-                            stats['api_called'] += 1
-                            stats['deleted'] += 1
-                        else:
-                            add_log(f"  API 실패: {result.get('error', 'Unknown')}", "ERROR")
-                            stats['failed'] += 1
+                    self._mark_all_out_of_stock(product['id'])
+                    self.update_sync_time_only(product['id'])
                 else:
-                    add_log(f"  [DRY-RUN] 삭제 API 호출 예정")
-                    with stats_lock:
-                        stats['deleted'] += 1
+                    add_log(f"  [DRY-RUN] maisonparco 재고0 표시 예정")
+                with stats_lock:
+                    stats['skipped'] += 1
 
                 log_batch(logs)  # 로그 한 번에 출력
                 random_delay()
@@ -1580,56 +1583,30 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
                     random_delay()
                 return
 
-            # 7. DB 업데이트
-            if not is_delete:
-                # is_lowest_price: 경쟁자 없으면 1, 있으면 내 가격 <= 최저가일 때 1
-                if not new_lowest_price:
-                    calc_is_lowest = 1
-                else:
-                    calc_is_lowest = 1 if new_price_jpy <= new_lowest_price else 0
-                # purchase_price_jpy: 매입가(원) → 엔화 변환
-                calc_purchase_price_jpy = round(new_purchase_price_krw / EXCHANGE_RATE) if new_purchase_price_krw else None
-
-                self.update_ace_products_price(
-                    product['id'], new_original_price, int(new_purchase_price_krw),
-                    new_price_jpy, new_original_price_jpy, new_lowest_price,
-                    margin_info['margin_rate'],
-                    margin_amount_krw=margin_info['margin_krw'],
-                    is_lowest_price=calc_is_lowest,
-                    purchase_price_jpy=calc_purchase_price_jpy
-                )
-                if stock_changes:
-                    self.update_ace_variants_stock(stock_changes)
-
-            # 8. API 호출 여부 결정
-            if need_api_call:
-                api_data = self.get_product_data_for_api(product['id'])
-                request_json = self.build_buyma_request(api_data, is_delete=is_delete)
-
-                add_log(f"  바이마 API 호출 중... ({'삭제' if is_delete else '수정'})")
-                result = self.call_buyma_api(request_json)
-                self.update_product_after_api_call(product['id'], request_json, result)
-
-                with stats_lock:
-                    if result.get('success'):
-                        add_log(f"  API 성공")
-                        stats['api_called'] += 1
-                        if is_delete:
-                            stats['deleted'] += 1
-                    else:
-                        add_log(f"  API 실패: {result.get('error', 'Unknown')}", "ERROR")
-                        stats['failed'] += 1
-                    stats['success'] += 1
-
-                log_batch(logs)  # 로그 한 번에 출력
-                time.sleep(API_CALL_DELAY)
-                random_delay()
+            # 7. DB 업데이트 (refresh) — [MERGE] 항상 수행 (no-margin이어도 reconcile 이 판단하도록 최신화)
+            if not new_lowest_price:
+                calc_is_lowest = 1
             else:
-                self.update_sync_time_only(product['id'])
-                add_log(f"  변경 없음, API 호출 생략")
-                with stats_lock:
-                    stats['skipped'] += 1
-                log_batch(logs)  # 로그 한 번에 출력
+                calc_is_lowest = 1 if new_price_jpy <= new_lowest_price else 0
+            calc_purchase_price_jpy = round(new_purchase_price_krw / EXCHANGE_RATE) if new_purchase_price_krw else None
+
+            self.update_ace_products_price(
+                product['id'], new_original_price, int(new_purchase_price_krw),
+                new_price_jpy, new_original_price_jpy, new_lowest_price,
+                margin_info['margin_rate'],
+                margin_amount_krw=margin_info['margin_krw'],
+                is_lowest_price=calc_is_lowest,
+                purchase_price_jpy=calc_purchase_price_jpy
+            )
+            if stock_changes:
+                self.update_ace_variants_stock(stock_changes)
+
+            # 8. [MERGE] BUYMA push 생략 — refresh 만. push(수정/삭제/옵션합침/싼몰)는 run 끝 reconcile 담당.
+            self.update_sync_time_only(product['id'])
+            add_log(f"  refresh 완료 (BUYMA 반영은 reconcile)")
+            with stats_lock:
+                stats['success'] += 1
+            log_batch(logs)  # 로그 한 번에 출력
 
         except Exception as e:
             add_log(f"  처리 오류: {e}", "ERROR")
@@ -1638,23 +1615,19 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
             log_batch(logs)  # 로그 한 번에 출력
 
     # -------------------------------------------------
-    # 메인 실행 로직 (직렬 처리 — Playwright 단일 세션 공유)
+    # 메인 실행 로직 (병렬 처리)
     # -------------------------------------------------
-    def run(self, limit: int = None, brand: str = None, product_id: int = None,
-            dry_run: bool = False, force: bool = False, source: str = None) -> Dict:
+    def run(self, limit: int = None, brand: str = None, product_id: int = None, dry_run: bool = False, force: bool = False) -> Dict:
         log("=" * 60)
-        log("재고/가격 동기화 시작 (naver 11 malls)")
-        log(f"  옵션: source={source or 'ALL'}, id={product_id}, brand={brand}, "
-            f"limit={limit}, dry_run={dry_run}, force={force}")
-        log(f"  처리 방식: 직렬 (Playwright 단일 세션)")
+        log("재고/가격 동기화 시작 (maisonparco)")
+        log(f"  옵션: id={product_id}, brand={brand}, limit={limit}, dry_run={dry_run}, force={force}")
+        log(f"  병렬 처리: {MAX_WORKERS}개 스레드")
         log("=" * 60)
 
         if dry_run:
             log("*** DRY RUN 모드 - 실제 업데이트 안함 ***", "WARNING")
 
-        products = self.get_products_to_sync(
-            limit=limit, brand=brand, product_id=product_id, source=source
-        )
+        products = self.get_products_to_sync(limit=limit, brand=brand, product_id=product_id)
         log(f"동기화 대상 상품: {len(products)}개")
 
         if not products:
@@ -1673,30 +1646,26 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
         }
         stats_lock = threading.Lock()
 
-        # Playwright 브라우저 기동
-        self.start_playwright()
+        # 스레드 풀로 병렬 처리
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = []
 
-        try:
-            # 직렬 처리 (Playwright 단일 페이지 공유)
             for idx, product in enumerate(products):
-                # 캡챠 감지 등 세션 차단 시 즉시 중단
-                with self.block_lock:
-                    if self.is_blocked:
-                        log("차단 감지 — 동기화 중단", "WARNING")
-                        with stats_lock:
-                            stats['blocked'] = len(products) - idx
-                        break
+                future = executor.submit(
+                    self.process_single_product,
+                    product, idx + 1, len(products),
+                    dry_run, force, stats, stats_lock
+                )
+                futures.append(future)
+
+            # 모든 작업 완료 대기
+            for future in as_completed(futures):
                 try:
-                    self.process_single_product(
-                        product, idx + 1, len(products),
-                        dry_run, force, stats, stats_lock
-                    )
+                    future.result()
                 except Exception as e:
-                    log(f"상품 처리 오류 (id={product.get('id')}): {e}", "ERROR")
+                    log(f"스레드 오류: {e}", "ERROR")
                     with stats_lock:
                         stats['errors'] += 1
-        finally:
-            self.stop_playwright()
 
         # 결과
         log("\n" + "=" * 60)
@@ -1708,8 +1677,17 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
         log(f"  API 호출: {stats['api_called']}건")
         log(f"  삭제: {stats['deleted']}건")
         log(f"  오류: {stats['errors']}건")
-        log(f"  차단(중단): {stats['blocked']}건")
         log("=" * 60)
+
+        # [MERGE] refresh 끝 → reconcile 이 BUYMA push (옵션합침+싼몰+수정/삭제 판단)
+        #   이번 회차 synced 상품(products)의 그룹만 대상.
+        if not dry_run:
+            try:
+                self._reconcile_published(products)
+            except Exception as e:
+                log(f"[MERGE] reconcile push 오류: {e}", "ERROR")
+        else:
+            log("[MERGE] [DRY-RUN] reconcile push 단계 생략")
 
         return stats
 
@@ -1719,9 +1697,7 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
 # =====================================================
 
 def main():
-    parser = argparse.ArgumentParser(description='바이마 재고/가격 동기화 (네이버 11 malls)')
-    parser.add_argument('--source', type=str, default=None,
-                        help=f'특정 mall만 처리 (지원: {", ".join(NAVER_MALLS)}). 미지정시 11개 전체')
+    parser = argparse.ArgumentParser(description='바이마 재고/가격 동기화 (maisonparco)')
     parser.add_argument('--id', type=int, default=None, help='특정 상품 ID (ace_products.id)')
     parser.add_argument('--limit', type=int, default=None, help='최대 처리 건수')
     parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')
@@ -1729,10 +1705,6 @@ def main():
     parser.add_argument('--force', action='store_true', help='변경 없어도 강제 API 호출')
 
     args = parser.parse_args()
-
-    if args.source and args.source not in NAVER_MALLS:
-        log(f"지원하지 않는 --source: {args.source} (지원: {NAVER_MALLS})", "ERROR")
-        exit(1)
 
     if not BUYMA_ACCESS_TOKEN:
         log("BUYMA_ACCESS_TOKEN이 설정되지 않았습니다.", "ERROR")
@@ -1745,8 +1717,7 @@ def main():
             brand=args.brand,
             product_id=args.id,
             dry_run=args.dry_run,
-            force=args.force,
-            source=args.source,
+            force=args.force
         )
     except Exception as e:
         log(f"실행 중 오류 발생: {str(e)}", "ERROR")

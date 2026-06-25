@@ -326,6 +326,9 @@ def get_products_to_register(conn, limit: int = None, brand: str = None, product
             WHERE ap.is_active = 1
               -- ★ 미등록 상품만 (신규 등록용)
               AND ap.is_published = 0
+              -- ★ 삭제된 상품 재등록 금지 (수집처 품절/판매중지로 삭제됨).
+              --   재입고 시 converter가 재수집·재변환하며 status='deleted'를 풀어줌(→ 다시 등록 대상).
+              AND (ap.status IS NULL OR ap.status <> 'deleted')
               -- ★ model_no 있는 것만
               AND ap.model_no IS NOT NULL
               AND ap.model_no != ''

@@ -56,6 +56,12 @@ def update_db_with_webhook(event, data):
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (ref_num,))
+                    # [MERGE] buyma_listings 도 동일 반영 (ref 는 ace/listings 중 한쪽에만 존재 → 다른 쪽 0건)
+                    cursor.execute("""
+                        UPDATE buyma_listings
+                        SET is_published = 0, status = 'deleted', updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
                     print(f"[WEBHOOK] 삭제 성공: {ref_num} → is_published=0")
                 elif buyma_id:
                     cursor.execute("""
@@ -65,6 +71,16 @@ def update_db_with_webhook(event, data):
                             status = 'success',
                             is_buyma_locked = 1,
                             buyma_registered_at = COALESCE(buyma_registered_at, NOW()),
+                            updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (buyma_id, ref_num))
+                    # [MERGE] buyma_listings 도 동일 반영 (buyma_registered_at 컬럼 없음 → 제외)
+                    cursor.execute("""
+                        UPDATE buyma_listings
+                        SET buyma_product_id = %s,
+                            is_published = 1,
+                            status = 'success',
+                            is_buyma_locked = 1,
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (buyma_id, ref_num))
@@ -94,9 +110,26 @@ def update_db_with_webhook(event, data):
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (ref_num,))
+                    # [MERGE] buyma_listings 동일 반영
+                    cursor.execute("""
+                        UPDATE buyma_listings
+                        SET status = 'fail',
+                            buyma_product_id = NULL,
+                            is_published = 0,
+                            is_buyma_locked = 0,
+                            updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
                 else:
                     cursor.execute("""
                         UPDATE ace_products
+                        SET status = 'fail',
+                            updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
+                    # [MERGE] buyma_listings 동일 반영
+                    cursor.execute("""
+                        UPDATE buyma_listings
                         SET status = 'fail',
                             updated_at = NOW()
                         WHERE reference_number = %s
@@ -115,6 +148,13 @@ def update_db_with_webhook(event, data):
                 # 수정 실패: 바이마에 상품이 존재함 → is_published 유지 (0으로 바꾸면 안됨)
                 cursor.execute("""
                     UPDATE ace_products
+                    SET status = 'fail',
+                        updated_at = NOW()
+                    WHERE reference_number = %s
+                """, (ref_num,))
+                # [MERGE] buyma_listings 동일 반영 (is_published 유지)
+                cursor.execute("""
+                    UPDATE buyma_listings
                     SET status = 'fail',
                         updated_at = NOW()
                     WHERE reference_number = %s

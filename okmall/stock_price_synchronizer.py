@@ -758,17 +758,38 @@ class StockPriceSynchronizer:
                                 offers = ld_data.get('offers', {})
                                 if offers.get('@type') == 'AggregateOffer':
                                     offer_list = offers.get('offers', [])
-                                    if offer_list and all('OutOfStock' in o.get('availability', '') for o in offer_list):
-                                        status = 'out_of_stock'
-                                    else:
-                                        status = 'in_stock'
+                                    # 일시품절: 옵션 테이블이 없어도 offer별 sku+availability를 보존해야
+                                    # source_option_code로 DB variants와 매칭 가능.
+                                    # (ONE SIZE로 뭉개면 다중옵션 상품 매칭 실패 → 품절 미감지 → 바이마 미삭제)
+                                    sku_added = False
+                                    for o in offer_list:
+                                        sku = str(o.get('sku', '') or '').strip()
+                                        if not sku:
+                                            continue
+                                        is_out = 'OutOfStock' in o.get('availability', '')
+                                        result['options'].append({
+                                            'color': '', 'size': '',
+                                            'option_code': sku,
+                                            'status': 'out_of_stock' if is_out else 'in_stock'
+                                        })
+                                        sku_added = True
+                                    if not sku_added:
+                                        # sku 없는 AggregateOffer → 기존처럼 전체 단일 판정
+                                        if offer_list and all('OutOfStock' in o.get('availability', '') for o in offer_list):
+                                            status = 'out_of_stock'
+                                        else:
+                                            status = 'in_stock'
+                                        result['options'].append({
+                                            'color': '', 'size': 'ONE SIZE',
+                                            'option_code': '', 'status': status
+                                        })
                                 else:
                                     availability = offers.get('availability', '')
                                     status = 'out_of_stock' if 'OutOfStock' in availability else 'in_stock'
-                                result['options'].append({
-                                    'color': '', 'size': 'ONE SIZE',
-                                    'option_code': '', 'status': status
-                                })
+                                    result['options'].append({
+                                        'color': '', 'size': 'ONE SIZE',
+                                        'option_code': '', 'status': status
+                                    })
                                 break
                         except json.JSONDecodeError:
                             pass

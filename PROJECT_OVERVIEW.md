@@ -556,9 +556,9 @@ BUYMA 셀러 페이지/검색 결과를 크롤링해 자사 통계·판매실적
 **CLI**: `--max-pages`, `--start-page`
 **DB**: R `ace_products`, W `buyma_product_stats`
 
-### buyma_available_until_updater.py (신규/untracked)
+### buyma_available_until_updater.py (커밋됨, commit 91ec087)
 
-**역할**: 셀러 전시목록의 有効期限(게시기한)을 크롤링해 `ace_products.available_until`에 반영하는 **1회성 정합 스크립트**. stock/register가 BUYMA엔 today+90을 push하지만 DB write-back을 안 해 stale해진 값 보정.
+**역할**: 셀러 전시목록의 有効期限(게시기한)을 크롤링해 `ace_products.available_until`에 반영하는 **1회성 정합 스크립트**. stock/register가 BUYMA엔 today+90을 push하지만 DB write-back을 안 해 stale해진 값 보정. (2026-06-09 기준 1회성 정합 실행 완료.)
 **흐름**: self_stats_collector와 동일 인프라. `parse_row`로 pid+available_until → `/`→`-` 정규화 후 UPDATE(1000개 executemany).
 **CLI**: `--dry-run`, `--max-pages`, `--start-page`
 **DB**: W `ace_products.available_until`
@@ -662,9 +662,10 @@ DB 조회 전용 Flask 미니 관리 서버(웹훅 server.py와 역할 분리). 
 **흐름**: `mall_brands` 캐시 → `ace JOIN raw WHERE is_published=0` 매칭 → `--apply` 시 500 배치 UPDATE.
 **CLI**: `--apply`, `--source`
 
-### buyma_expiry_extender.py (운영 신규 일배치, untracked)
+### buyma_expiry_extender.py (커밋됨 commit 91ec087, 서버 cron 매일 07:00)
 
 **역할**: `available_until` 만료 임박 출품 상품을 today+90으로 강제 연장(재고/가격 변동 없어 stock sync가 edit 안 보내는 문제 보완).
+**운영**: Ubuntu 서버 crontab `0 7 * * *`로 매일 자동 실행(`--limit` 없이 전체), 로그 `buyma_stats/cron.log`. PS API 사용이라 WARP 불필요.
 **흐름**: published+active+만료임박 조회 → **`okmall/stock_price_synchronizer.py`의 `StockPriceSynchronizer` import 재사용**(payload/API/write-back 공유) → `build_buyma_request`가 `control='delete'`면 SKIP(삭제는 stock sync 책임) → `call_buyma_api` 성공 시 DB write-back.
 **CLI**: `--guard-days`(10), `--limit`, `--dry-run`
 **전제**: `buyma_available_until_updater.py`로 1회 정합 후 운영.
