@@ -115,28 +115,32 @@ class PipelineEngine:
         return pymysql.connect(**DB_CONFIG)
 
     def get_or_create_batch(self) -> str:
-        """오늘 RUNNING 배치 있으면 이어받기(resume), 없으면 새로. 어제 RUNNING 은 FAILED 마감.
-        (orchestrator.py 와 동일 — 단 run_mode 로만 구분하므로 통합 배치는 단일 run_mode 사용)."""
+        """미완(RUNNING) 배치 있으면 날짜 무관 이어받기(resume), 없으면 새로.
+        상시 가동 모델: 한 배치 = 한 바퀴(전 유닛). 끊기면 *언제* 재실행하든(자정 넘겨도) 그 배치를
+        이어받아 DONE 스킵·실패/미완만 재시도 → 다 끝나면 COMPLETED, 그다음 실행 때 새 배치(새 바퀴).
+        RUNNING 이 여러 개면 최신만 이어받고 나머지(오래된 stray)는 FAILED 정리.
+        (pipeline_engine 전용 — 레거시 orchestrator 와 무관)."""
         with self.db_lock:
             conn = self._db()
             try:
                 with conn.cursor() as cur:
-                    today = date.today().strftime("%Y%m%d")
                     cur.execute(
                         """SELECT batch_id FROM pipeline_batches
-                           WHERE status='RUNNING' AND run_mode=%s AND batch_id LIKE %s LIMIT 1""",
-                        (self.run_mode, f"{today}%"))
+                           WHERE status='RUNNING' AND run_mode=%s
+                           ORDER BY batch_id DESC LIMIT 1""",
+                        (self.run_mode,))
                     row = cur.fetchone()
                     if row:
                         self.batch_id = row['batch_id']
-                        log(f"오늘 기존 배치 이어받기: {self.batch_id}")
-                    else:
+                        log(f"미완 배치 이어받기(날짜 무관): {self.batch_id}")
+                        # 최신 외 오래된 RUNNING stray 정리(중복 배치 방지)
                         cur.execute(
                             """UPDATE pipeline_batches SET status='FAILED', end_time=NOW()
-                               WHERE status='RUNNING' AND run_mode=%s AND batch_id NOT LIKE %s""",
-                            (self.run_mode, f"{today}%"))
+                               WHERE status='RUNNING' AND run_mode=%s AND batch_id<>%s""",
+                            (self.run_mode, self.batch_id))
                         if cur.rowcount:
-                            log(f"어제 RUNNING 배치 {cur.rowcount}건 FAILED 마감")
+                            log(f"오래된 RUNNING 배치 {cur.rowcount}건 FAILED 정리")
+                    else:
                         self.batch_id = datetime.now().strftime("%Y%m%d_%H%M%S")
                         cur.execute(
                             "INSERT INTO pipeline_batches (batch_id, run_mode, status) VALUES (%s,%s,'RUNNING')",
@@ -191,23 +195,60 @@ class PipelineEngine:
             log(f"유닛 {len(self.units)}개 (NEW {sum(u['track']=='NEW' for u in self.units)} / "
                 f"STOCK {sum(u['track']=='STOCK' for u in self.units)}), 동시 {self.max_workers}")
 
+            # ── 사이트 자원 분리 실행 (#4 굶김 결함 수정) ──
+            #   비-naver(독립 사이트) = 메인 풀(max_workers)에서 병렬.
+            #   naver 등 site_resource 유닛 = *별도 전용 풀*에서도 병렬로 파이프라인을 흘린다.
+            #     단 COLLECT/STOCK(사이트접속) 단계만 run_unit_pipeline 내 site_sem(자원당 1개)로
+            #     1개씩 직렬(캡챠 방지). → naver 몰들이 단계는 병렬(누구는 convert, 누구는 price…),
+            #     사이트접속만 1개씩이라 "한 collector 끝나면 다음 collector"로 사이트 레인이 늘 참.
+            #   별도 풀이라 비-naver 슬롯에 굶지 않음(옛 단일풀의 맨끝 몰림 해소).
+            pool_units = [u for u in self.units if not u.get('site_resource')]
+            locked_units = [u for u in self.units if u.get('site_resource')]
+
             any_failed = False
-            with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
-                futs = {ex.submit(self.run_unit_pipeline, u): u for u in self.units}
-                for fut in as_completed(futs):
-                    u = futs[fut]
-                    tag = f"{u['mall']}/{u['unit_key']}/{u['track']}"
-                    try:
-                        ok = fut.result()
-                        if not ok:
-                            any_failed = True
-                        log(f"{'✓' if ok else '✗'} [{tag}] 파이프라인 {'완료' if ok else '실패'}")
-                    except Exception as e:
+            fail_lock = threading.Lock()
+
+            def _handle(u, ok, exc=None):
+                nonlocal any_failed
+                tag = f"{u['mall']}/{u['unit_key']}/{u['track']}"
+                if exc is not None:
+                    with fail_lock:
                         any_failed = True
-                        log(f"✗ [{tag}] 예외: {e}", "ERROR")
+                    log(f"✗ [{tag}] 예외: {exc}", "ERROR")
+                    return
+                if not ok:
+                    with fail_lock:
+                        any_failed = True
+                log(f"{'✓' if ok else '✗'} [{tag}] 파이프라인 {'완료' if ok else '실패'}")
+
+            def _run_one(u):
+                try:
+                    _handle(u, self.run_unit_pipeline(u))
+                except Exception as e:
+                    _handle(u, False, e)
+
+            # 메인 풀(비-naver) + 사이트자원 전용 풀(naver 등)을 동시 가동.
+            #   전용 풀 워커는 넉넉히(비접속 단계 병렬용) — 사이트접속은 site_sem 이 1개로 막음.
+            locked_workers = max(1, min(len(locked_units), self.max_workers)) if locked_units else 0
+            ex_main = ThreadPoolExecutor(max_workers=self.max_workers)
+            ex_locked = ThreadPoolExecutor(max_workers=locked_workers) if locked_units else None
+            if ex_locked:
+                log(f"site-자원 유닛 {len(locked_units)}개 → 전용 풀(워커 {locked_workers}): "
+                    f"COLLECT/STOCK 은 자원당 1개씩 직렬, 비-naver 풀과 동시 진행")
+            try:
+                for u in pool_units:
+                    ex_main.submit(_run_one, u)
+                if ex_locked:
+                    for u in locked_units:
+                        ex_locked.submit(_run_one, u)
+            finally:
+                ex_main.shutdown(wait=True)
+                if ex_locked:
+                    ex_locked.shutdown(wait=True)
+
             # ★ 실패 유닛이 있으면 배치를 COMPLETED 로 닫지 않고 RUNNING 유지.
-            #   → 같은 날 재실행 시 이 배치를 이어받아(get_or_create_batch) 실패(ERROR)·미완 단계만 재시도.
-            #     (성공 유닛의 단계는 DONE 이라 스킵.) 다음 날엔 어제 RUNNING 배치가 FAILED 로 마감됨.
+            #   → 재실행 시 이 배치를 이어받아(get_or_create_batch) 실패(ERROR)·미완 단계만 재시도.
+            #     (성공 유닛의 단계는 DONE 이라 스킵.)
             if any_failed:
                 log("일부 유닛 실패 → 배치 RUNNING 유지 (재실행 시 실패/미완 단계만 이어서 재시도)", "WARNING")
             else:

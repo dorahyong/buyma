@@ -235,6 +235,10 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
         # 1) 그룹 즉석 빌드 (execute 시 실제 적재; dry_run 은 기존 그룹만 미리보기)
         res = eg.ensure_group(conn, model_no, brand_id, dry_run=dry_run)
         listing_id = res.get('listing_id')
+        # 한 줄 요약: 이 push 그룹의 model_no + 멤버수(멤버 2+ = 여러 몰 병합 = 중복 model)
+        _members = res.get('members') or []
+        _dup = '중복O(병합)' if len(_members) >= 2 else '중복X(단일)'
+        print(f"  [reconcile] model_no={model_no!r} 멤버{len(_members)} {_dup}", flush=True)
         if not listing_id:
             return {'skipped': True, 'reason': res.get('reason', 'listing 없음'),
                     'model_no': model_no, 'members': len(res.get('members', []))}

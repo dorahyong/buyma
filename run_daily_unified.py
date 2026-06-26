@@ -200,10 +200,17 @@ def main():
     ap.add_argument('--plan', action='store_true', help='실행 명령만 출력(DB·실행 없음)')
     ap.add_argument('--dry-run', action='store_true', help='엔진 가동(상태기록)하되 명령은 no-op 로그')
     ap.add_argument('--only', type=str, help=f'특정 몰만 (지원: {", ".join(MALLS)})')
+    ap.add_argument('--no-naver', action='store_true',
+                    help='naver 21몰 제외 (okmall+멀티소스만). naver 는 캡챠로 별도 standalone 권장')
+    ap.add_argument('--only-naver', action='store_true', help='naver 21몰만 실행')
     ap.add_argument('--track', type=str, default='all', choices=['new', 'stock', 'all'],
                     help='실행 트랙 (기본 all)')
     ap.add_argument('--max-workers', type=int, default=None, help='동시 유닛 수')
     args = ap.parse_args()
+
+    if args.only_naver and args.no_naver:
+        print("⛔ --only-naver 와 --no-naver 는 동시 사용 불가")
+        return
 
     malls = MALLS
     if args.only:
@@ -211,6 +218,10 @@ def main():
             print(f"⛔ 지원하지 않는 몰: {args.only} (지원: {', '.join(MALLS)})")
             return
         malls = [args.only]
+    elif args.only_naver:
+        malls = list(NAVER)
+    elif args.no_naver:
+        malls = [m for m in MALLS if m not in NAVER_MALLS]
 
     units = build_units(malls, args.track)
 
@@ -228,7 +239,8 @@ def main():
         return
 
     eng = pe.PipelineEngine(
-        run_mode='UNIFIED',
+        # naver 만 돌릴 땐 별도 run_mode → 별도 배치 → --no-naver(UNIFIED)와 동시 실행해도 배치 충돌 없음
+        run_mode=('UNIFIED_NAVER' if args.only_naver else 'UNIFIED'),
         units=units,
         stage_plan=STAGE_PLAN,
         worker_resolver=worker_resolver,
