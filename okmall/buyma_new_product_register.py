@@ -871,6 +871,55 @@ def call_buyma_delete_api(reference_number: str) -> Dict:
         return {"success": False, "error": str(e)}
 
 
+def call_buyma_variants_soldout(reference_number: str, option_rows: list) -> Dict:
+    """재고 API(variants.json)로 전 옵션 품절(out_of_stock) → '출품정지중'(삭제 아님).
+    삭제(control=delete) 대신 사용 → buyma_product_id 유지, 재입고 시 같은 상품으로 출품중 복구.
+    option_rows: [{'color_value':..., 'size_value':...}, ...] (listing_options 옵션들).
+    ★ order_quantity=0 필수: 전 변이가 out_of_stock 되면 買付可 변이가 0이라
+       기존 order_quantity 가 충돌(거부)하므로 0 으로 클리어해야 통과.
+    실제 is_published=0 반영은 buyer_suspended webhook 이 담당(server.py).
+    """
+    url = f"{API_BASE_URL}api/v1/products/variants.json"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Buyma-Personal-Shopper-Api-Access-Token": BUYMA_ACCESS_TOKEN
+    }
+    variants = []
+    for o in option_rows:
+        opts = []
+        if o.get('color_value'):
+            opts.append({"type": "color", "value": o['color_value']})
+        if o.get('size_value'):
+            opts.append({"type": "size", "value": o['size_value']})
+        variants.append({"options": opts, "stock_type": "out_of_stock"})
+    request_data = {
+        "product": {
+            "reference_number": reference_number,
+            "variants": variants,
+            "order_quantity": 0,
+        }
+    }
+    try:
+        response = requests.post(url, headers=headers, json=request_data, timeout=30)
+        log(f"  품절(재고API) 응답 코드: {response.status_code}")
+        if response.status_code in [200, 201, 202]:
+            return {
+                "success": True,
+                "status_code": response.status_code,
+                "response": response.json() if response.text else {},
+            }
+        else:
+            return {
+                "success": False,
+                "status_code": response.status_code,
+                "error": response.text,
+            }
+    except requests.exceptions.Timeout:
+        return {"success": False, "error": "Request timeout"}
+    except requests.exceptions.RequestException as e:
+        return {"success": False, "error": str(e)}
+
+
 # =====================================================
 # 중복 model_no 및 model_no 없는 상품 조회/삭제
 # =====================================================

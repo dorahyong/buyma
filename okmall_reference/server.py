@@ -63,6 +63,22 @@ def update_db_with_webhook(event, data):
                         WHERE reference_number = %s
                     """, (ref_num,))
                     print(f"[WEBHOOK] 삭제 성공: {ref_num} → is_published=0")
+                # 품절 처리(재고 API)로 '출품정지중' → is_published=0 (★삭제 아님, buyma_id 유지)
+                elif status == 'buyer_suspended':
+                    cursor.execute("""
+                        UPDATE ace_products
+                        SET is_published = 0,
+                            status = 'soldout',
+                            updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
+                    # [MERGE] buyma_listings 도 동일 반영
+                    cursor.execute("""
+                        UPDATE buyma_listings
+                        SET is_published = 0, status = 'soldout', updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
+                    print(f"[WEBHOOK] 품절(출품정지중): {ref_num} → is_published=0")
                 elif buyma_id:
                     cursor.execute("""
                         UPDATE ace_products

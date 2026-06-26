@@ -476,7 +476,10 @@ def execute_edit(conn, listing, dry_run=True):
 
 
 def execute_retire(conn, listing, dry_run=True):
-    """마진X / 전체품절 → BUYMA 삭제 (기존 stock_price_synchronizer 와 동일: control=delete).
+    """마진X / 전체품절 → BUYMA '품절(출품정지중)' 처리. ★삭제하지 않음.
+    재고 API(variants.json)로 전 옵션 out_of_stock + order_quantity:0 전송.
+    → buyma_product_id·등록일(게시일수) 유지. 재입고/마진회복 시 기존 stock 흐름(상품수정)이
+      같은 id로 출품중 복구. 실제 is_published=0 은 buyer_suspended webhook 이 반영(server.py).
 
     이미 BUYMA에 올라간(reference_number 있는) listing 만 대상.
     미등록 신규는 호출 안 함(=그냥 등록 안 함, 기존 register 와 동일).
@@ -487,12 +490,15 @@ def execute_retire(conn, listing, dry_run=True):
         if pub:
             ref = pub.get('locked_reference_number') or pub.get('reference_number')
     if not ref:
-        return {'skipped': True, 'reason': '미등록(ref 없음) → 삭제할 것 없음'}
+        return {'skipped': True, 'reason': '미등록(ref 없음) → 내릴 것 없음'}
+    opts = _listing_options(conn, listing['id'])
+    if not opts:
+        return {'skipped': True, 'reason': '옵션 없음 → 품절 보낼 변이 없음', 'ref': ref}
     if dry_run:
-        return {'dry_run': True, 'action': 'delete', 'ref': ref}
-    resp = reg.call_buyma_delete_api(ref)
-    # 삭제 성공/실패는 웹훅(buyer_deleted/fail)이 is_published 등 반영
-    return {'action': 'delete', 'response': resp, 'ref': ref}
+        return {'dry_run': True, 'action': 'soldout', 'ref': ref, 'variants': len(opts)}
+    resp = reg.call_buyma_variants_soldout(ref, opts)
+    # 출품정지중 전이(is_published=0)는 buyer_suspended webhook 이 반영
+    return {'action': 'soldout', 'response': resp, 'ref': ref}
 
 
 def execute_edit_safe(conn, listing, dry_run=True, lock_timeout=10):
