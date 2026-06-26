@@ -679,6 +679,9 @@ def main():
             break
 
         logger.info(f"\n>>> 브랜드 시작: {brand['name']}")
+        if not brand.get('url'):
+            logger.warning(f"  URL 없음 — 브랜드 스킵: {brand['name']}")
+            continue
         product_urls = get_product_urls_from_list(brand['url'], session_mgr, limit=args.limit)
         logger.info(f"발견된 상품: {len(product_urls)}개")
 
