@@ -291,6 +291,13 @@ async def collect_product_list(page, brands: List[Dict], limit: Optional[int],
                 logger.error("캡챠 감지! --login으로 쿠키 갱신 필요")
                 return results
 
+            # 브랜드 URL이 스토어 홈으로 리다이렉트되면(=죽은 카테고리 ID) 홈에 깔린 잡탕 상품을
+            # 이 브랜드로 통째 도장 찍는 오라벨이 발생 → 이 브랜드는 통째로 스킵
+            _final = page.url.split('?')[0].split('#')[0].rstrip('/')
+            if _final == STORE_HOME.split('?')[0].rstrip('/'):
+                logger.warning(f"  [{brand_name}] 브랜드 URL → 스토어 홈 리다이렉트(stale) → 스킵")
+                continue
+
             while page_num <= 100:
                 data = await page.evaluate(EXTRACT_JS)
                 pnos = data.get('pnos') or []
@@ -430,6 +437,28 @@ async def fetch_detail(page, product_no: str) -> Tuple[Optional[Dict], Optional[
 # 매핑: product JSON → raw_scraped_data row
 # =====================================================
 
+def _brand_key(s: str) -> str:
+    """브랜드명 비교용 정규화 키 — 대문자 + 영숫자만 남김.
+    'C.P. COMPANY' == 'CP COMPANY' 처럼 표기차를 흡수. 한글/기호만이면 '' 반환."""
+    return re.sub(r'[^A-Z0-9]', '', (s or '').upper())
+
+
+def _has_hangul(s: str) -> bool:
+    return bool(re.search(r'[가-힣]', s or ''))
+
+
+def _same_brand(a: str, b: str) -> bool:
+    """같은 브랜드 계열인지 — 키 동일 또는 한쪽이 다른쪽을 포함('BURBERRY' ⊂ 'BURBERRY KIDS').
+    판단 불가(키 빈값)면 보수적으로 True(=교정 안 함)."""
+    ka, kb = _brand_key(a), _brand_key(b)
+    if not ka or not kb:
+        return True
+    if ka == kb:
+        return True
+    short, long = (ka, kb) if len(ka) <= len(kb) else (kb, ka)
+    return len(short) >= 3 and short in long
+
+
 def map_to_row(product: Dict, benefits: Optional[Dict],
                brand_from_list: str, product_no: str) -> Optional[Dict]:
     if not product:
@@ -440,10 +469,27 @@ def map_to_row(product: Dict, benefits: Optional[Dict],
         return None
 
     nsi = product.get('naverShoppingSearchInfo') or {}
-    # mall_brands(brand_from_list)가 authoritative source — 판매자 입력 변덕(PARAJUMPERS vs 파라점퍼스) 방지
-    brand_name = (brand_from_list
-                  or nsi.get('manufacturerName') or nsi.get('brandName')
-                  or product.get('brandName') or '').strip()
+    # 상품 자체가 들고 있는 제조사/브랜드 — 네이버는 거의 100% 채워지고 정확(진짜 정답 신호).
+    mfr = (nsi.get('manufacturerName') or nsi.get('brandName')
+           or product.get('brandName') or '').strip()
+    # 브랜드 결정:
+    #   - 순회 라벨(brand_from_list)이 제조사와 '완전히 다른 브랜드'면 → 제조사가 정답.
+    #     (브랜드 URL이 스토어 홈으로 튕겨 홈 잡탕을 그 브랜드로 통째 도장 찍던 carpi 버그 방지)
+    #   - 단, 같은 계열('BURBERRY' vs 'BURBERRY KIDS')이거나 제조사가 한글이면 교정 안 함
+    #     (KIDS 라인 구분 손실·영문라벨을 한글로 덮는 퇴보 방지)
+    #   - 순회 라벨이 없으면(카테고리 스윕) → 상품 제조사 사용
+    brand_corrected = False
+    if brand_from_list:
+        if mfr and not _has_hangul(mfr) and not _same_brand(brand_from_list, mfr):
+            brand_name = mfr
+            brand_corrected = True
+        else:
+            brand_name = brand_from_list
+    else:
+        brand_name = mfr
+    brand_name = brand_name.strip()
+    if brand_corrected:
+        logger.info(f"  [브랜드 교정] 순회='{brand_from_list}' ≠ 제조사='{mfr}' → '{brand_name}' (상품={product_no})")
 
     # 모델번호
     model_id = (nsi.get('modelName') or product.get('modelName') or '').strip()
@@ -574,6 +620,8 @@ def map_to_row(product: Dict, benefits: Optional[Dict],
         'origin': origin,
         'material': material,
         'manufacturer': nsi.get('manufacturerName', ''),
+        'brand_from_list': brand_from_list,
+        'brand_corrected': brand_corrected,
         'options': options,
         'images': images,
         'category': category_path,

@@ -494,6 +494,147 @@ def insert_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = Fal
         conn.close()
 
 
+def reconcile_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = False, deactivate: bool = False):
+    """현재 사이트 기준 동기화(insert_mall_brands의 누적-only 한계 보완):
+      - 신규(사이트O/DB X)   → INSERT (is_active=NULL, 검수대기)         ← 기본 동작
+      - 기존(사이트O/DB O)   → mall_brand_url/no 갱신(해시 바뀐 것만)      ← 기본 동작
+      - 사라짐(사이트X/DB O) → is_active=0  **deactivate=True일 때만(opt-in)**
+
+    기본은 '추가 전용'(deactivate=False): 죽은 브랜드를 끄는 건 스캔 불완전·옛 잔재 데이터로
+    오판이 잦고, collector 수정(manufacturer 신뢰+홈 가드) 이후엔 죽은 브랜드가 무해해서 불필요.
+    끄기는 '완전 스캔'을 확인한 수동 정리 때만 --deactivate로.
+    """
+    import re as _rx
+    norm = lambda s: ''.join((s or '').split()).upper()
+    urlpath = lambda u: (u or '').split('?')[0].rstrip('/')  # 쿼리(?cp=2 등) 무시한 경로
+    hangul = lambda s: bool(_rx.search(r'[가-힣]', s or ''))
+    conn = get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT raw_brand_name, mall_brand_url, mall_brand_no, is_active "
+                        "FROM mall_brands WHERE mall_name=%s", (source_site,))
+            existing = {}
+            for r in cur.fetchall():
+                if r['raw_brand_name']:
+                    existing[norm(r['raw_brand_name'])] = r
+            scanned = {norm(b['name']): b for b in brands}
+            if not scanned:
+                logger.warning("스캔된 브랜드 0개 → 동기화 생략(캡챠/네비 실패 의심)")
+                return
+            # 매칭은 이름(norm)이 아니라 '카테고리 해시(mall_brand_no)' 우선 — 언어 무관.
+            # 끌로에와 CHLOE는 같은 카테고리 페이지라 해시가 같음 → 같은 브랜드로 인식(중복 추가 안 함).
+            existing_by_no = {r['mall_brand_no']: r for r in existing.values() if r['mall_brand_no']}
+            catalog_has_kr = any(hangul(r['raw_brand_name']) for r in existing.values())
+
+            inserted = updated = reappeared = retired = skipped_kr = 0
+            seen_existing = set()  # 스캔에서 매칭된(해시 or 이름) 기존 브랜드 — 비활성 판단용
+            # 1) 신규 INSERT / 기존 URL 갱신·재활성
+            for k, b in scanned.items():
+                name = b['name'].strip()
+                cat = b.get('category_key')
+                # 해시로 먼저 찾고(언어 무관), 없으면 이름으로
+                row = (existing_by_no.get(cat) if cat else None) or existing.get(k)
+                if row is None:
+                    # 해시·이름 둘 다 기존에 없음 = 진짜 신규.
+                    # 단 영문 카탈로그에 한글 신규는 KO↔EN 매칭 불가→중복위험이라 보류(번역/스윕 필요).
+                    if hangul(name) and not catalog_has_kr:
+                        if dry_run:
+                            logger.info(f"  [스킵] 한글 신규 '{name}' — 해시 미매칭+영문 카탈로그라 보류")
+                        skipped_kr += 1
+                        continue
+                    if dry_run:
+                        logger.info(f"  [DRY] INSERT 신규: {name}")
+                    else:
+                        cur.execute("""INSERT INTO mall_brands
+                            (mall_name, raw_brand_name, mall_brand_name_en, mall_brand_url, mall_brand_no, is_active, is_mapped)
+                            VALUES (%s,%s,%s,%s,%s,NULL,0)""",
+                            (source_site, name, name, b['url'], b['category_key']))
+                    inserted += 1
+                else:
+                    seen_existing.add(row['raw_brand_name'])  # 해시/이름으로 매칭됨 = 살아있음
+                    # 카테고리 해시(mall_brand_no)가 같고 경로가 같으면 동일한 것 — ?cp=2 같은 쿼리 차이는 무시
+                    need_url = (urlpath(row['mall_brand_url']) != urlpath(b['url'])
+                                or (row['mall_brand_no'] or '') != (b['category_key'] or ''))
+                    if row['is_active'] == 0:
+                        # 의도적으로 꺼둔 브랜드(HERNO 등 지재권/IP 차단)는 자동 재활성 금지.
+                        # URL만 갱신하고 is_active=0 유지 — 되살릴지는 사람이 판단.
+                        if need_url and not dry_run:
+                            cur.execute("UPDATE mall_brands SET mall_brand_url=%s, mall_brand_no=%s "
+                                        "WHERE mall_name=%s AND raw_brand_name=%s",
+                                        (b['url'], b['category_key'], source_site, row['raw_brand_name']))
+                        if dry_run:
+                            logger.info(f"  [DRY] 재등장(비활성 유지, 수동검토): {name}")
+                        reappeared += 1
+                        continue
+                    if not need_url:
+                        continue
+                    if dry_run:
+                        logger.info(f"  [DRY] URL갱신: {name}")
+                    else:
+                        cur.execute("UPDATE mall_brands SET mall_brand_url=%s, mall_brand_no=%s "
+                                    "WHERE mall_name=%s AND raw_brand_name=%s",
+                                    (b['url'], b['category_key'], source_site, row['raw_brand_name']))
+                    updated += 1
+
+            # 2) 사이트에서 사라진 '활성' 브랜드 비활성화.
+            #    핵심 안전장치: 메뉴 스캔은 100% 완전하지 않다(브랜드를 놓침). 그래서 "메뉴에 없음"만으로
+            #    끄면 살아있는 브랜드를 죽인다(premiumsneakers 66개·carpi DIOR HOMME 사례).
+            #    → '메뉴에 없음' AND '최근 ACTIVITY_DAYS일 내 상품 수집 0' 둘 다일 때만 비활성.
+            ACTIVITY_DAYS = 60
+            gone = [r for r in existing.values()
+                    if r['raw_brand_name'] not in seen_existing and r['is_active'] == 1]
+            if deactivate and gone:
+                import re as _re
+                from datetime import datetime, timedelta
+                def bkey(s):
+                    return _re.sub(r'[^A-Z0-9]', '', (s or '').upper())
+                def same_family(a, b):  # 'BURBERRY' ⊂ 'BURBERRY KIDS' = 같은 계열
+                    ka, kb = bkey(a), bkey(b)
+                    if not ka or not kb:
+                        return False
+                    if ka == kb:
+                        return True
+                    sh, lo = (ka, kb) if len(ka) <= len(kb) else (kb, ka)
+                    return len(sh) >= 3 and sh in lo
+                cutoff = datetime.now() - timedelta(days=ACTIVITY_DAYS)
+                # 활동은 brand_name_en(오라벨 가능)이 아니라 manufacturer(진짜 브랜드)로 측정.
+                # 예: 'DIOR HOMME' URL이 잡탕수집해 KLATTERMUSEN을 'DIOR HOMME'로 찍어도,
+                #     그건 KLATTERMUSEN의 활동일 뿐 DIOR HOMME는 사라진 것.
+                cur.execute("SELECT JSON_UNQUOTE(JSON_EXTRACT(raw_json_data,'$.manufacturer')) mfr, "
+                            "MAX(updated_at) m FROM raw_scraped_data WHERE source_site=%s GROUP BY mfr",
+                            (source_site,))
+                recent_mfr = [rr['mfr'] for rr in cur.fetchall() if rr['m'] and rr['m'] >= cutoff and rr['mfr']]
+                active_cnt = sum(1 for r in existing.values() if r['is_active'] == 1)
+                if len(scanned) < max(3, active_cnt * 0.5):
+                    logger.warning(f"⚠️ 스캔 {len(scanned)}개 < 기존활성 {active_cnt}개의 절반 "
+                                   f"→ 비활성화 전체 생략(스캔 실패 의심). 후보 {len(gone)}개 유지")
+                else:
+                    protected = 0
+                    for r in gone:
+                        if any(same_family(r['raw_brand_name'], m) for m in recent_mfr):
+                            if dry_run:
+                                logger.info(f"  [보호] 비활성 보류: {r['raw_brand_name']} (최근 {ACTIVITY_DAYS}일 내 '진짜' 상품 수집됨)")
+                            protected += 1
+                            continue
+                        if dry_run:
+                            logger.info(f"  [DRY] 비활성(is_active=0): {r['raw_brand_name']} (메뉴에 없고 {ACTIVITY_DAYS}일+ 무수집)")
+                        else:
+                            cur.execute("UPDATE mall_brands SET is_active=0 WHERE mall_name=%s AND raw_brand_name=%s",
+                                        (source_site, r['raw_brand_name']))
+                        retired += 1
+                    if protected:
+                        logger.info(f"  비활성 보호(최근 수집 있어 살아있음): {protected}개")
+            elif gone and not deactivate:
+                logger.info(f"  (사라진 {len(gone)}개는 --no-deactivate라 유지)")
+
+            if not dry_run:
+                conn.commit()
+            kr_note = f" / 한글스킵 {skipped_kr}" if skipped_kr else ""
+            logger.info(f"동기화: 신규 {inserted} / URL갱신 {updated} / 재등장(비활성유지) {reappeared} / 비활성 {retired}{kr_note}")
+    finally:
+        conn.close()
+
+
 def insert_mall_categories(source_site: str, categories: List[Dict], dry_run: bool = False):
     """mall_categories INSERT"""
     conn = get_connection()
@@ -571,6 +712,10 @@ def main():
     parser.add_argument('--insert-site', action='store_true', help='mall_sites도 INSERT')
     parser.add_argument('--brands-only', action='store_true', help='브랜드만 스캔/INSERT')
     parser.add_argument('--categories-only', action='store_true', help='카테고리만 스캔/INSERT')
+    parser.add_argument('--reconcile', action='store_true',
+                        help='현재 사이트 기준 동기화(기본: 신규추가+URL갱신만). 누적-only INSERT 대신 사용')
+    parser.add_argument('--deactivate', action='store_true',
+                        help='[opt-in] 사라진 브랜드 is_active=0. 스캔이 완전할 때만 권장(부분 스캔이면 오판). 기본은 끄기 안 함')
     args = parser.parse_args()
 
     if args.brands_only and args.categories_only:
@@ -617,8 +762,13 @@ def main():
             insert_mall_site(source_site)
 
     if brands:
-        logger.info(f"\nmall_brands INSERT ({source_site}):")
-        insert_mall_brands(source_site, brands, dry_run=args.dry_run)
+        if args.reconcile:
+            logger.info(f"\nmall_brands 동기화 ({source_site}):")
+            reconcile_mall_brands(source_site, brands, dry_run=args.dry_run,
+                                  deactivate=args.deactivate)
+        else:
+            logger.info(f"\nmall_brands INSERT ({source_site}):")
+            insert_mall_brands(source_site, brands, dry_run=args.dry_run)
 
     if categories:
         logger.info(f"\nmall_categories INSERT ({source_site}):")
