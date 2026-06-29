@@ -191,6 +191,11 @@
         sortKey: (r) => regDays(r.registered_at) ?? -1,
         render: (r) => fmtDays(regDays(r.registered_at)) },
 
+      { key: 'listed_days', label: '실제 게시일수',     cls: 'num',
+        tip: '실제로 출품중이던 기간만 누적한 게시일수입니다.\n품절로 내려가 있던 기간은 빼고, 재게시되면 같은 상품으로 이어서 누적됩니다.',
+        sortKey: (r) => r.listed_days ?? -1,
+        render: (r) => fmtDays(r.listed_days != null ? Math.floor(r.listed_days) : null) },
+
       { key: 'expire',      label: '바이마 구매기한',
         tip: '바이마에 표시되는 구매 가능 마감일입니다.',
         render: (r) => esc(r.expire_at) || '<span class="placeholder">—</span>' },

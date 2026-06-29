@@ -213,6 +213,20 @@ def _fetch_buyma_stats(conn) -> Dict[str, Dict]:
     return out
 
 
+def _fetch_listing_days(conn) -> Dict[str, float]:
+    """buyma_product_id → 실제 게시일수 (v_listing_days).
+
+    등록일~오늘 단순 달력일수가 아니라, 올라감/내려감 전이를 적분한 실제 누적
+    게시일수(품절로 내려가 있던 기간 차감, 재게시 시 같은 buyma_product_id 로 이어서 누적).
+    """
+    out: Dict[str, float] = {}
+    with conn.cursor() as c:
+        c.execute("SELECT buyma_product_id, total_listed_days FROM v_listing_days")
+        for r in c.fetchall():
+            out[str(r['buyma_product_id'])] = _to_float(r['total_listed_days'])
+    return out
+
+
 # ─────────────────────────────────────────────
 # 상태 판정
 # ─────────────────────────────────────────────
@@ -306,6 +320,9 @@ def build_payload(db_config: Dict) -> Dict:
 
         # 5. 소싱처별 재고 (출품가능 최저가 계산용)
         stock_by_raw_id = _fetch_raw_stock(conn)
+
+        # 6. 실제 게시일수 (buyma_product_id 기준)
+        listing_days_by_pid = _fetch_listing_days(conn)
     finally:
         conn.close()
 
@@ -356,6 +373,7 @@ def build_payload(db_config: Dict) -> Dict:
             'price_updated_at':           _iso(ace0.get('buyma_lowest_price_checked_at')) if ace0 else None,
             'source_updated_at':          _iso(raw.get('source_updated_at')),
             'registered_at':              _fmt_dt(ace0.get('buyma_registered_at')) if ace0 else None,
+            'listed_days':                listing_days_by_pid.get(str(bp_id)) if bp_id else None,
             'expire_at':                  _fmt_dt(ace0.get('available_until'), '%Y/%m/%d') if ace0 else None,
             'same_count':       None,
             'rank_position':    None,
