@@ -1,6 +1,14 @@
 # 실제 게시일수 기록 — 설계 제안서 (2026-06-09)
 
-> 상태: **설계 확정(2026-06-09). 코드/스키마 변경 0건 — 아직 미착수.** 결정 사항은 §6.
+> ⚠️ **구현 완료 (2026-06-29, commit 7cde1c1). 단 아래 본문 설계와 핵심이 달라짐 — 실제 구현이 우선.**
+> - **키가 ace_products 컬럼 → `buyma_product_id` 전용 테이블**로 변경. 사유: 그새 merge/cutover로 라이브 정체성이 갈림(옛 54,961=ace, 신규 2,717=buyma_listings, ref 겹침 0). ace 트리거 1개론 merge 출품을 놓침.
+> - 실제: `buyma_listing_days`(카운터) + `buyma_listing_events`(이력) + `v_listing_days`(뷰), **트리거 2개**(ace_products + buyma_listings). 파일 `migrations/2026_listing_days_*.sql`, `migrations/backfill_listing_days.py`.
+> - 백필 57,675건(listed_since=등록일), 관리페이지 "실제 게시일수" 컬럼(`products_api.py`/`products.html`). 초단위 적분 유지.
+> - fast_price 하드삭제→재고API 전환(commit d56f7e2)이 게시일수 보존의 선행작업.
+>
+> 아래는 원 설계(2026-06-09) 기록 — 의사결정 배경 참고용.
+
+> 상태: ~~설계 확정(2026-06-09). 코드/스키마 변경 0건 — 아직 미착수.~~ → **구현 완료(위 배너 참조).** 결정 사항은 §6.
 > 짝꿍 기능인 "출품 유효기간 자동 관리"(available_until)는 이미 운영 중 — 본 문서 범위 밖.
 
 ---
