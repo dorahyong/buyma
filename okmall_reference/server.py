@@ -32,6 +32,31 @@ def log_webhook(data, event_type=None):
         f.write(json.dumps(data, indent=2, ensure_ascii=False))
         f.write(f"\n{'='*60}\n")
 
+def _log_api_response(cursor, ref_num, data):
+    """webhook 응답을 api_logs 에 기록.
+    ref 가 ace_products 에 있으면 ace_product_api_logs, 없으면(merge 출품) buyma_listing_api_logs.
+    (ref 는 ace/listings 중 한쪽에만 존재 → 1건만 기록). 옛 코드가 ace 매칭만 해 merge 로그 누락되던 것 보완."""
+    payload = json.dumps(data, ensure_ascii=False)
+    cursor.execute("SELECT id FROM ace_products WHERE reference_number = %s", (ref_num,))
+    row = cursor.fetchone()
+    if row:
+        cursor.execute("""
+            INSERT INTO ace_product_api_logs (ace_product_id, api_response_json, last_api_call_at)
+            VALUES (%s, %s, NOW())
+            ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
+        """, (row['id'], payload))
+        return
+    # [MERGE] ace 없음 → buyma_listings 기준 로그
+    cursor.execute("SELECT id FROM buyma_listings WHERE reference_number = %s", (ref_num,))
+    lrow = cursor.fetchone()
+    if lrow:
+        cursor.execute("""
+            INSERT INTO buyma_listing_api_logs (buyma_listing_id, api_response_json, last_api_call_at)
+            VALUES (%s, %s, NOW())
+            ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
+        """, (lrow['id'], payload))
+
+
 def update_db_with_webhook(event, data):
     """[추가 기능] DB 업데이트 (에러가 나도 로그 기록에는 방해 안 줌)"""
     try:
@@ -90,25 +115,19 @@ def update_db_with_webhook(event, data):
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (buyma_id, ref_num))
-                    # [MERGE] buyma_listings 도 동일 반영 (buyma_registered_at 컬럼 없음 → 제외)
+                    # [MERGE] buyma_listings 도 동일 반영 (buyma_registered_at 도 보존)
                     cursor.execute("""
                         UPDATE buyma_listings
                         SET buyma_product_id = %s,
                             is_published = 1,
                             status = 'success',
                             is_buyma_locked = 1,
+                            buyma_registered_at = COALESCE(buyma_registered_at, NOW()),
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (buyma_id, ref_num))
-                    # ace_product_id 조회 후 api_logs에 저장
-                    cursor.execute("SELECT id FROM ace_products WHERE reference_number = %s", (ref_num,))
-                    row = cursor.fetchone()
-                    if row:
-                        cursor.execute("""
-                            INSERT INTO ace_product_api_logs (ace_product_id, api_response_json, last_api_call_at)
-                            VALUES (%s, %s, NOW())
-                            ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-                        """, (row['id'], json.dumps(data, ensure_ascii=False)))
+                    # api_logs 기록 (ace 또는 merge listing)
+                    _log_api_response(cursor, ref_num, data)
                     print(f"[WEBHOOK] 등록 성공: {ref_num} → buyma_id={buyma_id}, is_buyma_locked=1")
 
             elif event == 'product/fail_to_create':
@@ -150,15 +169,8 @@ def update_db_with_webhook(event, data):
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (ref_num,))
-                # api_logs에 저장
-                cursor.execute("SELECT id FROM ace_products WHERE reference_number = %s", (ref_num,))
-                row = cursor.fetchone()
-                if row:
-                    cursor.execute("""
-                        INSERT INTO ace_product_api_logs (ace_product_id, api_response_json, last_api_call_at)
-                        VALUES (%s, %s, NOW())
-                        ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-                    """, (row['id'], json.dumps(data, ensure_ascii=False)))
+                # api_logs 기록 (ace 또는 merge listing)
+                _log_api_response(cursor, ref_num, data)
 
             elif event == 'product/fail_to_update':
                 # 수정 실패: 바이마에 상품이 존재함 → is_published 유지 (0으로 바꾸면 안됨)
@@ -175,15 +187,8 @@ def update_db_with_webhook(event, data):
                         updated_at = NOW()
                     WHERE reference_number = %s
                 """, (ref_num,))
-                # api_logs에 저장
-                cursor.execute("SELECT id FROM ace_products WHERE reference_number = %s", (ref_num,))
-                row = cursor.fetchone()
-                if row:
-                    cursor.execute("""
-                        INSERT INTO ace_product_api_logs (ace_product_id, api_response_json, last_api_call_at)
-                        VALUES (%s, %s, NOW())
-                        ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-                    """, (row['id'], json.dumps(data, ensure_ascii=False)))
+                # api_logs 기록 (ace 또는 merge listing)
+                _log_api_response(cursor, ref_num, data)
 
             conn.commit()
         conn.close()
