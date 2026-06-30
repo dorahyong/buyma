@@ -32,8 +32,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 SCAN = os.path.join(HERE, 'scan_store_brands.py')
 
 
-def run_one(store, dry, deactivate, retries):
-    cmd = [sys.executable, SCAN, '--store', store, '--reconcile', '--brands-only']
+def run_one(store, dry, deactivate, retries, passes):
+    cmd = [sys.executable, SCAN, '--store', store, '--reconcile', '--brands-only', '--passes', str(passes)]
     if dry:
         cmd.append('--dry-run')
     if deactivate:
@@ -57,8 +57,9 @@ def main():
     ap.add_argument('--source', help='한 몰만 (기본: 순회형 8몰 전체)')
     ap.add_argument('--dry-run', action='store_true')
     ap.add_argument('--deactivate', action='store_true',
-                    help='[opt-in] 사라진 브랜드 끄기까지(기본: 추가/URL갱신만)')
+                    help='[opt-in] 사라진 브랜드 끄기까지(기본: 추가/URL갱신 + 삭제후보 로그)')
     ap.add_argument('--retries', type=int, default=3)
+    ap.add_argument('--passes', type=int, default=1, help='스캔 union 횟수. 트리추출이라 1번이면 완전(호버 폴백 시만 늘림)')
     args = ap.parse_args()
 
     if args.source and args.source not in LOOP_STORES:
@@ -70,7 +71,7 @@ def main():
     results = []
     for s in stores:
         print(f"\n>>> {s}")
-        ok, msg = run_one(s, args.dry_run, args.deactivate, args.retries)
+        ok, msg = run_one(s, args.dry_run, args.deactivate, args.retries, args.passes)
         print(f"  {'OK' if ok else 'FAIL'}: {msg}")
         results.append((s, ok, msg))
 

@@ -17,6 +17,7 @@ import os
 import sys
 import io
 import re
+import csv
 import json
 import asyncio
 import argparse
@@ -63,7 +64,7 @@ STORES = {
         'url': 'https://smartstore.naver.com/fabstyle',
         'type': 'smartstore',
         'category_roots': {'MEN', 'WOMEN', 'BAG', 'ACC'},
-        'brand_parent': 'BRAND',  # BRAND → 자음그룹 → 실제 브랜드 (2단계 호버)
+        'brand_parent': 'BRAND',  # BRAND → 자음 범위 그룹(ㄱ~ㄹ 등) → 실제 브랜드 (3단 중첩)
     },
     'loutique': {
         'name': '루티크',
@@ -136,18 +137,109 @@ STORES = {
         'source_site': 'veroshopmall',
         'url': 'https://smartstore.naver.com/veroshopmall',
         'type': 'smartstore',
-        # #ㄱ ~ #ㅎ 자음 그룹이 각각 브랜드 부모 (팹스타일 BRAND_PARENT의 다중 버전)
-        'brand_parents': ['#ㄱ', '#ㄴ', '#ㄷ', '#ㄹ', '#ㅁ', '#ㅂ',
-                          '#ㅅ', '#ㅇ', '#ㅈ-ㅌ', '#ㅍ', '#ㅎ'],
+        # 자음 그룹이 '#ㄱ'·'#ㅋ-ㅍ' 등으로 묶이고 가끔 재편됨 → 하드코딩(brand_parents)하면
+        # 안 맞는 그룹을 통째로 놓침(펜디 등 ㅍ 누락). '#'로 시작하는 top 메뉴를 전부 브랜드
+        # 그룹으로 자동 인식 → 메뉴가 어떻게 묶이든 안 깨짐.
+        'brand_parent_prefix': '#',
     },
 }
 
 COOKIE_FILE = os.path.join(os.path.dirname(__file__), 'naver_cookies.json')
+# 삭제된(사라진) 브랜드 후보 로그 — 담당자 확인용(reconcile이 스캔할 때 같이 기록)
+REMOVAL_LOG = os.path.join(os.path.dirname(__file__), 'brand_removal_log.csv')
 
 
 # =====================================================
 # Phase 1: Playwright로 네비게이션 추출
 # =====================================================
+
+def extract_from_tree(tree: dict, store_config: dict, store_id: str) -> Dict[str, List[Dict]]:
+    """window.__PRELOADED_STATE__.categoryMenu.storeCategoryTree 에서 브랜드/카테고리 추출.
+    호버 방식(배너 가림·3단 중첩·flaky)을 대체 — 완전하고 안정적. 분류 규칙은 호버 버전과 동일.
+    트리 노드: {name, id(해시), level, subCategories[...]}.
+    """
+    result = {'brands': [], 'categories': []}
+    if not tree:
+        return result
+    CATEGORY_ROOTS = store_config.get('category_roots', {'남성', '여성', '키즈', '가방', '지갑', '신발', '패션소품'})
+    BRAND_PARENT = store_config.get('brand_parent')
+    BRAND_PARENTS = store_config.get('brand_parents')
+    BRAND_PARENT_PREFIX = store_config.get('brand_parent_prefix')
+    BRANDS_AT_TOP = store_config.get('brands_at_top', False)
+    BRAND_PREFIX = store_config.get('brand_prefix')
+    brand_range = store_config.get('brand_range')
+    emoji_re = re.compile(r'[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF]')
+    clean = lambda s: emoji_re.sub('', s or '').strip()
+
+    def entry(node, path):
+        cid = node.get('id') or node.get('categoryId') or ''
+        return {'name': clean(node.get('name')), 'category_key': cid, 'parent': '',
+                'full_path': path, 'url': f'/{store_id}/category/{cid}?cp=1' if cid else ''}
+
+    def leaves(node, path):  # node 하위의 leaf(=실제 브랜드)만 수집
+        kids = node.get('subCategories') or []
+        if not kids:
+            result['brands'].append(entry(node, path))
+        else:
+            for k in kids:
+                leaves(k, path + ' > ' + clean(k.get('name')))
+
+    def is_index(name):  # '#ㄱ'·'#ㅋ-ㅍ'·'#가'·'#A' = 글자1개씩 → 브랜드 인덱스 / '#남성'=단어 → 카테고리
+        lbl = name[1:].strip() if name.startswith('#') else name
+        parts = [p.strip() for p in re.split(r'[-~]', lbl) if p.strip()]
+        return bool(parts) and all(len(p) == 1 for p in parts)
+
+    tops = tree.get('subCategories') or []
+    if BRANDS_AT_TOP:
+        in_range = brand_range is None
+        for t in tops:
+            nm = clean(t.get('name'))
+            if brand_range and not in_range and nm == brand_range[0]:
+                in_range = True
+            if in_range and nm:
+                result['brands'].append(entry(t, nm))
+            if brand_range and nm == brand_range[1]:
+                break
+    else:
+        # 브랜드 구조 설정이 하나도 없는 몰(premiumsneakers 등): 옛 호버처럼 '영문 최상위 그룹=브랜드'.
+        # 영문 글자그룹(A·B·D,E,F·U-Z…) 자식이 브랜드, 한글 단어(남성·여성)는 카테고리.
+        has_brand_cfg = bool(BRAND_PARENT or BRAND_PARENTS or BRAND_PARENT_PREFIX or BRAND_PREFIX)
+        for t in tops:
+            nm = t.get('name') or ''
+            bp = False
+            if BRAND_PARENT and nm == BRAND_PARENT:
+                bp = True
+            elif BRAND_PARENTS and nm in BRAND_PARENTS:
+                bp = True
+            elif BRAND_PARENT_PREFIX and nm.startswith(BRAND_PARENT_PREFIX):
+                bp = (BRAND_PARENT_PREFIX != '#' or is_index(nm))  # '#'는 인덱스 그룹만(카테고리 제외)
+            elif BRAND_PREFIX and nm.startswith(BRAND_PREFIX):
+                bp = True
+            elif not has_brand_cfg and nm and not re.search(r'[가-힣]', nm) and nm not in CATEGORY_ROOTS:
+                bp = True  # 설정 없는 몰: 영문 글자그룹 = 브랜드 그룹
+            if bp:
+                if BRAND_PARENT and nm == BRAND_PARENT:
+                    leaves(t, nm)  # BRAND → 자음그룹 → 브랜드(leaf): 깊은 leaf가 브랜드 (fabstyle)
+                else:
+                    # brand_parents/brand_parent_prefix/brand_prefix: 그룹 '직속 자식'이 브랜드.
+                    # 그 아래 브랜드별 카테고리(Outer/Tops 등)까지 안 내려감 (joharistore 'Brand [A]→브랜드→카테고리').
+                    for k in (t.get('subCategories') or []):
+                        result['brands'].append(entry(k, nm + ' > ' + clean(k.get('name'))))
+            elif nm in CATEGORY_ROOTS:
+                def catwalk(node, path):
+                    result['categories'].append({'name': clean(node.get('name')), 'url': '',
+                        'category_key': node.get('id', ''), 'parent': '', 'full_path': path,
+                        'hasChild': bool(node.get('subCategories'))})
+                    for k in node.get('subCategories') or []:
+                        kn = clean(k.get('name'))
+                        # 카테고리(키즈 등) 밑의 영문 노드는 브랜드(BURBERRY KIDS 등), 한글은 하위 카테고리
+                        if kn and not re.search(r'[가-힣]', kn):
+                            result['brands'].append(entry(k, path + ' > ' + kn))
+                        else:
+                            catwalk(k, path + ' > ' + kn)
+                catwalk(t, nm)
+    return result
+
 
 async def scan_navigation(store_id: str, store_config: dict) -> Dict[str, List[Dict]]:
     """스토어 네비게이션 메뉴에서 브랜드/카테고리 추출"""
@@ -182,6 +274,16 @@ async def scan_navigation(store_id: str, store_config: dict) -> Dict[str, List[D
             await browser.close()
             return result
 
+        # ★ 우선 페이지 JS의 카테고리 트리에서 추출(호버보다 완전·안정 — 배너 가림/3단 중첩/flaky 없음).
+        #   스마트스토어는 __PRELOADED_STATE__.categoryMenu.storeCategoryTree에 전체 트리가 있음. 없으면 호버 폴백.
+        tree = await page.evaluate(
+            "() => { try { return window.__PRELOADED_STATE__.categoryMenu.storeCategoryTree; } catch(e) { return null; } }")
+        if tree and (tree.get('subCategories')):
+            res = extract_from_tree(tree, store_config, store_id)
+            logger.info(f"트리 추출(호버 생략): 브랜드 {len(res['brands'])}개 / 카테고리 {len(res['categories'])}개")
+            await browser.close()
+            return res
+
         # 1차: 최상위 메뉴 항목 수집
         top_menus = await page.evaluate('''() => {
             const items = [];
@@ -213,6 +315,7 @@ async def scan_navigation(store_id: str, store_config: dict) -> Dict[str, List[D
         CATEGORY_ROOT_PARENTS = store_config.get('category_root_parents', set())  # 최상위 껍데기 (자식이 실제 root)
         BRANDS_AT_TOP = store_config.get('brands_at_top', False)  # 최상위 메뉴 자체가 브랜드
         BRAND_PREFIX = store_config.get('brand_prefix')  # top menu text가 이 prefix로 시작할 때만 브랜드 그룹으로 호버
+        HOVER_WAIT = store_config.get('hover_wait', 0.8)  # 호버 후 서브메뉴 렌더 대기(초). 느린 몰(fabstyle)은 늘림
 
         # 호버 전/후 diff로 자식 항목 추출
         items = []
@@ -248,7 +351,7 @@ async def scan_navigation(store_id: str, store_config: dict) -> Dict[str, List[D
             try:
                 li = page.locator(f'li[data-category-menu-key="{parent_key}"]').first
                 await li.hover(timeout=3000)
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(HOVER_WAIT)
             except:
                 return
 
@@ -329,6 +432,12 @@ async def scan_navigation(store_id: str, store_config: dict) -> Dict[str, List[D
                 logger.info(f"  브랜드 부모 호버: {text}")
                 await hover_and_diff(key, text, recurse_korean=False)
             elif BRAND_PARENT_PREFIX and text.startswith(BRAND_PARENT_PREFIX):
+                # '#' 자동인식 시: 브랜드 인덱스 그룹(#ㄱ·#ㅋ-ㅍ·#가·#A = '-'로 나눈 각 조각이 1글자)만 호버.
+                # 카테고리 그룹(#남성·#골프 = 단어)은 스킵. (브랜드 그룹을 잘못 스킵하면 삭제후보로 드러남)
+                if BRAND_PARENT_PREFIX == '#':
+                    parts = [p.strip() for p in re.split(r'[-~]', text[1:].strip()) if p.strip()]
+                    if not parts or not all(len(p) == 1 for p in parts):
+                        continue
                 # prefix 매칭 브랜드 부모: 런타임에 effective_brand_parents에 추가
                 effective_brand_parents.append(text)
                 logger.info(f"  브랜드 부모 호버: {text}")
@@ -526,8 +635,8 @@ def reconcile_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = 
             existing_by_no = {r['mall_brand_no']: r for r in existing.values() if r['mall_brand_no']}
             catalog_has_kr = any(hangul(r['raw_brand_name']) for r in existing.values())
 
-            inserted = updated = reappeared = retired = skipped_kr = 0
-            seen_existing = set()  # 스캔에서 매칭된(해시 or 이름) 기존 브랜드 — 비활성 판단용
+            inserted = updated = reappeared = retired = skipped_kr = removed_logged = 0
+            seen_existing = set()  # 스캔에서 매칭된(해시 or 이름) 기존 브랜드 — 삭제 판단용
             # 1) 신규 INSERT / 기존 URL 갱신·재활성
             for k, b in scanned.items():
                 name = b['name'].strip()
@@ -576,61 +685,55 @@ def reconcile_mall_brands(source_site: str, brands: List[Dict], dry_run: bool = 
                                     (b['url'], b['category_key'], source_site, row['raw_brand_name']))
                     updated += 1
 
-            # 2) 사이트에서 사라진 '활성' 브랜드 비활성화.
-            #    핵심 안전장치: 메뉴 스캔은 100% 완전하지 않다(브랜드를 놓침). 그래서 "메뉴에 없음"만으로
-            #    끄면 살아있는 브랜드를 죽인다(premiumsneakers 66개·carpi DIOR HOMME 사례).
-            #    → '메뉴에 없음' AND '최근 ACTIVITY_DAYS일 내 상품 수집 0' 둘 다일 때만 비활성.
-            ACTIVITY_DAYS = 60
-            gone = [r for r in existing.values()
-                    if r['raw_brand_name'] not in seen_existing and r['is_active'] == 1]
-            if deactivate and gone:
-                import re as _re
-                from datetime import datetime, timedelta
-                def bkey(s):
-                    return _re.sub(r'[^A-Z0-9]', '', (s or '').upper())
-                def same_family(a, b):  # 'BURBERRY' ⊂ 'BURBERRY KIDS' = 같은 계열
-                    ka, kb = bkey(a), bkey(b)
-                    if not ka or not kb:
-                        return False
-                    if ka == kb:
-                        return True
-                    sh, lo = (ka, kb) if len(ka) <= len(kb) else (kb, ka)
-                    return len(sh) >= 3 and sh in lo
-                cutoff = datetime.now() - timedelta(days=ACTIVITY_DAYS)
-                # 활동은 brand_name_en(오라벨 가능)이 아니라 manufacturer(진짜 브랜드)로 측정.
-                # 예: 'DIOR HOMME' URL이 잡탕수집해 KLATTERMUSEN을 'DIOR HOMME'로 찍어도,
-                #     그건 KLATTERMUSEN의 활동일 뿐 DIOR HOMME는 사라진 것.
-                cur.execute("SELECT JSON_UNQUOTE(JSON_EXTRACT(raw_json_data,'$.manufacturer')) mfr, "
-                            "MAX(updated_at) m FROM raw_scraped_data WHERE source_site=%s GROUP BY mfr",
-                            (source_site,))
-                recent_mfr = [rr['mfr'] for rr in cur.fetchall() if rr['m'] and rr['m'] >= cutoff and rr['mfr']]
+            # 2) 삭제 후보 = 활성인데 스캔(해시/이름)에 없음. 단순 규칙: "스캔에 없으면 삭제 후보".
+            #    기본은 '로그만'(담당자 확인용, 안정화 단계). 실제 비활성/삭제는 --deactivate opt-in.
+            #    안전장치 딱 하나: 스캔이 너무 덜 잡힌 날(coverage<60%)이면 판단보류 — 스캔 한 번 망한 날
+            #    멀쩡한 브랜드를 다 삭제후보로 올리는 사고 방지. (스캔은 --passes로 여러 번 union해 완전하게)
+            # 삭제 후보 판단: '이름'이 스캔에 있으면 그 브랜드가 그 해시를 차지(consume) → 같은 해시를
+            # 공유하는 다른 브랜드(데이터오류: carpi ADER ERROR·ALAIA 동일해시)를 해시로 잘못 살려주지 않게.
+            #   이름매칭(영문몰)=정확 / 해시는 '이름 안 맞는 것'만 구제(끌로에=CHLOE 한글몰용).
+            scanned_hashes = {b.get('category_key') for b in scanned.values() if b.get('category_key')}
+            name_consumed = {b['category_key'] for b in scanned.values()
+                             if b.get('category_key') and norm(b['name']) in existing}
+            rescue_hashes = scanned_hashes - name_consumed
+            def _present(r):
+                return (norm(r['raw_brand_name']) in scanned) or (r['mall_brand_no'] in rescue_hashes)
+            gone = [r for r in existing.values() if r['is_active'] == 1 and not _present(r)]
+            if gone:
                 active_cnt = sum(1 for r in existing.values() if r['is_active'] == 1)
-                if len(scanned) < max(3, active_cnt * 0.5):
-                    logger.warning(f"⚠️ 스캔 {len(scanned)}개 < 기존활성 {active_cnt}개의 절반 "
-                                   f"→ 비활성화 전체 생략(스캔 실패 의심). 후보 {len(gone)}개 유지")
+                matched = sum(1 for r in existing.values() if r['is_active'] == 1 and _present(r))
+                coverage = (matched / active_cnt) if active_cnt else 0
+                if coverage < 0.6:
+                    logger.warning(f"  ⚠️ 불완전 스캔(coverage {coverage:.0%}, 매칭 {matched}/{active_cnt}) "
+                                   f"→ 삭제후보 {len(gone)}개 판단보류. --passes로 여러 번 돌려 완전하게.")
                 else:
-                    protected = 0
-                    for r in gone:
-                        if any(same_family(r['raw_brand_name'], m) for m in recent_mfr):
-                            if dry_run:
-                                logger.info(f"  [보호] 비활성 보류: {r['raw_brand_name']} (최근 {ACTIVITY_DAYS}일 내 '진짜' 상품 수집됨)")
-                            protected += 1
-                            continue
-                        if dry_run:
-                            logger.info(f"  [DRY] 비활성(is_active=0): {r['raw_brand_name']} (메뉴에 없고 {ACTIVITY_DAYS}일+ 무수집)")
-                        else:
-                            cur.execute("UPDATE mall_brands SET is_active=0 WHERE mall_name=%s AND raw_brand_name=%s",
-                                        (source_site, r['raw_brand_name']))
-                        retired += 1
-                    if protected:
-                        logger.info(f"  비활성 보호(최근 수집 있어 살아있음): {protected}개")
-            elif gone and not deactivate:
-                logger.info(f"  (사라진 {len(gone)}개는 --no-deactivate라 유지)")
+                    from datetime import datetime
+                    detected_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    log_new = not os.path.exists(REMOVAL_LOG)
+                    logger.info(f"  ── 삭제 후보(스캔에 없음) {len(gone)}개 (로그: {os.path.basename(REMOVAL_LOG)}) ──")
+                    with open(REMOVAL_LOG, 'a', newline='', encoding='utf-8-sig') as lf:
+                        w = csv.writer(lf)
+                        if log_new:
+                            w.writerow(['detected_at', 'mall', 'brand_name', 'category_key', 'mall_brand_url', 'action'])
+                        for r in gone:
+                            action = '로그만'
+                            if deactivate:
+                                if not dry_run:
+                                    cur.execute("UPDATE mall_brands SET is_active=0 "
+                                                "WHERE mall_name=%s AND raw_brand_name=%s",
+                                                (source_site, r['raw_brand_name']))
+                                action = 'DRY-비활성' if dry_run else '비활성'
+                                retired += 1
+                            removed_logged += 1
+                            w.writerow([detected_at, source_site, r['raw_brand_name'],
+                                        r['mall_brand_no'] or '', r['mall_brand_url'] or '', action])
+                            logger.info(f"    {r['raw_brand_name']}" + (f" → {action}" if action != '로그만' else ''))
 
             if not dry_run:
                 conn.commit()
             kr_note = f" / 한글스킵 {skipped_kr}" if skipped_kr else ""
-            logger.info(f"동기화: 신규 {inserted} / URL갱신 {updated} / 재등장(비활성유지) {reappeared} / 비활성 {retired}{kr_note}")
+            rm_note = f" / 삭제후보 {removed_logged}" if removed_logged else ""
+            logger.info(f"동기화: 신규 {inserted} / URL갱신 {updated} / 재등장(비활성유지) {reappeared} / 비활성 {retired}{rm_note}{kr_note}")
     finally:
         conn.close()
 
@@ -716,6 +819,9 @@ def main():
                         help='현재 사이트 기준 동기화(기본: 신규추가+URL갱신만). 누적-only INSERT 대신 사용')
     parser.add_argument('--deactivate', action='store_true',
                         help='[opt-in] 사라진 브랜드 is_active=0. 스캔이 완전할 때만 권장(부분 스캔이면 오판). 기본은 끄기 안 함')
+    parser.add_argument('--passes', type=int, default=1,
+                        help='브랜드 스캔 반복 union — 한 패스가 가끔 일부만 잡혀서. 권장 3 (삭제후보 정확도↑)')
+    parser.add_argument('--pass-delay', type=int, default=12, help='union 패스 사이 대기(초)')
     args = parser.parse_args()
 
     if args.brands_only and args.categories_only:
@@ -735,8 +841,25 @@ def main():
     logger.info(f"Mode: {'DRY-RUN' if args.dry_run else 'NORMAL'}")
     logger.info("=" * 60)
 
-    # Phase 1: 네비게이션 추출
-    data = asyncio.run(scan_navigation(args.store, store_config))
+    # Phase 1: 네비게이션 추출 (--passes>1 이면 여러 번 스캔 union — 한 패스가 가끔 일부만 잡힘)
+    if args.passes > 1 and not args.categories_only:
+        import time
+        union = {}  # category_key -> brand dict
+        categories = []
+        for i in range(args.passes):
+            d = asyncio.run(scan_navigation(args.store, store_config))
+            for b in (d.get('brands') or []):
+                k = b.get('category_key')
+                if k and k not in union:
+                    union[k] = b
+            if d.get('categories'):
+                categories = d['categories']
+            logger.info(f"  [union] pass {i+1}/{args.passes}: 누적 브랜드 {len(union)}개")
+            if i < args.passes - 1:
+                time.sleep(args.pass_delay)
+        data = {'brands': list(union.values()), 'categories': categories}
+    else:
+        data = asyncio.run(scan_navigation(args.store, store_config))
 
     brands = [] if args.categories_only else data['brands']
     categories = [] if args.brands_only else data['categories']

@@ -113,3 +113,7 @@ naver/__pycache__/
 naver/**/__pycache__/
 naver/premiumsneakers/full_collect_summary_*.txt
 naver/premiumsneakers/full_collect_*.log
+
+# 브랜드 삭제후보 — 생성 결과물(돌리면 재생성)
+naver/brand_removal_log.csv
+naver/brand_removal_report.html
