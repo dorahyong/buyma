@@ -290,6 +290,13 @@ def record_after_create(conn, listing, resp):
 
 def execute_create(conn, listing, dry_run=True):
     """한 listing CREATE. dry_run=True 면 실제 POST 안 함(ref 발급도 메모리만)."""
+    # ★ 이중 안전장치: 이미 BUYMA 등록(buyma_product_id 있음)인 listing 은 CREATE 차단 → 재등록(중복) 방지.
+    #   단일권위 전환 등으로 listing 에 정체성이 들어온 뒤 이미 라이브인 상품을 다시 등록하는 사고 방지.
+    #   (execute_create_safe 의 동일 가드를 직접 호출 경로에도 적용 — 정상 신규는 buyma_product_id NULL 이라 안 막힘)
+    if listing.get('buyma_product_id'):
+        return {'skipped': True,
+                'reason': f"이미 등록됨(buyma_product_id={listing['buyma_product_id']}) → CREATE 차단(중복방지)",
+                'ref': listing.get('reference_number')}
     issue_reference_number(conn, listing, dry_run=dry_run)
     req = build_create_request(conn, listing)
     if req is None:
