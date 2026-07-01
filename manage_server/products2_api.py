@@ -8,7 +8,7 @@ v2 는 실제 BUYMA 단위인 buyma_listings 를 행으로 하고, merge 결과 
   - 몰/winner/마진   : source_offerings (+ winner 의 ace margin)
   - 신호(찜/조회/…)  : buyma_product_stats (buyma_product_id)
   - 게시일수         : v_listing_days (buyma_product_id)
-  - 점수             : score_index_listed (listing_id 직접)
+  - 점수             : score_index_listed(출품중) / score_index_fresh(출품대기) (listing_id 직접)
   - 이미지           : listing_images (listing_id)
 
 products.html 이 기대하는 item 스키마와 동일한 키를 낸다(프런트 복사 재사용 위해).
@@ -84,9 +84,11 @@ def build_payload(db_config: Dict) -> Dict:
         cur.execute("SELECT buyma_product_id, total_listed_days FROM v_listing_days")
         days_by_pid = {str(r['buyma_product_id']): _to_float(r['total_listed_days']) for r in cur.fetchall()}
 
-        # 6. 점수 (listing_id 직접)
+        # 6. 점수 (listing_id 직접). 출품중=score_index_listed, 출품대기=score_index_fresh (상호배타).
         cur.execute("SELECT listing_id, score FROM score_index_listed")
         score_by_lid = {r['listing_id']: _to_float(r['score']) for r in cur.fetchall()}
+        cur.execute("SELECT listing_id, score FROM score_index_fresh")
+        score_fresh_by_lid = {r['listing_id']: _to_float(r['score']) for r in cur.fetchall()}
 
         # 7. 첫 이미지 (listing별 position 최소)
         cur.execute("""SELECT li.listing_id, li.cloudflare_image_url, li.source_image_url
@@ -105,6 +107,9 @@ def build_payload(db_config: Dict) -> Dict:
         wace = ace_info.get(winner['ace_product_id']) if winner else None
         bstats = stats_by_pid.get(str(bp_id)) if bp_id else None
         img = img_by_lid.get(lid)
+        # 예상일일마진액: 출품중이면 출품중 점수, 아니면(대기) 대기 점수
+        _ls = score_by_lid.get(lid)
+        edm = _ls if _ls is not None else score_fresh_by_lid.get(lid)
 
         items.append({
             'listing_id':        lid,
@@ -137,7 +142,7 @@ def build_payload(db_config: Dict) -> Dict:
             'registered_at':     _fmt_dt(l.get('buyma_registered_at')),
             'listed_days':       days_by_pid.get(str(bp_id)) if bp_id else None,
             'expire_at':         _fmt_dt(l.get('available_until'), '%Y/%m/%d'),
-            'expected_daily_margin': score_by_lid.get(lid),
+            'expected_daily_margin': edm,
             'same_count': None, 'rank_position': None, 'our_ranks': None,
             'top1_link': None, 'top1_is_ours': None, 'top1_seller_name': None,
             'top1_seller_id': None, 'top1_price': None, 'top1_name': None,
