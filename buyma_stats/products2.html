@@ -1,0 +1,852 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>바이마 출품목록관리 v2 (buyma_listings)</title>
+  <link rel="stylesheet" href="./products.css">
+  <link rel="stylesheet" href="./filter-tabs.css">
+</head>
+<body>
+  <div class="topbar">
+    <h1>바이마 출품목록관리 v2 <span style="font-size:13px;color:#888">— buyma_listings 기준(신규·단일권위)</span></h1>
+    <div class="right">
+      <span class="meta" id="meta">데이터 로드 중…</span>
+      <input type="text" id="search" placeholder="상품명 / 품번 / 상품ID 검색">
+      <button id="export-csv" type="button">엑셀 다운로드</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="filters"></div>
+
+  <div class="facet-bar" id="facet-bar">
+    <div class="facet-control">
+      <label>몰</label>
+      <select id="facet-mall-select">
+        <option value="">＋ 몰 선택</option>
+      </select>
+    </div>
+    <div class="facet-control">
+      <label>브랜드</label>
+      <select id="facet-brand-select">
+        <option value="">＋ 브랜드 선택</option>
+      </select>
+    </div>
+    <div class="facet-chips" id="facet-chips"></div>
+  </div>
+
+  <div id="content"></div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <span class="close" id="modal-close">×</span>
+      <h3 id="modal-title">상세</h3>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <script src="./filter-tabs.js"></script>
+  <script>
+    // =======================================================
+    // 컬럼 정의 (기획문서 1~26번; 27번 출품제외요청은 보류)
+    // 데이터는 /manage/products/data.json (manage_server/products_api.py)
+    // 에서 fetch로 받아옴. (행 = model_id)
+    // =======================================================
+    const COLS = [
+      { key: 'image',       label: '이미지',
+        render: (r) => r.image_url
+          ? `<img class="thumb" src="${esc(r.image_url)}" alt="" loading="lazy" decoding="async" width="44" height="44" data-tip="상품 대표 이미지입니다.">`
+          : '<span class="placeholder">—</span>' },
+
+      { key: 'status',      label: '상태',
+        sortKey: (r) => statusOrder(r.status),
+        render: (r) => statusBadge(r.status) + (r.db_mismatch_reason
+          ? ` <span class="warn-mismatch" data-tip="DB 상태 불일치: ${esc(r.db_mismatch_reason)}" title="DB 상태 불일치: ${esc(r.db_mismatch_reason)}">⚠️</span>`
+          : '') },
+
+      { key: 'name_ja',     label: '상품명(일본어)',  cls: 'name',
+        sortKey: (r) => r.name_ja || '',
+        render: (r) => r.name_ja ? `<div title="${esc(r.name_ja)}">${esc(r.name_ja)}</div>` : '<span class="placeholder">—</span>' },
+
+      { key: 'name_ko',     label: '상품명(한국어)',  cls: 'name',
+        sortKey: (r) => r.name_ko || '',
+        render: (r) => r.name_ko ? `<div title="${esc(r.name_ko)}">${esc(r.name_ko)}</div>` : '<span class="placeholder">—</span>' },
+
+      { key: 'brand_name_en', label: '브랜드명',
+        sortKey: (r) => r.brand_name_en || '',
+        render: (r) => r.brand_name_en ? `<div title="${esc(r.brand_name_en)}">${esc(r.brand_name_en)}</div>` : '<span class="placeholder">—</span>' },
+
+      { key: 'category_path', label: '카테고리',
+        sortKey: (r) => r.category_path || '',
+        render: (r) => r.category_path ? `<div title="${esc(r.category_path)}">${esc(r.category_path)}</div>` : '<span class="placeholder">—</span>' },
+
+      { key: 'access',      label: '총 조회수',         cls: 'num',
+        tip: '매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => r.access_count ?? -1,
+        render: (r) => num(r.access_count) },
+
+      { key: 'cart',        label: '총 장바구니수',     cls: 'num',
+        tip: '매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => r.cart_count ?? -1,
+        render: (r) => num(r.cart_count) },
+
+      { key: 'fav',         label: '총 찜 수',          cls: 'num',
+        tip: '매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => r.favorite_count ?? -1,
+        render: (r) => num(r.favorite_count) },
+
+      { key: 'access_avg',  label: '일평균 조회수',     cls: 'num',
+        tip: '누적 조회수 ÷ 바이마 등록 후 경과일수입니다.\n총 조회수는 매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => avg(r.access_count, r.registered_at) ?? -1,
+        render: (r) => fmt(avg(r.access_count, r.registered_at)) },
+
+      { key: 'cart_avg',    label: '일평균 장바구니수', cls: 'num',
+        tip: '누적 장바구니수 ÷ 바이마 등록 후 경과일수입니다.\n총 장바구니수는 매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => avg(r.cart_count, r.registered_at) ?? -1,
+        render: (r) => fmt(avg(r.cart_count, r.registered_at)) },
+
+      { key: 'fav_avg',     label: '일평균 찜수',       cls: 'num',
+        tip: '누적 찜 수 ÷ 바이마 등록 후 경과일수입니다.\n총 찜 수는 매일 새벽 2시 배치로 갱신됩니다.',
+        sortKey: (r) => avg(r.favorite_count, r.registered_at) ?? -1,
+        render: (r) => fmt(avg(r.favorite_count, r.registered_at)) },
+
+      { key: 'lowest_buyma',label: '바이마 최저가',     cls: 'num',
+        tip: '바이마에서 같은 상품을 판매하는 셀러들(우리 포함) 중 가장 낮은 판매가입니다.',
+        sortKey: (r) => r.buyma_lowest_price ?? -1,
+        render: (r) => num(r.buyma_lowest_price, '¥') },
+
+      { key: 'lowest_avail',label: '출품가능 최저가',   cls: 'num',
+        tip: '현재 재고가 있어 실제로 출품 가능한 소싱처 중 최저 매입가(엔화 환산)입니다.\n재고가 없는 소싱처는 제외됩니다.',
+        sortKey: (r) => r.available_lowest_price_jpy ?? -1,
+        render: (r) => num(r.available_lowest_price_jpy, '¥') },
+
+      { key: 'price',       label: '바이마 출품가',     cls: 'num',
+        tip: '우리가 바이마에 등록한 판매가입니다.\n‘출품중’ 상태가 아니면 0으로 표시됩니다.',
+        sortKey: (r) => r.price_yen ?? -1,
+        render: (r) => r.status === 'on_sale' ? num(r.price_yen, '¥') : num(0, '¥') },
+
+      { key: 'margin',      label: '기대마진',          cls: 'num',
+        tip: '바이마 출품가 − 출품가능 최저가를 원화로 환산한 값입니다.\n괄호 안은 출품가 대비 마진율(%)입니다.',
+        sortKey: (r) => r.expected_margin_krw ?? -Infinity,
+        render: (r) => marginCell(r) },
+
+      { key: 'sold',        label: '총 판매수',         cls: 'num',
+        tip: '매일 새벽 3시 30분 배치로 갱신됩니다.',
+        sortKey: (r) => r.sold_count ?? -1,
+        render: (r) => num(r.sold_count) },
+
+      { key: 'sales_amount',label: '총 판매금액',       cls: 'num',
+        tip: '매일 새벽 3시 30분 배치로 갱신됩니다.',
+        sortKey: (r) => r.sales_amount_jpy ?? -1,
+        render: (r) => num(r.sales_amount_jpy, '¥') },
+
+      { key: 'rank',        label: '인기순 순위',       cls: 'center',
+        sortKey: (r) => r.rank_position ?? 99999,
+        render: (r) => r.rank_position != null
+          ? `<span class="clickable" onclick='openModal("rank", ${JSON.stringify(r.model_id)})'>${r.rank_position}위</span>`
+          : '<span class="placeholder">—</span>' },
+
+      { key: 'same_count',  label: '동일품번 제품수',   cls: 'num',
+        sortKey: (r) => r.same_count ?? -1,
+        render: (r) => num(r.same_count) },
+      { key: 'same_access', label: '동일품번 총조회수', cls: 'num placeholder', render: () => '—' },
+
+      { key: 'top1',        label: '동일품번 인기 1위', cls: 'center',
+        sortKey: (r) => r.top1_is_ours ? 0 : 1,
+        render: (r) => {
+          if (r.top1_link == null && r.same_count == null) return '<span class="placeholder">—</span>';
+          const label = r.top1_is_ours ? '우리가 차지함' : '확인하기';
+          return `<span class="clickable" onclick='openModal("top1", ${JSON.stringify(r.model_id)})'>${label}</span>`;
+        } },
+
+      { key: 'access_7d',   label: '최근 7일 조회수',   cls: 'num',
+        sortKey: (r) => r.access_7d ?? -1,
+        render: (r) => num(r.access_7d) },
+
+      { key: 'buyma_link',  label: '바이마 상품링크',   cls: 'center',
+        render: (r) => r.buyma_product_id
+          ? `<a class="product-link" href="https://www.buyma.com/item/${esc(r.buyma_product_id)}" target="_blank">열기 ↗</a>`
+          : '<span class="placeholder">—</span>' },
+
+      { key: 'sources',     label: '상품출처',          cls: 'center',
+        tip: '해당 listing 을 소싱하는 쇼핑몰 수입니다.\n마우스를 올리면 몰 목록이 표시됩니다.',
+        sortKey: (r) => r.source_count ?? 0,
+        render: (r) => `<span title="${(r.malls||[]).join(', ')}">${r.source_count ?? 0}곳</span>` },
+
+      { key: 'price_updated_at',  label: '최저가 업데이트 일시',
+        tip: '출품가능 최저가가 마지막으로 변경된 시각입니다.\n시스템은 주기적으로 가격 정보를 확인하며, 가격 변동이 없는 경우 이 날짜는 변경되지 않습니다.',
+        sortKey: (r) => r.price_updated_at || '',
+        render: (r) => esc(r.price_updated_at) || '<span class="placeholder">—</span>' },
+
+      { key: 'source_updated_at', label: '소싱처 업데이트 일시',
+        tip: '소싱처(쇼핑몰) 상품 정보가 마지막으로 변경된 시각입니다.\n시스템은 주기적으로 상품 정보를 확인하며, 소싱처에 변경된 내용이 없는 경우 이 날짜는 변경되지 않습니다.',
+        sortKey: (r) => r.source_updated_at || '',
+        render: (r) => esc(r.source_updated_at) || '<span class="placeholder">—</span>' },
+
+      { key: 'reg_date',    label: '바이마 등록일',
+        sortKey: (r) => parseRegDate(r.registered_at)?.getTime() ?? -1,
+        render: (r) => esc(r.registered_at) || '<span class="placeholder">—</span>' },
+
+      { key: 'reg_days',    label: '등록기간(일)',      cls: 'num',
+        tip: '바이마에 등록된 날부터 오늘까지 지난 일수입니다.\n일평균 찜/조회/장바구니수 계산의 기준이 됩니다.',
+        sortKey: (r) => regDays(r.registered_at) ?? -1,
+        render: (r) => fmtDays(regDays(r.registered_at)) },
+
+      { key: 'listed_days', label: '실제 게시일수',     cls: 'num',
+        tip: '실제로 출품중이던 기간만 누적한 게시일수입니다.\n품절로 내려가 있던 기간은 빼고, 재게시되면 같은 상품으로 이어서 누적됩니다.',
+        sortKey: (r) => r.listed_days ?? -1,
+        render: (r) => fmtDays(r.listed_days != null ? Math.floor(r.listed_days) : null) },
+
+      { key: 'score',       label: '예상일일마진액',   cls: 'num',
+        tip: '스코어링이 예측한 하루당 기대 이익(원/일)입니다.\n찜·조회·판매 신호 × 마진 + 시간감점 기반. 현재 검증·튜닝 단계입니다.',
+        sortKey: (r) => r.expected_daily_margin ?? -1,
+        render: (r) => r.expected_daily_margin != null ? num(Math.round(r.expected_daily_margin)) : '<span class="placeholder">—</span>' },
+
+      { key: 'expire',      label: '바이마 구매기한',
+        tip: '바이마에 표시되는 구매 가능 마감일입니다.',
+        render: (r) => esc(r.expire_at) || '<span class="placeholder">—</span>' },
+    ];
+
+    // =======================================================
+    // 상태 매핑
+    // =======================================================
+    const STATUS_META = {
+      'on_sale':   { label: '출품중',          cls: 'status-on',       order: 1 },
+      'waiting':   { label: '출품대기중',      cls: 'status-wait',     order: 2 },
+      'no_lowest': { label: '최저가확보불가',  cls: 'status-noprice',  order: 3 },
+      'sold_out':  { label: '품절',            cls: 'status-soldout',  order: 4 },
+      'unknown':   { label: '확인필요',        cls: 'status-unknown',  order: 9 },
+    };
+    function statusOrder(code) { return STATUS_META[code]?.order ?? 99; }
+    function statusBadge(code) {
+      const m = STATUS_META[code] || { label: code || '—', cls: 'status-unknown' };
+      return `<span class="status-badge ${m.cls}">${esc(m.label)}</span>`;
+    }
+
+    // =======================================================
+    // 유틸
+    // =======================================================
+    function esc(s) {
+      if (s == null) return '';
+      return String(s).replace(/[<>&"']/g, (c) => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+    function num(v, prefix='') {
+      if (v == null) return '<span class="placeholder">—</span>';
+      return prefix + Number(v).toLocaleString('ko-KR');
+    }
+    function fmt(v) {
+      if (v == null || isNaN(v)) return '<span class="placeholder">—</span>';
+      return Number(v).toFixed(2);
+    }
+    function fmtDays(v) {
+      if (v == null) return '<span class="placeholder">—</span>';
+      return v + '일';
+    }
+    function marginCell(r) {
+      // 기대마진: 저장값이 아니라 실시간 계산값(바이마출품가/최저가 − 출품가능최저가, 원화 환산)
+      const v = r.expected_margin_krw;
+      if (v == null) return '<span class="placeholder">—</span>';
+      const cls = v < 0 ? 'neg' : '';
+      const rate = (r.expected_margin_rate != null) ? ` (${Number(r.expected_margin_rate).toFixed(1)}%)` : '';
+      return `<span class="${cls}">${Number(v).toLocaleString('ko-KR')}원${rate}</span>`;
+    }
+    function parseRegDate(s) {
+      if (!s) return null;
+      const m = String(s).match(/(\d{4})\/(\d{2})\/(\d{2})(?:\s+(\d{1,2}):(\d{2}))?/);
+      if (!m) return null;
+      const [, y, mo, d, hh='00', mm='00'] = m;
+      return new Date(`${y}-${mo}-${d}T${String(hh).padStart(2,'0')}:${mm}:00`);
+    }
+    function regDays(s) {
+      const dt = parseRegDate(s);
+      if (!dt) return null;
+      const diff = (Date.now() - dt.getTime()) / 86400000;
+      return Math.max(0, Math.floor(diff));
+    }
+    function avg(total, regAt) {
+      if (total == null) return null;
+      const days = regDays(regAt);
+      if (!days) return Number(total);
+      return Number(total) / days;
+    }
+    function fmtCollectedAt(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return iso;
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      let h = d.getHours();
+      const ampm = h < 12 ? '오전' : '오후';
+      h = h % 12 || 12;
+      const mm = String(d.getMinutes()).padStart(2, '0');
+      return `${y}/${mo}/${da} ${ampm} ${h}:${mm}`;
+    }
+
+    // =======================================================
+    // 상태
+    // =======================================================
+    let DATA = [];   // 부팅 시 data.json 으로 채워짐
+    let META = {};
+    let sortState = { key: null, dir: null };
+    let searchQ = '';
+    let selectedMalls = new Set();   // 몰 다중선택 필터
+    let selectedBrands = new Set();  // 브랜드 다중선택 필터
+    let pageSize = 100;
+    let currentPage = 1;
+
+    // 컬럼 너비 상태 — localStorage에 저장되어 새로고침해도 유지
+    const DEFAULT_WIDTHS = { 'name_ja': 280, 'name_ko': 280 };
+    let columnWidths = (() => {
+      try { return { ...DEFAULT_WIDTHS, ...JSON.parse(localStorage.getItem('columnWidths') || '{}') }; }
+      catch { return { ...DEFAULT_WIDTHS }; }
+    })();
+
+    function applyColumnWidths() {
+      let css = '';
+      for (const [k, w] of Object.entries(columnWidths)) {
+        if (!w) continue;
+        css += `.col-${k} { width: ${w}px; max-width: ${w}px; min-width: ${w}px; }\n`;
+      }
+      let s = document.getElementById('dynamic-col-widths');
+      if (!s) {
+        s = document.createElement('style');
+        s.id = 'dynamic-col-widths';
+        document.head.appendChild(s);
+      }
+      s.textContent = css;
+    }
+
+    function attachResizers() {
+      document.querySelectorAll('thead th').forEach(th => {
+        if (th.querySelector('.resizer')) return;
+        const colKey = th.dataset.colKey;
+        if (!colKey) return;
+        const r = document.createElement('div');
+        r.className = 'resizer';
+        th.appendChild(r);
+        // resizer에서 발생하는 click 이벤트는 th의 onclick(cycleSort)로 전파 차단
+        r.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); });
+        r.addEventListener('mousedown', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          const startX = e.pageX;
+          const startW = th.offsetWidth;
+          r.classList.add('resizing');
+          document.body.style.cursor = 'col-resize';
+          const onMove = (ev) => {
+            const w = Math.max(40, startW + (ev.pageX - startX));
+            columnWidths[colKey] = w;
+            applyColumnWidths();
+          };
+          const onUp = () => {
+            r.classList.remove('resizing');
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            try { localStorage.setItem('columnWidths', JSON.stringify(columnWidths)); } catch {}
+          };
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        });
+        // 더블클릭하면 그 컬럼 너비 리셋
+        r.addEventListener('dblclick', e => {
+          e.preventDefault();
+          e.stopPropagation();
+          delete columnWidths[colKey];
+          applyColumnWidths();
+          try { localStorage.setItem('columnWidths', JSON.stringify(columnWidths)); } catch {}
+        });
+      });
+    }
+
+    function cycleSort(key) {
+      const col = COLS.find(c => c.key === key);
+      if (!col || !col.sortKey) return;
+      if (sortState.key !== key) sortState = { key, dir: 'desc' };
+      else if (sortState.dir === 'desc') sortState = { key, dir: 'asc' };
+      else sortState = { key: null, dir: null };
+      currentPage = 1;
+      renderAll();
+    }
+    window.cycleSort = cycleSort;
+
+    function renderHead() {
+      return '<thead><tr>' + COLS.map((c) => {
+        const sortable = !!c.sortKey;
+        const arrow = sortable ? '<span class="sort-arrow">' + (sortState.key === c.key ? (sortState.dir === 'desc' ? '↓' : '↑') : '⇅') + '</span>' : '';
+        const sortedCls = sortState.key === c.key ? (sortState.dir === 'desc' ? 'sorted-desc' : 'sorted-asc') : '';
+        const onclick = sortable ? `onclick="cycleSort('${c.key}')"` : '';
+        const tip = c.tip ? ` <span class="help-tip" data-tip="${esc(c.tip)}" onclick="event.stopPropagation()">?</span>` : '';
+        return `<th data-col-key="${c.key}" class="col-${c.key} ${sortedCls}" ${onclick}>${esc(c.label)}${tip}${arrow}</th>`;
+      }).join('') + '</tr></thead>';
+    }
+
+    function setPage(n) {
+      const total = Math.max(1, Math.ceil(applyView().length / pageSize));
+      currentPage = Math.min(Math.max(1, n), total);
+      renderAll();
+    }
+    window.setPage = setPage;
+
+    function setPageSize(n) {
+      pageSize = parseInt(n, 10) || 100;
+      currentPage = 1;
+      renderAll();
+    }
+    window.setPageSize = setPageSize;
+
+    function applyView() {
+      let view = DATA.slice();
+      const f = window.ACTIVE_FILTER;
+      if (f && window.matchFilter) view = view.filter(r => window.matchFilter(r, f));
+      if (selectedMalls.size) {
+        view = view.filter(r => Array.isArray(r.malls) && r.malls.some(m => selectedMalls.has(m)));
+      }
+      if (selectedBrands.size) {
+        view = view.filter(r => r.brand_name_en && selectedBrands.has(r.brand_name_en));
+      }
+      if (searchQ) {
+        const q = searchQ.toLowerCase();
+        view = view.filter(r =>
+          (r.name_ja && String(r.name_ja).toLowerCase().includes(q)) ||
+          (r.name_ko && String(r.name_ko).toLowerCase().includes(q)) ||
+          (r.model_id && String(r.model_id).toLowerCase().includes(q)) ||
+          (r.buyma_product_id && String(r.buyma_product_id).includes(q))
+        );
+      }
+      if (sortState.key) {
+        const col = COLS.find(c => c.key === sortState.key);
+        const dir = sortState.dir === 'desc' ? -1 : 1;
+        view.sort((a, b) => {
+          const va = col.sortKey(a), vb = col.sortKey(b);
+          if (va == null && vb == null) return 0;
+          if (va == null) return 1;
+          if (vb == null) return -1;
+          if (typeof va === 'string' || typeof vb === 'string') {
+            return String(va).localeCompare(String(vb)) * dir;
+          }
+          return (va - vb) * dir;
+        });
+      } else {
+        view.sort((a, b) => {
+          const da = parseRegDate(a.registered_at)?.getTime() ?? 0;
+          const db = parseRegDate(b.registered_at)?.getTime() ?? 0;
+          return db - da;
+        });
+      }
+      return view;
+    }
+
+    function renderBody(view) {
+      return '<tbody>' + view.map(r =>
+        '<tr>' + COLS.map(c => `<td class="col-${c.key} ${c.cls || ''}">${c.render(r)}</td>`).join('') + '</tr>'
+      ).join('') + '</tbody>';
+    }
+
+    function renderPager(totalRows) {
+      const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+      if (currentPage > totalPages) currentPage = totalPages;
+      const prevDisabled = currentPage <= 1 ? 'disabled' : '';
+      const nextDisabled = currentPage >= totalPages ? 'disabled' : '';
+      return `
+        <div class="pager">
+          <button onclick="setPage(1)" ${prevDisabled}>« 처음</button>
+          <button onclick="setPage(${currentPage - 1})" ${prevDisabled}>‹ 이전</button>
+          <span>페이지 <input type="number" min="1" max="${totalPages}" value="${currentPage}"
+            onchange="setPage(parseInt(this.value, 10))"> / ${totalPages.toLocaleString()}</span>
+          <button onclick="setPage(${currentPage + 1})" ${nextDisabled}>다음 ›</button>
+          <button onclick="setPage(${totalPages})" ${nextDisabled}>마지막 »</button>
+          <span class="gap"></span>
+          <span>페이지당</span>
+          <select onchange="setPageSize(this.value)">
+            ${[50, 100, 200, 500].map(n => `<option value="${n}" ${n === pageSize ? 'selected' : ''}>${n}건</option>`).join('')}
+          </select>
+        </div>`;
+    }
+
+    function renderAll() {
+      if (window.renderTabBar) window.renderTabBar();
+      const view = applyView();
+      const start = (currentPage - 1) * pageSize;
+      const pageView = view.slice(start, start + pageSize);
+      document.getElementById('content').innerHTML =
+        '<div class="table-wrap"><table>' + renderHead() + renderBody(pageView) + '</table></div>'
+        + renderPager(view.length);
+      document.getElementById('meta').textContent =
+        `${view.length.toLocaleString()} / ${DATA.length.toLocaleString()}건 · 수집: ${fmtCollectedAt(META.collected_at)}`;
+      applyColumnWidths();
+      attachResizers();
+    }
+
+    // =======================================================
+    // 모달
+    // =======================================================
+    function findRow(modelId) { return DATA.find(r => r.model_id === modelId); }
+
+    function modalImage(imgs) {
+      if (!imgs.length) return '<div class="placeholder-note">수집된 이미지가 없습니다.</div>';
+      const rows = imgs.map((img, i) =>
+        `<tr>
+           <td>${i + 1}</td>
+           <td><img class="preview" src="${esc(img.url)}" alt="" loading="lazy" decoding="async"></td>
+           <td><span class="status-badge ${img.is_uploaded ? 'status-on' : 'status-unknown'}">${img.is_uploaded ? '사용' : '미사용'}</span></td>
+           <td>—</td>
+           <td>${img.source_url ? `<a class="product-link" href="${esc(img.source_url)}" target="_blank">원본 ↗</a>` : '—'}</td>
+         </tr>`
+      ).join('');
+      const tipPreview =
+        '현재는 상품 이미지 외에는 수집하지 않습니다.\n' +
+        '수집처의 상품 페이지에는 공식 상품 사진 외에도 실측표, 배송 안내, 매장 로고처럼 사용할 수 없는 이미지가 함께 올라가 있습니다.\n' +
+        '그중 저작권상 문제없이 사용할 수 있는 공식 상품 이미지만 자동으로 골라 수집합니다.\n' +
+        '따라서 현재 수집된 모든 이미지는 바이마 등록에 활용 가능한 이미지입니다.';
+      const tipUse =
+        '이 이미지가 바이마에 실제로 업로드되어 출품에 활용되고 있는지를 나타냅니다.\n' +
+        '- 사용: 출품에 활용 중인 이미지\n' +
+        '- 미사용: 수집은 됐지만 바이마에 업로드되지 않은 이미지';
+      const tipSource = '수집하지 않는 데이터입니다.';
+      const tipLink =
+        '이 이미지가 게시된 소싱처의 원본 상품 페이지 링크입니다.\n' +
+        '클릭하면 새 창에서 열립니다.';
+      const tipIcon = (t) => `<span class="help-tip" data-tip="${esc(t)}">?</span>`;
+      return `
+        <table>
+          <thead><tr>
+            <th>순서</th>
+            <th>미리보기${tipIcon(tipPreview)}</th>
+            <th>사용여부${tipIcon(tipUse)}</th>
+            <th>출처명${tipIcon(tipSource)}</th>
+            <th>원본 링크${tipIcon(tipLink)}</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    function modalSources(ss) {
+      if (!ss.length) return '<div class="placeholder-note">출처 정보가 없습니다.</div>';
+      const rows = ss.map(s =>
+        `<tr>
+           <td>${esc(s.site || '—')}</td>
+           <td>${esc(s.mall_product_id || '—')}</td>
+           <td>${s.stock_status === 'out_of_stock' ? '<span class="status-badge status-soldout">품절</span>' : esc(s.stock_status || '—')}</td>
+           <td>${s.price_krw != null ? Number(s.price_krw).toLocaleString('ko-KR') + '원' : '—'}</td>
+           <td>${s.url ? `<a class="product-link" href="${esc(s.url)}" target="_blank">열기 ↗</a>` : '—'}</td>
+         </tr>`
+      ).join('');
+      return `
+        <table>
+          <thead><tr><th>소싱처</th><th>소싱처 상품ID</th><th>재고</th><th>판매가(KRW)</th><th>링크</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    const MODAL_TITLES = {
+      'image': '수집 이미지 목록',
+      'rank': '품번별 인기순 순위',
+      'top1': '동일품번 인기 1위 상품 정보',
+      'sources': '상품 출처 링크',
+    };
+
+    function modalRank(r) {
+      if (!r.our_ranks || !r.our_ranks.length) {
+        return '<div class="placeholder-note">우리 셀러가 인기순 검색결과에 보이지 않습니다 (또는 시장 데이터 미수집).</div>';
+      }
+      const lines = r.our_ranks.map((rk, i) => `<tr><td>${i+1}</td><td>${rk}위</td></tr>`).join('');
+      return `
+        <div class="placeholder-note" style="margin-bottom:12px">
+          품번 <b>${esc(r.model_id)}</b> 인기순 검색결과 중 <b>${r.same_count ?? '?'}개</b> 상품에서
+          우리(KONNECT) 셀러가 등장하는 모든 위치입니다.
+          ${r.our_ranks.length > 1 ? `(여러 상품 등록 시 평균: <b>${(r.our_ranks.reduce((a,b)=>a+b,0)/r.our_ranks.length).toFixed(1)}위</b>)` : ''}
+        </div>
+        <table>
+          <thead><tr><th>#</th><th>순위</th></tr></thead>
+          <tbody>${lines}</tbody>
+        </table>`;
+    }
+
+    function modalTop1(r) {
+      if (!r.top1_link && !r.top1_seller_name) {
+        return '<div class="placeholder-note">시장 데이터가 아직 수집되지 않았습니다.</div>';
+      }
+      const ours = r.top1_is_ours;
+      return `
+        <div class="placeholder-note" style="margin-bottom:12px">
+          품번 <b>${esc(r.model_id)}</b> 인기순 1위 상품
+          ${ours ? '<b style="color:#1565c0">(우리가 차지함 ✓)</b>' : ''}
+        </div>
+        <table>
+          <tbody>
+            <tr><th style="width:120px">셀러</th><td>${esc(r.top1_seller_name)} ${ours ? '(우리)' : ''}</td></tr>
+            <tr><th>상품명</th><td>${esc(r.top1_name)}</td></tr>
+            <tr><th>가격</th><td>${r.top1_price != null ? '¥' + Number(r.top1_price).toLocaleString('ko-KR') : '—'}</td></tr>
+            <tr><th>링크</th><td>${r.top1_link ? `<a class="product-link" href="${esc(r.top1_link)}" target="_blank">바이마에서 열기 ↗</a>` : '—'}</td></tr>
+          </tbody>
+        </table>
+        <div class="placeholder-note" style="margin-top:12px">
+          ※ 1위 상품의 조회수/문의수/최근 문의일은 추가 수집 (Phase 2) 필요. 현재 검색결과 카드에는 노출되지 않습니다.
+        </div>`;
+    }
+
+    async function openModal(type, modelId) {
+      const r = findRow(modelId);
+      const title = (MODAL_TITLES[type] || '상세') + (r ? ` — 품번 ${r.model_id}` : '');
+      document.getElementById('modal-title').textContent = title;
+      document.getElementById('modal-body').innerHTML = '<div class="placeholder-note">로딩 중…</div>';
+      document.getElementById('modal').classList.add('open');
+
+      let body;
+      try {
+        if (type === 'image') {
+          const resp = await fetch(`./images.json?model_id=${encodeURIComponent(modelId)}`, { cache: 'no-store' });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          body = modalImage(data.images || []);
+        } else if (type === 'sources') {
+          const resp = await fetch(`./sources.json?model_id=${encodeURIComponent(modelId)}`, { cache: 'no-store' });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          body = modalSources(data.sources || []);
+        } else if (type === 'rank' && r) {
+          body = modalRank(r);
+        } else if (type === 'top1' && r) {
+          body = modalTop1(r);
+        } else {
+          body = '<div class="placeholder-note">이 모달의 데이터는 별도 수집기에서 채워질 예정입니다.</div>';
+        }
+      } catch (err) {
+        body = `<div class="placeholder-note">로드 실패: ${esc(err.message)}</div>`;
+      }
+      document.getElementById('modal-body').innerHTML = body;
+    }
+    window.openModal = openModal;
+    document.getElementById('modal-close').onclick = () => document.getElementById('modal').classList.remove('open');
+    document.getElementById('modal').onclick = (e) => { if (e.target.id === 'modal') document.getElementById('modal').classList.remove('open'); };
+
+    document.getElementById('search').oninput = (e) => { searchQ = e.target.value.trim(); currentPage = 1; renderAll(); };
+
+    // =======================================================
+    // 몰 / 브랜드 다중선택 필터 (칩)
+    // =======================================================
+    const FACETS = {
+      mall:  { sel: selectedMalls,  selectEl: 'facet-mall-select',  label: '몰',    cls: 'facet-chip-mall' },
+      brand: { sel: selectedBrands, selectEl: 'facet-brand-select', label: '브랜드', cls: 'facet-chip-brand' },
+    };
+
+    function facetOptionsFor(type) {
+      const vals = new Set();
+      for (const r of DATA) {
+        if (type === 'mall') { (r.malls || []).forEach(m => m && vals.add(m)); }
+        else if (type === 'brand') { if (r.brand_name_en) vals.add(r.brand_name_en); }
+      }
+      return [...vals].sort((a, b) => a.localeCompare(b));
+    }
+
+    function populateFacetSelect(type) {
+      const cfg = FACETS[type];
+      const el = document.getElementById(cfg.selectEl);
+      const placeholder = el.querySelector('option[value=""]');
+      el.innerHTML = '';
+      el.appendChild(placeholder);
+      for (const v of facetOptionsFor(type)) {
+        if (cfg.sel.has(v)) continue;   // 이미 선택된 값은 목록에서 숨김
+        const o = document.createElement('option');
+        o.value = v; o.textContent = v;
+        el.appendChild(o);
+      }
+      el.value = '';
+    }
+
+    function renderFacetChips() {
+      const box = document.getElementById('facet-chips');
+      box.innerHTML = '';
+      for (const type of Object.keys(FACETS)) {
+        const cfg = FACETS[type];
+        for (const v of cfg.sel) {
+          const chip = document.createElement('span');
+          chip.className = 'facet-chip ' + cfg.cls;
+          chip.innerHTML = `<span class="facet-chip-label">${cfg.label}</span>${esc(v)}` +
+            `<span class="facet-chip-x" title="제거">✕</span>`;
+          chip.querySelector('.facet-chip-x').onclick = () => {
+            cfg.sel.delete(v);
+            populateFacetSelect(type);
+            currentPage = 1;
+            renderFacetChips();
+            renderAll();
+          };
+          box.appendChild(chip);
+        }
+      }
+    }
+
+    function setupFacets() {
+      for (const type of Object.keys(FACETS)) {
+        const cfg = FACETS[type];
+        populateFacetSelect(type);
+        document.getElementById(cfg.selectEl).onchange = (e) => {
+          const v = e.target.value;
+          if (!v) return;
+          cfg.sel.add(v);
+          populateFacetSelect(type);
+          currentPage = 1;
+          renderFacetChips();
+          renderAll();
+        };
+      }
+      renderFacetChips();
+    }
+
+    // =======================================================
+    // CSV 다운로드 — 현재 필터/검색/정렬 적용된 결과 전체
+    // =======================================================
+    function csvCellOf(key, r) {
+      switch (key) {
+        case 'image':            return r.image_url || '';
+        case 'status':           return STATUS_META[r.status]?.label || r.status || '';
+        case 'name_ja':          return r.name_ja || '';
+        case 'name_ko':          return r.name_ko || '';
+        case 'brand_name_en':    return r.brand_name_en || '';
+        case 'category_path':    return r.category_path || '';
+        case 'access':           return r.access_count ?? '';
+        case 'cart':             return r.cart_count ?? '';
+        case 'fav':              return r.favorite_count ?? '';
+        case 'sold':             return r.sold_count ?? '';
+        case 'score':            return r.expected_daily_margin != null ? Math.round(r.expected_daily_margin) : '';
+        case 'sales_amount':     return r.sales_amount_jpy ?? '';
+        case 'fav_avg':          { const v = avg(r.favorite_count, r.registered_at); return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
+        case 'access_avg':       { const v = avg(r.access_count, r.registered_at);   return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
+        case 'cart_avg':         { const v = avg(r.cart_count, r.registered_at);     return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
+        case 'lowest_buyma':     return r.buyma_lowest_price ?? '';
+        case 'lowest_avail':     return r.available_lowest_price_jpy ?? '';
+        case 'price':            return r.status === 'on_sale' ? (r.price_yen ?? 0) : 0;
+        case 'margin': {
+          if (r.expected_margin_krw == null) return '';
+          const rate = r.expected_margin_rate != null ? ` (${Number(r.expected_margin_rate).toFixed(1)}%)` : '';
+          return `${Number(r.expected_margin_krw).toLocaleString('ko-KR')}원${rate}`;
+        }
+        case 'rank':             return r.rank_position != null ? `${r.rank_position}위` : '';
+        case 'same_count':       return r.same_count ?? '';
+        case 'same_access':      return '';
+        case 'top1': {
+          if (r.top1_link == null && r.same_count == null) return '';
+          if (r.top1_is_ours) return '우리가 차지함';
+          return r.top1_seller_name || '확인필요';
+        }
+        case 'access_7d':        return r.access_7d ?? '';
+        case 'buyma_link':       return r.buyma_product_id ? `https://www.buyma.com/item/${r.buyma_product_id}` : '';
+        case 'sources':          return r.source_count != null ? `${r.source_count}곳` : '';
+        case 'price_updated_at': return r.price_updated_at || '';
+        case 'source_updated_at':return r.source_updated_at || '';
+        case 'reg_date':         return r.registered_at || '';
+        case 'reg_days':         { const v = regDays(r.registered_at); return v == null ? '' : v; }
+        case 'expire':           return r.expire_at || '';
+        default:                 return '';
+      }
+    }
+
+    function csvRow(arr) {
+      return arr.map(v => {
+        if (v == null) return '';
+        const s = String(v);
+        if (/[",\r\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+        return s;
+      }).join(',');
+    }
+
+    function exportCsv() {
+      const view = applyView();
+      const lines = [csvRow(COLS.map(c => c.label))];
+      for (const r of view) {
+        lines.push(csvRow(COLS.map(c => csvCellOf(c.key, r))));
+      }
+      const csv = '﻿' + lines.join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      a.href = url;
+      a.download = `buyma_products_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    document.getElementById('export-csv').onclick = exportCsv;
+
+    // =======================================================
+    // 도움말 툴팁 — 모달 overflow에 잘리지 않도록 body에 띄움
+    // =======================================================
+    (function setupHelpTips() {
+      const popup = document.createElement('div');
+      popup.className = 'help-tip-popup';
+      document.body.appendChild(popup);
+      const hide = () => { popup.style.display = 'none'; };
+      document.body.addEventListener('mouseover', (e) => {
+        const t = e.target.closest('[data-tip]');
+        if (!t || t.classList.contains('warn-mismatch')) return;
+        const tip = t.getAttribute('data-tip') || '';
+        if (!tip) return;
+        popup.textContent = tip;
+        popup.style.display = 'block';
+        // 위치 계산 (아이콘 아래 중앙, 화면 밖 클램프)
+        const r = t.getBoundingClientRect();
+        const tw = popup.offsetWidth;
+        const th = popup.offsetHeight;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        let left = r.left + r.width / 2 - tw / 2;
+        left = Math.max(8, Math.min(left, vw - tw - 8));
+        let top = r.bottom + 6;
+        // 아래로 넘치면 위쪽에 표시
+        if (top + th > vh - 8) top = r.top - th - 6;
+        popup.style.left = left + 'px';
+        popup.style.top = top + 'px';
+      });
+      document.body.addEventListener('mouseout', (e) => {
+        const t = e.target.closest('[data-tip]');
+        if (t && !t.classList.contains('warn-mismatch')) hide();
+      });
+      // 모달 닫히거나 스크롤 시 숨김
+      window.addEventListener('scroll', hide, true);
+    })();
+
+    // =======================================================
+    // 부팅: data.json fetch (503 = 캐시 워밍업 중이면 자동 재시도)
+    // =======================================================
+    const _limitParam = new URLSearchParams(location.search).get('limit');
+    const _dataUrl = _limitParam ? `./data.json?limit=${encodeURIComponent(_limitParam)}` : './data.json';
+
+    async function loadData(retry = 0) {
+      const meta = document.getElementById('meta');
+      meta.textContent = retry === 0 ? '데이터 로드 중…' : `서버에서 데이터 준비 중… (재시도 ${retry})`;
+      try {
+        const r = await fetch(_dataUrl, { cache: 'no-store' });
+        if (r.status === 503) {
+          // 캐시가 아직 준비 안 됨 — 5초 후 재시도
+          setTimeout(() => loadData(retry + 1), 5000);
+          return;
+        }
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const data = await r.json();
+        DATA = data.items || [];
+        META = data;
+        if (!DATA.length) {
+          document.getElementById('content').innerHTML =
+            '<div class="empty-state">데이터가 없습니다. 크롤러가 한 번도 안 돈 상태일 수 있어요.</div>';
+          meta.textContent = '데이터 없음';
+          return;
+        }
+        if (window.initFilterTabs) await window.initFilterTabs();
+        setupFacets();
+        renderAll();
+      } catch (err) {
+        document.getElementById('content').innerHTML =
+          '<div class="empty-state">데이터 로드 실패<br><br>' +
+          '<code>' + esc(err.message) + '</code><br><br>' +
+          'manage_server가 떠 있는지, /manage/products/data.json 응답이 정상인지 확인해주세요.</div>';
+        meta.textContent = '로드 실패';
+      }
+    }
+    loadData();
+  </script>
+</body>
+</html>

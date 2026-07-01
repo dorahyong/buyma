@@ -28,6 +28,7 @@ from flask import Flask, Response, jsonify, render_template, request, send_from_
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from products_api import build_payload, get_sources, get_images  # noqa: E402
 import products_cache  # noqa: E402
+import products2_cache  # noqa: E402
 from auth import configure_auth, register_auth_routes, require_login  # noqa: E402
 import brands_api  # noqa: E402
 import categories_api  # noqa: E402
@@ -57,6 +58,7 @@ DB_CONFIG = {
 
 # 부팅 시 캐시 워밍업 시작 (gunicorn import 시점)
 products_cache.start({k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'})
+products2_cache.start({k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'})
 
 _MANAGE_LIMIT_CHOICES = (50, 100, 200, 500)
 
@@ -176,6 +178,34 @@ def manage_products_images():
 @app.route("/manage/products/<path:filename>")
 @require_login
 def manage_products_assets(filename):
+    return send_from_directory(_STATS_DIR, filename)
+
+
+# ── products2 (buyma_listings 기준, 신규) ──
+@app.route("/manage/products2/")
+@require_login
+def manage_products2_view():
+    return send_from_directory(_STATS_DIR, "products2.html")
+
+
+@app.route("/manage/products2/data.json")
+@require_login
+def manage_products2_data():
+    j, gz = products2_cache.get()
+    if j is None:
+        return jsonify({"items": [], "count": 0, "loading": True,
+                        "message": "데이터 준비 중입니다. 잠시 후 다시 시도해주세요."}), 503
+    accept = request.headers.get('Accept-Encoding', '')
+    if gz is not None and 'gzip' in accept.lower():
+        return Response(gz, mimetype='application/json',
+                        headers={'Content-Encoding': 'gzip', 'Content-Length': str(len(gz)), 'Vary': 'Accept-Encoding'})
+    return Response(j, mimetype='application/json',
+                    headers={'Content-Length': str(len(j)), 'Vary': 'Accept-Encoding'})
+
+
+@app.route("/manage/products2/<path:filename>")
+@require_login
+def manage_products2_assets(filename):
     return send_from_directory(_STATS_DIR, filename)
 
 
