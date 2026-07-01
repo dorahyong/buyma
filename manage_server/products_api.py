@@ -227,6 +227,22 @@ def _fetch_listing_days(conn) -> Dict[str, float]:
     return out
 
 
+def _fetch_scores(conn) -> Dict[str, float]:
+    """buyma_product_id → 예상일일마진액 점수(원/일). score_index_listed(listing_id) 를
+    buyma_listings 로 조인해 buyma_product_id 기준으로 매핑."""
+    out: Dict[str, float] = {}
+    with conn.cursor() as c:
+        c.execute("""
+            SELECT bl.buyma_product_id, s.score
+            FROM score_index_listed s
+            JOIN buyma_listings bl ON bl.id = s.listing_id
+            WHERE bl.buyma_product_id IS NOT NULL
+        """)
+        for r in c.fetchall():
+            out[str(r['buyma_product_id'])] = _to_float(r['score'])
+    return out
+
+
 # ─────────────────────────────────────────────
 # 상태 판정
 # ─────────────────────────────────────────────
@@ -323,6 +339,9 @@ def build_payload(db_config: Dict) -> Dict:
 
         # 6. 실제 게시일수 (buyma_product_id 기준)
         listing_days_by_pid = _fetch_listing_days(conn)
+
+        # 7. 예상일일마진액 점수 (buyma_product_id 기준, score_index_listed)
+        scores_by_pid = _fetch_scores(conn)
     finally:
         conn.close()
 
@@ -374,6 +393,7 @@ def build_payload(db_config: Dict) -> Dict:
             'source_updated_at':          _iso(raw.get('source_updated_at')),
             'registered_at':              _fmt_dt(ace0.get('buyma_registered_at')) if ace0 else None,
             'listed_days':                listing_days_by_pid.get(str(bp_id)) if bp_id else None,
+            'expected_daily_margin':      scores_by_pid.get(str(bp_id)) if bp_id else None,
             'expire_at':                  _fmt_dt(ace0.get('available_until'), '%Y/%m/%d') if ace0 else None,
             'same_count':       None,
             'rank_position':    None,

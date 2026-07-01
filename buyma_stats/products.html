@@ -196,6 +196,11 @@
         sortKey: (r) => r.listed_days ?? -1,
         render: (r) => fmtDays(r.listed_days != null ? Math.floor(r.listed_days) : null) },
 
+      { key: 'score',       label: '예상일일마진액',   cls: 'num',
+        tip: '스코어링이 예측한 하루당 기대 이익(원/일)입니다.\n찜·조회·판매 신호 × 마진 + 시간감점 기반. 현재 검증·튜닝 단계입니다.',
+        sortKey: (r) => r.expected_daily_margin ?? -1,
+        render: (r) => r.expected_daily_margin != null ? num(Math.round(r.expected_daily_margin)) : '<span class="placeholder">—</span>' },
+
       { key: 'expire',      label: '바이마 구매기한',
         tip: '바이마에 표시되는 구매 가능 마감일입니다.',
         render: (r) => esc(r.expire_at) || '<span class="placeholder">—</span>' },
@@ -704,6 +709,7 @@
         case 'cart':             return r.cart_count ?? '';
         case 'fav':              return r.favorite_count ?? '';
         case 'sold':             return r.sold_count ?? '';
+        case 'score':            return r.expected_daily_margin != null ? Math.round(r.expected_daily_margin) : '';
         case 'sales_amount':     return r.sales_amount_jpy ?? '';
         case 'fav_avg':          { const v = avg(r.favorite_count, r.registered_at); return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
         case 'access_avg':       { const v = avg(r.access_count, r.registered_at);   return v == null || isNaN(v) ? '' : Number(v).toFixed(2); }
