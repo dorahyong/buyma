@@ -379,14 +379,26 @@ def get_products_to_register(conn, limit: int = None, brand: str = None, product
 
 
 def get_product_images(conn, ace_product_id: int) -> List[Dict]:
-    """상품 이미지 조회"""
+    """상품 이미지 조회.
+    ★ 대표이미지(position=1)는 뱃지 썸네일이 있으면 그 주소를 대신 반환한다.
+      (ace_product_thumbnails.is_generated=1). 없으면 원본 cloudflare_image_url 사용.
+      → 신규 등록/수정 모두 자동으로 뱃지 썸네일을 씀. 속도영향 無(주소만 교체).
+      원본은 그대로 보존(썸네일 재생성·뱃지교체·몰별 예외 대비)."""
     with conn.cursor() as cursor:
         sql = """
-            SELECT position, cloudflare_image_url
-            FROM ace_product_images
-            WHERE ace_product_id = %s
-              AND cloudflare_image_url IS NOT NULL
-            ORDER BY position
+            SELECT api.position,
+                   CASE WHEN api.position = 1
+                             AND t.thumbnail_cloudflare_url IS NOT NULL
+                             AND t.thumbnail_cloudflare_url <> ''
+                        THEN t.thumbnail_cloudflare_url
+                        ELSE api.cloudflare_image_url
+                   END AS cloudflare_image_url
+            FROM ace_product_images api
+            LEFT JOIN ace_product_thumbnails t
+                   ON t.image_id = api.id AND t.is_generated = 1
+            WHERE api.ace_product_id = %s
+              AND api.cloudflare_image_url IS NOT NULL
+            ORDER BY api.position
             LIMIT 20
         """
         cursor.execute(sql, (ace_product_id,))
