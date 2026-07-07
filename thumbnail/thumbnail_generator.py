@@ -77,20 +77,21 @@ BADGES = [
     {"file": "03_badge.png", "label": "送料・関税込", "size": (305, 99)},
 ]
 
-# --- 레이아웃 --------------------------------------------------------------
-BADGE_SCALE = 1.15    # 뱃지 확대 배율 (1.0=원본 크기)
-MARGIN_LEFT = 30      # 좌측 여백(px)
-MARGIN_BOTTOM = 30    # 하단 여백(px)
-GAP = 20              # 뱃지 간 간격(px)
+# --- 레이아웃 (정사각 + 비율) ---------------------------------------------
+# BUYMA는 정사각 필수(아니면 잘림). 원본 크기는 유지(확대·축소 없음), 긴 쪽 기준 흰 패딩.
+# 뱃지·여백·그림자는 모두 '이미지 폭의 %'라, 이미지 크기가 달라도 항상 동일 비율로 보임.
+SQUARE_PAD = True          # 긴 쪽 기준 정사각 패딩(흰 여백). BUYMA 정사각 규격
+BADGE_WIDTH_PCT = 0.37     # 가장 큰 뱃지 = 정사각 폭의 37%
+MARGIN_PCT = 0.03          # 좌·하단 여백 = 폭의 3%
+GAP_PCT = 0.02             # 뱃지 간 간격 = 폭의 2%
 ARRANGEMENT = "vertical"   # 'vertical'(세로 스택) | 'horizontal'(가로 나열)
 
-# --- 그림자(우측 하단, 반투명) --------------------------------------------
+# --- 그림자(우측 하단, 반투명) — 이미지 크기에 비례 -----------------------
 SHADOW_ENABLED = True
-SHADOW_OFFSET_X = 10
-SHADOW_OFFSET_Y = 10
-SHADOW_BLUR = 5           # PIL GaussianBlur 반경(≈ CSS blur 5)
-SHADOW_COLOR = (0, 0, 0)  # #000000
-SHADOW_OPACITY = 0.65     # 65% (더 진하게)
+SHADOW_OFFSET_PCT = 0.010  # 그림자 이동 = 폭의 1% (1000px에서 ≈10px, 원 스펙과 일치)
+SHADOW_BLUR_PCT = 0.005    # 흐림 = 폭의 0.5% (1000px에서 ≈5px)
+SHADOW_COLOR = (0, 0, 0)   # #000000
+SHADOW_OPACITY = 0.65      # 65%
 
 NOT_FOUND_VALUE = "not found"
 TARGET_POSITION = 1       # 대표 이미지만
@@ -111,57 +112,69 @@ class BadgeCompositor:
         self._load_badges()
 
     def _load_badges(self) -> None:
+        # 뱃지는 '원본 그대로' 보관하고, 실제 크기는 compose에서 이미지 폭 비율로 정함.
         for b in BADGES:
             path = os.path.join(ASSETS_DIR, b["file"])
             if not os.path.exists(path):
                 raise FileNotFoundError(
                     f"뱃지 이미지 없음: {path}\n→ thumbnail/assets/ 에 '{b['file']}' 를 넣어주세요.")
             img = Image.open(path).convert("RGBA")
-            if BADGE_SCALE != 1.0:
-                img = img.resize((round(img.width * BADGE_SCALE), round(img.height * BADGE_SCALE)),
-                                 Image.LANCZOS)
             self.badges.append(img)
-            log(f"뱃지 로드: {b['file']} ({img.width}x{img.height}, x{BADGE_SCALE})")
+            log(f"뱃지 로드: {b['file']} ({img.width}x{img.height})")
+        self._biggest_w = max(b.width for b in self.badges)  # 비율 스케일 기준(가장 큰 뱃지)
 
     @staticmethod
-    def _make_shadow(badge: Image.Image):
+    def _make_shadow(badge: Image.Image, offset: int, blur: int):
         # returns (shadow_canvas: RGBA, pad: int)
-        """뱃지 실루엣 기반 반투명 드롭섀도우 생성.
-        여백을 둔 캔버스에 (offset+blur) 만큼 자리를 확보해 잘리지 않게 함."""
-        pad = SHADOW_BLUR * 3 + max(SHADOW_OFFSET_X, SHADOW_OFFSET_Y)
+        """뱃지 실루엣 기반 반투명 드롭섀도우 생성. offset/blur는 이미지 크기에 비례."""
+        pad = int(blur * 3 + offset)
         canvas = Image.new("RGBA", (badge.width + pad * 2, badge.height + pad * 2), (0, 0, 0, 0))
         alpha = badge.split()[3].point(lambda a: int(a * SHADOW_OPACITY))
         solid = Image.new("RGBA", badge.size, SHADOW_COLOR + (0,))
         solid.putalpha(alpha)
-        canvas.paste(solid, (pad + SHADOW_OFFSET_X, pad + SHADOW_OFFSET_Y), solid)
-        canvas = canvas.filter(ImageFilter.GaussianBlur(SHADOW_BLUR))
+        canvas.paste(solid, (pad + offset, pad + offset), solid)
+        canvas = canvas.filter(ImageFilter.GaussianBlur(blur))
         return canvas, pad
 
     def compose(self, product: Image.Image) -> Image.Image:
-        """product(RGBA) 위에 뱃지들을 좌측 하단에 얹은 결과 반환."""
+        """정사각 패딩(옵션) 후, 뱃지를 폭 비율로 스케일해 좌측 하단에 얹은 결과 반환."""
         base = product.convert("RGBA")
+
+        # 1) 정사각 패딩 (긴 쪽 기준, 흰 여백, 확대·축소 없음)
+        if SQUARE_PAD and base.width != base.height:
+            S = max(base.size)
+            canvas = Image.new("RGBA", (S, S), (255, 255, 255, 255))
+            canvas.paste(base, ((S - base.width) // 2, (S - base.height) // 2))
+            base = canvas
         W, H = base.size
 
-        # 배치 좌표 계산 (좌측 하단 기준, 리스트 순서대로 아래→위 / 좌→우)
+        # 2) 뱃지·여백·그림자를 이미지 폭 비율로 산정 → 이미지 크기 무관하게 동일 비율
+        factor = (BADGE_WIDTH_PCT * W) / self._biggest_w
+        badges = [b.resize((max(1, round(b.width * factor)), max(1, round(b.height * factor))),
+                           Image.LANCZOS) for b in self.badges]
+        margin = round(W * MARGIN_PCT)
+        gap = round(W * GAP_PCT)
+        offset = max(1, round(W * SHADOW_OFFSET_PCT))
+        blur = max(1, round(W * SHADOW_BLUR_PCT))
+
+        # 3) 배치 좌표 (좌측 하단 기준, 리스트 첫 항목이 맨 위)
         positions: List[tuple] = []
         if ARRANGEMENT == "vertical":
-            # 리스트 첫 항목이 맨 위. 아래에서부터 좌표를 잡고 순서를 되돌려 정렬.
-            y_bottom = H - MARGIN_BOTTOM
-            for badge in reversed(self.badges):
+            y_bottom = H - margin
+            for badge in reversed(badges):
                 y = y_bottom - badge.height
-                positions.append((MARGIN_LEFT, y))
-                y_bottom = y - GAP
+                positions.append((margin, y))
+                y_bottom = y - gap
             positions.reverse()
         else:  # horizontal
-            x = MARGIN_LEFT
-            for badge in self.badges:
-                y = H - MARGIN_BOTTOM - badge.height
-                positions.append((x, y))
-                x += badge.width + GAP
+            x = margin
+            for badge in badges:
+                positions.append((x, H - margin - badge.height))
+                x += badge.width + gap
 
-        for badge, (bx, by) in zip(self.badges, positions):
+        for badge, (bx, by) in zip(badges, positions):
             if SHADOW_ENABLED:
-                shadow, pad = self._make_shadow(badge)
+                shadow, pad = self._make_shadow(badge, offset, blur)
                 base.alpha_composite(shadow, (bx - pad, by - pad))
             base.alpha_composite(badge, (bx, by))
 
@@ -220,11 +233,12 @@ class ThumbnailGenerator:
                             config=Config(signature_version='s3v4', retries={'max_attempts': 3}))
 
     def fetch_pending(self, limit=None, retry_failed=False, ace_product_id=None,
-                      brand=None, published_only=False) -> List[ImageRecord]:
+                      brand=None, published_only=False, regenerate=False) -> List[ImageRecord]:
         """썸네일 작업이 안 된 (또는 실패한) 대표 이미지 조회.
         ace_product_thumbnails 에 완료 기록(is_generated=1)이 없는 이미지를 고른다.
         published_only=True → 이미 BUYMA 게시된 상품만(스토어에 실제 반영되는 대상).
-        brand → 특정 브랜드만(brand_name LIKE)."""
+        brand → 특정 브랜드만(brand_name LIKE).
+        regenerate=True → 이미 만든 것도 포함(설정 바꿔 전부 다시 생성/덮어쓰기)."""
         with self.engine.connect() as conn:
             params = {'pos': TARGET_POSITION}
             base = """
@@ -238,6 +252,8 @@ class ThumbnailGenerator:
             """
             if retry_failed:
                 base += " AND t.id IS NOT NULL AND t.is_generated = 0 "
+            elif regenerate:
+                pass  # 이미 생성된 것도 전부 포함 → 덮어쓰기
             else:
                 base += " AND (t.id IS NULL OR (t.is_generated = 0 AND t.generate_error IS NULL)) "
             if published_only:
@@ -329,7 +345,10 @@ class ThumbnailGenerator:
                     thumbnail_cloudflare_url = VALUES(thumbnail_cloudflare_url),
                     source_cf_url            = VALUES(source_cf_url),
                     is_generated             = VALUES(is_generated),
-                    generate_error           = VALUES(generate_error)
+                    generate_error           = VALUES(generate_error),
+                    -- 재생성 성공 시 BUYMA 반영 상태 리셋(새 이미지라 다시 반영 필요)
+                    buyma_applied_at         = IF(:ok = 1, NULL, buyma_applied_at),
+                    buyma_apply_error        = IF(:ok = 1, NULL, buyma_apply_error)
             """), {'image_id': res.image_id, 'apid': res.ace_product_id,
                    'url': res.thumb_url if res.success else None,
                    'src': res.source_cf_url,
@@ -338,13 +357,14 @@ class ThumbnailGenerator:
             conn.commit()
 
     def run(self, limit=None, retry_failed=False, ace_product_id=None, workers=DEFAULT_WORKERS,
-            brand=None, published_only=False) -> Dict:
+            brand=None, published_only=False, regenerate=False) -> Dict:
         log("=" * 60)
         log(f"썸네일 생성 시작 (병렬 {workers}스레드)"
-            + (f" | 게시분만" if published_only else "") + (f" | 브랜드={brand}" if brand else ""))
+            + (f" | 게시분만" if published_only else "") + (f" | 브랜드={brand}" if brand else "")
+            + (f" | 재생성(덮어쓰기)" if regenerate else ""))
         if self.dry_run:
             log(f"*** DRY RUN — 업로드/DB 없음, 미리보기 저장: {PREVIEW_DIR} ***", "WARNING")
-        imgs = self.fetch_pending(limit, retry_failed, ace_product_id, brand, published_only)
+        imgs = self.fetch_pending(limit, retry_failed, ace_product_id, brand, published_only, regenerate)
         if not imgs:
             log("작업할 이미지가 없습니다.")
             return {'total': 0, 'success': 0, 'failed': 0}
@@ -387,6 +407,7 @@ def main():
     ap.add_argument('--ace-product-id', type=int, default=None)
     ap.add_argument('--brand', type=str, default=None, help='특정 브랜드만 (brand_name LIKE)')
     ap.add_argument('--published-only', action='store_true', help='이미 BUYMA 게시된 상품만')
+    ap.add_argument('--regenerate', action='store_true', help='이미 만든 것도 다시 생성(설정 바꾼 뒤 덮어쓰기)')
     ap.add_argument('--workers', type=int, default=DEFAULT_WORKERS)
     args = ap.parse_args()
 
@@ -394,7 +415,7 @@ def main():
         gen = ThumbnailGenerator(dry_run=args.dry_run)
         gen.run(limit=args.limit, retry_failed=args.retry_failed,
                 ace_product_id=args.ace_product_id, workers=args.workers,
-                brand=args.brand, published_only=args.published_only)
+                brand=args.brand, published_only=args.published_only, regenerate=args.regenerate)
     except Exception as e:
         log(f"실행 오류: {e}", "ERROR")
         import traceback
