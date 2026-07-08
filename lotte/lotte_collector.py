@@ -282,6 +282,26 @@ def parse_artl(artl_info: Dict) -> Dict[str, str]:
     return out
 
 
+# 제조자 폴백 — 브랜드 필드(brandName/brdNm)가 빌 때(병행수입 등) artl 제조자에서 추출
+_MFR_COMPANY = re.compile(r'\(주\)|주식회사|㈜|코리아|korea|유통|무역|상사|인터내셔?날|컴퍼니|company|ltd|inc|\bLF\b|에프앤에프|F&F|병행수입|글로벌|트레이딩|엔터프라이즈|\.com|디스트리|distribution', re.I)
+_MFR_LEGAL = re.compile(r'\s+(S\.?A\.?|S\.?P\.?A\.?|S\.?R\.?L\.?|GmbH|Inc\.?|Ltd\.?|Co\.?|LLC|B\.?V\.?|A\.?G)\.?$', re.I)
+
+
+def brand_from_manufacturer(artl: Dict) -> str:
+    """'제조자, 수입자' 값의 '//' 앞부분(제조자)을 브랜드로. (국가)/법인접미사 제거, 수입사·회사면 ''."""
+    mfr = (artl.get('제조자, 수입자') or artl.get('제조자') or artl.get('제조원') or '')
+    first = mfr.split('//')[0].strip()
+    first = re.sub(r'\s*\(.*$', '', first).strip()                 # (국가/수입사) 꼬리 제거
+    first = _MFR_LEGAL.sub('', first).strip().rstrip(',/-').strip()  # 법인 접미사(SA/Ltd 등)
+    if not first or len(first) < 2:
+        return ''
+    if _MFR_COMPANY.search(first):
+        return ''
+    if re.fullmatch(r'[\d\s,./~-]+', first):
+        return ''
+    return first
+
+
 def convert_to_raw(item: Dict, detail: Dict, full_path: str) -> Optional[Dict]:
     data = (detail or {}).get('data') or {}
     basic = data.get('basicInfo') or {}
@@ -308,6 +328,10 @@ def convert_to_raw(item: Dict, detail: Dict, full_path: str) -> Optional[Dict]:
         images = [item['image']]
     options = parse_options(data.get('optionInfo') or {})
     artl = parse_artl(data.get('artlInfo') or {})
+
+    # 브랜드 폴백: 롯데가 brandName/brdNm 안 준 상품(병행수입 등) → 제조자에서 추출
+    if not brand_name:
+        brand_name = brand_from_manufacturer(artl)
 
     # 옵션이 전부 품절이면 품절로 보정
     if options and all(o['status'] == 'out_of_stock' for o in options):
