@@ -36,6 +36,10 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
 from sqlalchemy.exc import OperationalError
 
 # ===========================================
@@ -575,11 +579,12 @@ def get_brands_from_database(brand_filter: str = None, resume: bool = False) -> 
 def get_published_product_ids() -> set:
     """등록 완료된 상품의 mall_product_id 목록 조회"""
     with engine.connect() as conn:
-        result = conn.execute(text("""
+        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        result = conn.execute(text(f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r
             INNER JOIN ace_products a ON r.id = a.raw_data_id
-            WHERE r.source_site = :site AND a.is_published = 1
+            WHERE r.source_site = :site AND {_reg}
         """), {'site': SOURCE_SITE})
         return {str(r[0]) for r in result}
 

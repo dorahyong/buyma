@@ -29,6 +29,7 @@ import argparse
 
 import reconcile_buyma_push as push
 import reconcile_ensure_group as eg
+import authority_flag
 from dedup_corrector_merge import canonicalize
 
 
@@ -67,6 +68,9 @@ def select_clean_new_listing_ids(conn, limit=3, listing_id=None, shard=None):
         where.append("MOD(CRC32(l.group_key), %s)=%s")
         params += [n, i]
 
+    # 등록판정: OFF=게시멤버 0개(ace 집계) / ON=listing 자신 미등록(위 WHERE l.buyma_product_id IS NULL 로 충분)
+    _having = ("1=1" if authority_flag.use_listing_authority()
+               else "COUNT(DISTINCT CASE WHEN a.is_published=1 THEN a.buyma_product_id END)=0")
     sql = f"""
         SELECT l.id
         FROM buyma_listings l
@@ -74,7 +78,7 @@ def select_clean_new_listing_ids(conn, limit=3, listing_id=None, shard=None):
         JOIN ace_products a ON a.id=so.ace_product_id
         WHERE {' AND '.join(where)}
         GROUP BY l.id
-        HAVING COUNT(DISTINCT CASE WHEN a.is_published=1 THEN a.buyma_product_id END)=0
+        HAVING {_having}
         ORDER BY l.id
         LIMIT %s
     """
@@ -107,6 +111,11 @@ def select_edit_listing_ids(conn, limit=3, listing_id=None, shard=None):
         where.append("MOD(CRC32(l.group_key), %s)=%s")
         params += [n, i]
 
+    # 등록판정: OFF=게시멤버 1개(ace 집계) / ON=listing 자신 등록(번호 보유)
+    if authority_flag.use_listing_authority():
+        where.append("l.buyma_product_id IS NOT NULL")
+    _having = ("1=1" if authority_flag.use_listing_authority()
+               else "COUNT(DISTINCT CASE WHEN a.is_published=1 THEN a.buyma_product_id END)=1")
     sql = f"""
         SELECT l.id
         FROM buyma_listings l
@@ -114,7 +123,7 @@ def select_edit_listing_ids(conn, limit=3, listing_id=None, shard=None):
         JOIN ace_products a ON a.id=so.ace_product_id
         WHERE {' AND '.join(where)}
         GROUP BY l.id
-        HAVING COUNT(DISTINCT CASE WHEN a.is_published=1 THEN a.buyma_product_id END)=1
+        HAVING {_having}
         ORDER BY l.id
         LIMIT %s
     """
@@ -156,13 +165,24 @@ def select_groups_to_process(conn, limit=3, source=None, model_no=None, shard=No
         "EXISTS (SELECT 1 FROM ace_product_images i WHERE i.ace_product_id=a.id AND i.cloudflare_image_url IS NOT NULL)",
     ]
     params = []
-    # scope 사전필터 (효율용; 최종 판정은 process_one_group 의 n_pub 게이트)
+    # scope 사전필터 (효율용; 최종 판정은 process_one_group 의 게이트)
+    # ── 단일권위 스위치: "이 model_no 가 바이마에 등록됐나" 판단 근거 ──
+    #   OFF(옛): ace.is_published  /  ON(새): 그 model_no 조각들이 속한 listing 의 is_published+번호
+    #   listing 엔 model_no 가 없으므로(묶음 단위) source_offerings 다리로 연결.
+    if authority_flag.use_listing_authority():
+        _pub_sql = ("EXISTS (SELECT 1 FROM ace_products p2 "
+                    "JOIN source_offerings so2 ON so2.ace_product_id=p2.id "
+                    "JOIN buyma_listings bl2 ON bl2.id=so2.listing_id "
+                    "WHERE p2.model_no=a.model_no AND bl2.is_active=1 "
+                    "AND bl2.is_published=1 AND bl2.buyma_product_id IS NOT NULL)")
+    else:
+        _pub_sql = "EXISTS (SELECT 1 FROM ace_products p2 WHERE p2.model_no=a.model_no AND p2.is_published=1)"
     if scope == 'new':
-        # 같은 model_no 가 바이마에 등록(is_published=1)된 게 없는 것만 = 미등록 그룹
-        where.append("NOT EXISTS (SELECT 1 FROM ace_products p2 WHERE p2.model_no=a.model_no AND p2.is_published=1)")
+        # 같은 model_no 가 바이마에 미등록인 것만 = 신규 등록 후보
+        where.append("NOT " + _pub_sql)
     elif scope == 'published':
-        # 같은 model_no 가 바이마에 등록된 그룹
-        where.append("EXISTS (SELECT 1 FROM ace_products p2 WHERE p2.model_no=a.model_no AND p2.is_published=1)")
+        # 같은 model_no 가 바이마에 등록된 그룹 = 재고/수정 대상
+        where.append(_pub_sql)
     if source:
         where.append("a.source_site=%s"); params.append(source)
     if model_no:
@@ -246,13 +266,21 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
         listing = push.fetch_listing(conn, listing_id)
         n_pub = _n_published(conn, listing_id)
 
+        # ── 단일권위 스위치: create/edit/collapse 판단 근거 (authority_flag) ──
+        #   OFF(옛): 게시 ace 멤버 수(n_pub) → 0=create / 1=edit / 2+=collapse
+        #   ON(새) : 목록 자신의 정체성(buyma_product_id) 있으면 edit, 없으면 create (collapse 없음)
+        if authority_flag.use_listing_authority():
+            listing_mode = 'edit' if listing.get('buyma_product_id') else 'create'
+        else:
+            listing_mode = 'create' if n_pub == 0 else ('edit' if n_pub == 1 else 'collapse')
+
         # 출품 가능 여부: winner(마진O) 있고 + 재고 있는 옵션 1개+ (기존 stock 과 동일 기준)
         sellable = bool(listing.get('winner_offering_id')) and _has_instock_options(conn, listing_id)
         already_live = bool(listing.get('reference_number')) and (
             listing.get('status') in ('pending', 'success') or listing.get('is_published'))
 
-        # ── scope 게이트 (register/stock 분담) ──
-        group_on_buyma = (n_pub >= 1) or already_live
+        # ── scope 게이트 (register/stock 분담) ── (OFF/ON 동일: listing_mode!=create ⟺ n_pub>=1)
+        group_on_buyma = (listing_mode != 'create') or already_live
         if scope == 'new' and group_on_buyma:
             return {'skipped': True, 'reason': '이미 바이마 등록된 그룹 → stock 담당',
                     'listing_id': listing_id, 'model_no': model_no}
@@ -279,16 +307,15 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
             r = push.execute_retire(conn, listing, dry_run=False)
             return {'mode': 'retire', 'listing_id': listing_id, 'model_no': model_no, **r}
 
-        # ── 출품 가능 → 분류(CREATE/EDIT/COLLAPSE) ──
+        # ── 출품 가능 → 분류(CREATE/EDIT/COLLAPSE) ── (listing_mode = 스위치 반영)
         if dry_run:
-            mode = 'create' if n_pub == 0 else ('edit' if n_pub == 1 else 'collapse')
             return {'dry_run': True, 'listing_id': listing_id, 'model_no': model_no,
-                    'n_pub': n_pub, 'mode': mode, 'resolve': res.get('resolve')}
+                    'n_pub': n_pub, 'mode': listing_mode, 'resolve': res.get('resolve')}
 
-        if n_pub == 0:
+        if listing_mode == 'create':
             r = push.execute_create(conn, listing, dry_run=False)
             return {'mode': 'create', 'listing_id': listing_id, 'model_no': model_no, **r}
-        elif n_pub == 1:
+        elif listing_mode == 'edit':
             r = push.execute_edit(conn, listing, dry_run=False)
             return {'mode': 'edit', 'listing_id': listing_id, 'model_no': model_no, **r}
         else:

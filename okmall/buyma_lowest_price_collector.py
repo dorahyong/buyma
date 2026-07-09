@@ -31,6 +31,8 @@ from bs4 import BeautifulSoup
 import pymysql
 from dotenv import load_dotenv
 
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 # =====================================================
@@ -255,8 +257,12 @@ class BuymaLowestPriceCollector:
                 params.append(product_id)
 
             if new_only:
-                # buyma에 노출 안 되는 상품: 신규(buyma_product_id IS NULL) + 사고로 빠진 상품(is_published=0)
-                query += " AND (buyma_product_id IS NULL OR is_published = 0)"
+                if authority_flag.use_listing_authority():
+                    # ON(새): 이 ace 의 listing 이 바이마 미등록인 것만 (등록건은 stock 전담)
+                    query += " AND NOT " + authority_flag.registered_sql('ace_products')
+                else:
+                    # OFF(옛): buyma에 노출 안 되는 상품: 신규(buyma_product_id IS NULL) + 사고로 빠진 상품(is_published=0)
+                    query += " AND (buyma_product_id IS NULL OR is_published = 0)"
 
             if brand:
                 query += " AND UPPER(brand_name) LIKE %s"

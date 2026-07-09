@@ -20,6 +20,10 @@ import requests
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+
 # ===========================================
 # 환경 설정
 # ===========================================
@@ -164,12 +168,13 @@ def get_product_list_from_api(brand_name: str, limit: int = None) -> List[dict]:
 def get_published_product_ids(brand_name: str = None) -> set:
     """등록 완료된 상품의 mall_product_id 목록 조회"""
     with engine.connect() as conn:
-        query = """
+        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        query = f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r
             INNER JOIN ace_products a ON r.id = a.raw_data_id
             WHERE r.source_site = 'kasina'
-            AND a.is_published = 1
+            AND {_reg}
         """
         if brand_name:
             query += " AND UPPER(r.brand_name_en) = :brand"

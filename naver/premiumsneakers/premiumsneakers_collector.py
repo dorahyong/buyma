@@ -40,6 +40,10 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'okmall'))
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', line_buffering=True)
@@ -118,12 +122,13 @@ def get_brands(brand_filter: Optional[str] = None) -> List[Dict]:
 def get_published_product_ids() -> set:
     """ace_products.is_published=1 인 상품의 mall_product_id 조회 (등록 완료 상품만 스킵 대상)"""
     with engine.connect() as conn:
-        rows = conn.execute(text("""
+        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        rows = conn.execute(text(f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r
             INNER JOIN ace_products a ON r.id = a.raw_data_id
             WHERE r.source_site = :site
-            AND a.is_published = 1
+            AND {_reg}
         """), {'site': SOURCE_SITE}).fetchall()
         return {str(r[0]) for r in rows}
 

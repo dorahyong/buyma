@@ -29,6 +29,8 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+
 # ===========================================
 # 환경 설정
 # ===========================================
@@ -560,12 +562,14 @@ def get_brands_from_database(brand_filter: str = None) -> List[Dict]:
 def get_published_product_ids(brand_name: str = None) -> set:
     """등록 완료된 상품의 mall_product_id 목록 조회"""
     with engine.connect() as conn:
-        query = """
-            SELECT r.mall_product_id 
+        # 등록판정: OFF=ace.is_published / ON=이 ace 의 listing 등록 (단일 정의)
+        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        query = f"""
+            SELECT r.mall_product_id
             FROM raw_scraped_data r
             INNER JOIN ace_products a ON r.id = a.raw_data_id
-            WHERE r.source_site = 'okmall' 
-            AND a.is_published = 1
+            WHERE r.source_site = 'okmall'
+            AND {_reg}
         """
         if brand_name:
             query += " AND UPPER(r.brand_name_en) = :brand"

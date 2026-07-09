@@ -49,6 +49,8 @@ sys.path.insert(0, OKMALL_DIR)
 # convert_to_japanese_gemini.py에서 배치 번역 함수 가져오기
 from convert_to_japanese_gemini import run_batch_translation
 
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+
 # .env 파일 로드 (프로젝트 루트에서)
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
@@ -1074,7 +1076,14 @@ class RawToAceConverter:
                 query += " AND r.id = :raw_id"
                 params['raw_id'] = raw_id
             elif not upsert:
-                if include_unpublished:
+                if authority_flag.use_listing_authority():
+                    # ON(새): "미등록" = 이 ace 의 listing 이 바이마 미등록 (등록된 건 stock 전담)
+                    _notreg = "NOT " + authority_flag.registered_sql('a')
+                    if include_unpublished:
+                        query += f" AND (a.id IS NULL OR {_notreg})"
+                    else:
+                        query += f" AND (a.id IS NULL OR ({_notreg} AND r.updated_at > a.updated_at))"
+                elif include_unpublished:
                     # 미변환 신규 OR 미등록 전부 (raw.updated_at 비교 X) — --skip-collect 용
                     query += """ AND (
                         a.id IS NULL
@@ -1399,7 +1408,11 @@ class RawToAceConverter:
         """raw_data_id로 기존 ace_product 조회"""
         with self.engine.connect() as conn:
             result = conn.execute(text("""
-                SELECT id, reference_number, buyma_product_id, is_published
+                SELECT id, reference_number, buyma_product_id, is_published,
+                       (SELECT COUNT(*) FROM source_offerings so
+                        JOIN buyma_listings bl ON bl.id=so.listing_id AND bl.is_active=1
+                        WHERE so.ace_product_id=ace_products.id AND so.is_active=1
+                          AND bl.is_published=1 AND bl.buyma_product_id IS NOT NULL) AS listing_published
                 FROM ace_products
                 WHERE raw_data_id = :raw_data_id
             """), {'raw_data_id': raw_data_id})
@@ -1409,7 +1422,9 @@ class RawToAceConverter:
                     'id': row[0],
                     'reference_number': row[1],
                     'buyma_product_id': row[2],
-                    'is_published': row[3]
+                    'is_published': row[3],
+                    # ON(단일권위): 이 ace 의 listing 이 바이마 등록됐나
+                    'listing_published': bool(row[4])
                 }
             return None
 
@@ -1608,7 +1623,11 @@ class RawToAceConverter:
                 existing_product = self.get_existing_ace_product(raw_data['id'])
 
                 if existing_product:
-                    if upsert or not existing_product['is_published']:
+                    # ON(단일권위): 등록판정을 listing 기준으로 (등록된 건 덮어쓰기 방지 = stock 전담)
+                    _registered = (existing_product.get('listing_published')
+                                   if authority_flag.use_listing_authority()
+                                   else existing_product['is_published'])
+                    if upsert or not _registered:
                         ace_data = self.convert_single_raw_to_ace(raw_data)
                         if ace_data is None:
                             skipped += 1

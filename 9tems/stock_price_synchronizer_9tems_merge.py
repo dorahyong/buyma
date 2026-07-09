@@ -58,6 +58,7 @@ from dotenv import load_dotenv
 #   reconcile 모듈들은 okmall/ 에 있으므로 sys.path 에 추가 후 import.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'okmall'))
 import reconcile_runner  # noqa: E402  (stdout utf-8 wrap 부수효과 포함)
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
 
 # .env 파일 로드
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'), override=True)
@@ -569,7 +570,11 @@ class StockPriceSynchronizer:
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
-                sql = """
+                # 대상 선정: OFF=게시된 ace(winner) 1개 / ON=이 몰의 offering 중 등록 listing 소속 전부(멤버 포함)
+                _reg = (authority_flag.registered_sql('ap')
+                        if authority_flag.use_listing_authority()
+                        else "ap.is_published = 1 AND ap.buyma_product_id IS NOT NULL")
+                sql = f"""
                     SELECT
                         ap.id,
                         ap.buyma_product_id,
@@ -587,8 +592,7 @@ class StockPriceSynchronizer:
                         ap.expected_shipping_fee,
                         ap.buyma_lowest_price_checked_at
                     FROM ace_products ap
-                    WHERE ap.is_published = 1
-                      AND ap.buyma_product_id IS NOT NULL
+                    WHERE {_reg}
                       AND ap.source_product_url IS NOT NULL
                       AND ap.is_active = 1
                       AND ap.source_site = '9tems'
