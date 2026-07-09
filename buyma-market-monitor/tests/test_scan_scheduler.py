@@ -34,11 +34,15 @@ def test_run_value_scan_scans_only_due_and_advances(tmp_path, monkeypatch):
     scanned = {}
     def fake_run_page_scan(**kw):
         from crawler.page_scan import ScanSummary
+        from storage import scan_repo
         scanned["sellers"] = list(kw["sellers"])
-        # simulate the real scan marking items.last_seen_at = now for scanned sellers
+        # simulate the real page_scan: mark items.last_seen_at = now AND advance each
+        # completed seller's schedule per-seller (marking now lives in page_scan).
         c = connect(str(db))
+        tier_of = kw.get("tier_of") or {}
         for sid in kw["sellers"]:
             c.execute("UPDATE items SET last_seen_at = ? WHERE seller_id = ?", (kw["now"], sid))
+            scan_repo.mark_seller_scanned(c, sid, tier=tier_of.get(sid, "LOW"), now=kw["now"])
         c.close()
         return ScanSummary(sellers_scanned=len(kw["sellers"]))
     import crawler.value_scan as vs

@@ -1,9 +1,40 @@
-"""SQLite connection and schema for the product monitoring pipeline."""
+"""DB connection & schema.
+
+백엔드 2개 지원 (환경변수 MONITOR_DB 로 선택):
+  - mysql  (기본)  : buyma MySQL DB 의 market_* 테이블에 저장 (운영).
+  - sqlite         : 기존 SQLite (테스트 = tests/conftest.py 가 sqlite 강제).
+
+MySQL 경로는 sqlite3.Connection 호환 shim(_MySQLConn) 을 반환하므로 repo 코드(conn.execute
+/.executemany/.fetchone/.fetchall, row["col"]·row[0])는 수정 없이 그대로 동작한다.
+shim 이 SQLite→MySQL dialect 를 자동 변환한다:
+  ?→%s / 테이블명→market_ 접두어 / INSERT OR IGNORE→INSERT IGNORE /
+  ON CONFLICT(col) DO UPDATE SET→ON DUPLICATE KEY UPDATE / excluded.x→VALUES(x)
+"""
+import os
+import re
 import sqlite3
 from pathlib import Path
 
 SCHEMA_VERSION = 6
 
+# ---- .env (buyma DB 자격증명) 로드: buyma-market-monitor 의 상위 buyma 폴더 .env ----
+_ENV_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), ".env"
+)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_ENV_PATH, override=False)
+except Exception:
+    pass
+
+
+def _use_mysql() -> bool:
+    return os.getenv("MONITOR_DB", "mysql").strip().lower() == "mysql"
+
+
+# =====================================================================
+# SQLite (테스트/레거시) — 원본 스키마 유지
+# =====================================================================
 _DDL = """
 CREATE TABLE IF NOT EXISTS items (
   item_id             TEXT PRIMARY KEY,
@@ -134,7 +165,161 @@ CREATE INDEX IF NOT EXISTS idx_seller_scan_next ON seller_scan_state(next_scan_a
 """
 
 
-def connect(db_path: Path | str) -> sqlite3.Connection:
+# =====================================================================
+# MySQL shim — sqlite3.Connection 호환
+# =====================================================================
+import pymysql
+from pymysql.cursors import DictCursor
+
+# SQLite 테이블명 → market_ 접두어 (FROM/INTO/UPDATE/JOIN 뒤 테이블 위치에서만)
+_TABLES = sorted(
+    ["items", "price_history", "orders", "order_watermarks", "order_run_meta",
+     "sellers", "item_images", "stats_history", "item_variants",
+     "revisit_state", "seller_scan_state"],
+    key=len, reverse=True,
+)
+_TBL_RE = re.compile(r"\b(FROM|INTO|UPDATE|JOIN)(\s+)(" + "|".join(_TABLES) + r")\b", re.I)
+_ONCONFLICT_RE = re.compile(r"ON\s+CONFLICT\s*\([^)]*\)\s*DO\s+UPDATE\s+SET", re.I)
+_EXCLUDED_RE = re.compile(r"\bexcluded\.(\w+)", re.I)
+
+
+def _translate(sql: str) -> str:
+    sql = re.sub(r"INSERT\s+OR\s+IGNORE", "INSERT IGNORE", sql, flags=re.I)
+    sql = re.sub(r"INSERT\s+OR\s+REPLACE\s+INTO", "REPLACE INTO", sql, flags=re.I)
+    sql = _ONCONFLICT_RE.sub("ON DUPLICATE KEY UPDATE", sql)
+    sql = _EXCLUDED_RE.sub(r"VALUES(\1)", sql)
+    sql = _TBL_RE.sub(lambda m: m.group(1) + m.group(2) + "market_" + m.group(3), sql)
+    # named placeholder :name → %(name)s  (dict params). 문자로 시작해 시간literal(:30) 오탐 방지.
+    sql = re.sub(r":([A-Za-z_]\w*)", r"%(\1)s", sql)
+    sql = sql.replace("?", "%s")            # positional placeholder → %s
+    return sql
+
+
+class _Row(dict):
+    """sqlite3.Row 호환: row["col"] 와 row[정수인덱스] 둘 다 지원."""
+    def __init__(self, d: dict):
+        super().__init__(d)
+        self._vals = list(d.values())
+
+    def __getitem__(self, k):
+        if isinstance(k, int):
+            return self._vals[k]
+        return dict.__getitem__(self, k)
+
+    def __iter__(self):
+        # sqlite3.Row 처럼 순회·언패킹((x,)=row) 시 "값"을 냄 (dict 기본은 키라 buggy).
+        return iter(self._vals)
+
+
+class _HybridCursor(DictCursor):
+    def fetchone(self):
+        r = super().fetchone()
+        return _Row(r) if r is not None else None
+
+    def fetchall(self):
+        return [_Row(r) for r in super().fetchall()]
+
+    def fetchmany(self, size=None):
+        return [_Row(r) for r in super().fetchmany(size)]
+
+    def __iter__(self):
+        while True:
+            r = self.fetchone()
+            if r is None:
+                break
+            yield r
+
+
+# 연결 끊김(idle drop 등) 에러코드 → 재연결 후 재시도
+_LOST_CODES = (2013, 2006, 2055, 0)
+
+
+class _MySQLConn:
+    """sqlite3.Connection 호환 shim. buffered cursor + db_lock 직렬화 전제(운영은 워커가 락 사용).
+    ★ 장시간 데몬 대비: 연결이 idle 로 끊기면(원격 MySQL) 자동 재연결 후 재시도."""
+    def __init__(self, params: dict):
+        self._params = params
+        self._raw = pymysql.connect(**params)
+
+    def _reconnect(self):
+        try:
+            self._raw.close()
+        except Exception:
+            pass
+        self._raw = pymysql.connect(**self._params)
+
+    def _run(self, method: str, sql: str, arg):
+        q = _translate(sql)
+        try:
+            cur = self._raw.cursor(_HybridCursor)
+            getattr(cur, method)(q, arg)
+            return cur
+        except (pymysql.err.OperationalError, pymysql.err.InterfaceError) as e:
+            code = e.args[0] if e.args else None
+            msg = str(e)
+            if code in _LOST_CODES or "Lost connection" in msg or "gone away" in msg or "Broken pipe" in msg:
+                self._reconnect()
+                cur = self._raw.cursor(_HybridCursor)
+                getattr(cur, method)(q, arg)
+                return cur
+            raise
+
+    def execute(self, sql, params=()):
+        return self._run("execute", sql, params or ())
+
+    def executemany(self, sql, seq):
+        return self._run("executemany", sql, list(seq))
+
+    def commit(self):
+        try:
+            self._raw.commit()
+        except (pymysql.err.OperationalError, pymysql.err.InterfaceError):
+            self._reconnect()  # autocommit=True 라 커밋 유실 없음
+
+    def close(self):
+        try:
+            self._raw.close()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is None:
+            self._raw.commit()
+        else:
+            self._raw.rollback()
+        return False
+
+
+def _mysql_connect() -> "_MySQLConn":
+    params = dict(
+        host=os.getenv("DB_HOST"),
+        port=int(os.getenv("DB_PORT", 3306)),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        database=os.getenv("DB_NAME"),
+        charset="utf8mb4",
+        autocommit=True,       # sqlite isolation_level=None 동등
+        connect_timeout=10,    # ★ 재연결이 무한 대기(hung) 방지
+        read_timeout=60,       # 쿼리 응답 대기 상한
+        write_timeout=60,
+    )
+    return _MySQLConn(params)
+
+
+_MYSQL_DDL_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "mysql_schema.sql"
+)
+
+
+# =====================================================================
+# public
+# =====================================================================
+def connect(db_path: Path | str | None = None):
+    if _use_mysql():
+        return _mysql_connect()
     conn = sqlite3.connect(str(db_path), isolation_level=None, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -142,6 +327,12 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
     return conn
 
 
-def init_schema(conn: sqlite3.Connection) -> None:
+def init_schema(conn) -> None:
+    if isinstance(conn, _MySQLConn):
+        ddl = open(_MYSQL_DDL_PATH, encoding="utf-8").read()
+        body = "\n".join(l for l in ddl.splitlines() if not l.strip().startswith("--"))
+        for stmt in [s.strip() for s in body.split(";") if s.strip()]:
+            conn.execute(stmt)
+        return
     conn.executescript(_DDL)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
