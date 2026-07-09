@@ -1,4 +1,12 @@
 {
   "max_pages": 100,
-  "max_pages_detected_at": "2026-07-02T15:11:33+09:00"
+  "max_pages_detected_at": "2026-07-02T15:11:33+09:00",
+  "last_run_at": "2026-07-09T15:39:53+09:00",
+  "last_run_stats": {
+    "pages_scanned": 100,
+    "sellers_found_in_listing": 478,
+    "sellers_collected": 399,
+    "sellers_filtered_out": 79,
+    "errors": 6
+  }
 }

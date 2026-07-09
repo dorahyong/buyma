@@ -62,6 +62,36 @@ def test_scan_distributes_pages_and_reconciles(tmp_path, monkeypatch):
         "SELECT COUNT(*) FROM items WHERE detail_fetched_at IS NOT NULL").fetchone()[0] == 0
 
 
+def test_completed_seller_checkpointed_immediately(tmp_path, monkeypatch):
+    """page_scan이 셀러 저장 즉시 seller_scan_state 도장을 찍어야(중간에 죽어도
+    완료 셀러는 재스캔 안 함). 빈 스캔 셀러는 도장 안 찍힘."""
+    from crawler.scan_scheduler import next_scan_at_from
+    db = tmp_path / "cp.db"
+    conn = connect(str(db)); init_schema(conn)
+    now = "2026-07-01T00:00:00+09:00"
+    for sid in ("W", "E"):
+        conn.execute(
+            "INSERT INTO seller_scan_state (seller_id, value_tier, value_score, "
+            "last_scanned_at, next_scan_at) VALUES (?,?,?,?,?)",
+            (sid, "HIGH", 0, None, "2026-06-01T00:00:00+09:00"))
+    conn.close()
+    pages = {("W", 1): [_item("w1")], ("E", 1): []}   # E: 빈 스캔 → reconcile 스킵
+    maxpages = {"W": 1, "E": 1}
+    _install_fake_parsers(monkeypatch, pages, maxpages)
+    run_page_scan(
+        db_path=str(db), sellers=["W", "E"],
+        client_factory=lambda: _FakeClient(), num_workers=2,
+        now=now, on_error=lambda **kw: None, tier_of={"W": "HIGH", "E": "HIGH"})
+    conn = connect(str(db))
+    w = conn.execute("SELECT last_scanned_at, next_scan_at FROM seller_scan_state "
+                     "WHERE seller_id='W'").fetchone()
+    e = conn.execute("SELECT last_scanned_at FROM seller_scan_state "
+                     "WHERE seller_id='E'").fetchone()
+    assert w[0] == now                                # 완료 → 도장 찍힘
+    assert w[1] == next_scan_at_from(now, "HIGH")     # 일정 다음으로 넘어감
+    assert e[0] is None                               # 빈 스캔 → 도장 안 찍힘
+
+
 def test_scan_detects_disappeared_and_price_change(tmp_path, monkeypatch):
     db = tmp_path / "s2.db"
     conn = connect(str(db)); init_schema(conn)

@@ -27,16 +27,10 @@ def run_value_scan(
     if not due:
         return ScanSummary()
 
+    # 셀러 완료 도장은 page_scan이 셀러별로 저장하는 즉시 찍음(tier_of 전달) →
+    # 중간에 죽어도 완료 셀러는 재스캔 안 함. (구: 아래에서 스캔 전체 끝난 뒤 일괄 기록)
     summary = run_page_scan(
         db_path=db_path, sellers=due, client_factory=client_factory,
-        num_workers=num_workers, now=now, on_error=on_error,
+        num_workers=num_workers, now=now, on_error=on_error, tier_of=tier_of,
         max_hours=max_hours, circuit_breaker=circuit_breaker, stop_event=stop_event)
-
-    conn = connect(db_path)
-    scanned_ids = {r[0] for r in conn.execute(
-        "SELECT DISTINCT seller_id FROM items WHERE last_seen_at = ?", (now,))}
-    for sid in due:
-        if sid in scanned_ids:
-            scan_repo.mark_seller_scanned(conn, sid, tier=tier_of.get(sid, "LOW"), now=now)
-    conn.close()
     return summary

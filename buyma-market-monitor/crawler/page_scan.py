@@ -26,6 +26,7 @@ from crawler.monitor import (
 from crawler.item_status import ItemStatus
 from crawler.item_detail import build_item_detail_url
 from storage.db import connect, init_schema
+from storage import scan_repo
 
 
 @dataclass
@@ -51,6 +52,7 @@ def run_page_scan(
     max_hours: float | None = None,
     circuit_breaker=None,
     stop_event=None,
+    tier_of: dict | None = None,
 ) -> ScanSummary:
     db_path = Path(db_path)
     summary = ScanSummary()
@@ -88,6 +90,11 @@ def run_page_scan(
         items = buf[sid]
         with db_lock:
             outcome = apply_seller_scan_to_db(main_conn, sid, items, now)
+            # 셀러 저장 즉시 스캔 체크포인트 기록(같은 db_lock 안) → 중간에 죽어도
+            # 완료된 셀러는 다음 run에서 다시 안 긁음. (구: value_scan에서 일괄 기록)
+            if not outcome.skipped_due_to_empty_scan:
+                scan_repo.mark_seller_scanned(
+                    main_conn, sid, tier=(tier_of or {}).get(sid, "LOW"), now=now)
         with counts_lock:
             if not outcome.skipped_due_to_empty_scan:
                 summary.sellers_scanned += 1
