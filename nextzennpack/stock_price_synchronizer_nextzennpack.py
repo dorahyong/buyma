@@ -1031,10 +1031,18 @@ class StockPriceSynchronizer:
                 product = cursor.fetchone()
 
                 cursor.execute("""
-                    SELECT position, cloudflare_image_url
-                    FROM ace_product_images
-                    WHERE ace_product_id = %s AND cloudflare_image_url IS NOT NULL
-                    ORDER BY position LIMIT 20
+                    SELECT api.position,
+                           CASE WHEN api.position = 1
+                                     AND t.thumbnail_cloudflare_url IS NOT NULL
+                                     AND t.thumbnail_cloudflare_url <> ''
+                                THEN t.thumbnail_cloudflare_url
+                                ELSE api.cloudflare_image_url
+                           END AS cloudflare_image_url
+                    FROM ace_product_images api
+                    LEFT JOIN ace_product_thumbnails t
+                           ON t.image_id = api.id AND t.is_generated = 1
+                    WHERE api.ace_product_id = %s AND api.cloudflare_image_url IS NOT NULL
+                    ORDER BY api.position LIMIT 20
                 """, (ace_product_id,))
                 images = cursor.fetchall()
 
