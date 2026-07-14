@@ -1097,7 +1097,9 @@ class RawToAceConverter:
                     )"""
                 
             if brand:
-                query += " AND UPPER(r.brand_name_en) = :brand"
+                # 컬럼에 UPPER() 씌우면 idx_brand_site 인덱스를 못 써 풀스캔(54만) → 제거.
+                # brand_name_en collation=utf8mb4_unicode_ci 라 대소문자 무시 매칭 동일.
+                query += " AND r.brand_name_en = :brand"
                 params['brand'] = brand.upper()
             else:
                 pass  # 브랜드 필터 없음 → 전체 브랜드 대상
