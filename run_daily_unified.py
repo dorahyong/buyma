@@ -52,6 +52,15 @@ NAVER = ['premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'verosh
          'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano']
 MALLS = [OKMALL] + MULTISOURCE + NAVER
 
+# only-naver 3분할 (PC별, IP 분산 목적). 큰 몰(bblue·unico·larlashoes·upset·carpi)을
+#   서로 다른 PC로 흩어 대략 균형. 각 PC는 자기 몫만(disjoint) → 같은 배치 공유해도 안 부딪힘.
+#   naver 직렬잠금(Semaphore)은 프로세스별이라 3 PC = 3 IP 병렬.
+NAVER_SPLIT = {
+    1: ['bblue', 'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall'],
+    2: ['unico', 'upset', 'dmont', 'tuttobene', 'thefactor2', 'joharistore', 'maniaon'],
+    3: ['larlashoes', 'carpi', 'luxlimit', 'thegrande', 'euroline', 'kometa', 'pano'],
+}
+
 # naver collector 3종 (run_daily_naver.py COLLECTOR_MAP 와 동일). 모두 공용 → --source 필요.
 _NV_BRAND = _p('naver', 'premiumsneakers', 'premiumsneakers_collector.py')
 _NV_CATEGORY = _p('naver', 'premiumsneakers', 'premiumsneakers_category_collector.py')
@@ -203,6 +212,8 @@ def main():
     ap.add_argument('--no-naver', action='store_true',
                     help='naver 21몰 제외 (okmall+멀티소스만). naver 는 캡챠로 별도 standalone 권장')
     ap.add_argument('--only-naver', action='store_true', help='naver 21몰만 실행')
+    ap.add_argument('--pc', type=int, choices=[1, 2, 3], default=None,
+                    help='only-naver 21몰을 3분할해 이 PC 몫만 (1/2/3). --only-naver 와 함께.')
     ap.add_argument('--track', type=str, default='all', choices=['new', 'stock', 'all'],
                     help='실행 트랙 (기본 all)')
     ap.add_argument('--max-workers', type=int, default=None, help='동시 유닛 수')
@@ -212,6 +223,10 @@ def main():
         print("⛔ --only-naver 와 --no-naver 는 동시 사용 불가")
         return
 
+    if args.pc and not args.only_naver:
+        print("⛔ --pc 는 --only-naver 와 함께만 사용 (naver 3분할)")
+        return
+
     malls = MALLS
     if args.only:
         if args.only not in MALLS:
@@ -219,7 +234,7 @@ def main():
             return
         malls = [args.only]
     elif args.only_naver:
-        malls = list(NAVER)
+        malls = NAVER_SPLIT[args.pc] if args.pc else list(NAVER)
     elif args.no_naver:
         malls = [m for m in MALLS if m not in NAVER_MALLS]
 
