@@ -415,19 +415,6 @@ BUYMA 자동화의 핵심 디렉토리. 수집(COLLECT) → 변환(CONVERT) → 
 **CLI**: `--source`(기본 premiumsneakers), `--brand`, `--limit`, `--dry-run`, `--skip-existing`, `--login`, `--dump`, `--count`
 **DB**: R `mall_sites`/`mall_brands`/raw/ace, W `raw_scraped_data`
 
-### smartstore/image_collector_parallel_smartstore.py
-
-**역할**: 네이버 스마트스토어 `adorelux`에서 model_no 검색 이미지 수집 → `ace_product_images`. 봇 차단 우회를 위해 **별도 디버그 Chrome에 CDP 연결**(2026-03-18). (위 naver collector들과 별개 도구)
-**핵심**:
-- `--start-chrome`: `chrome.exe --remote-debugging-port=9222 --user-data-dir=<profile>`(수동 로그인).
-- `fetch_target_products`: 이미지 없는 + model_no + `has_own_images=0`. `--price-checked-only` 필터.
-- `search_smartstore_products`: `/adorelux/search?q={model_no}`, 캡챠 감지 시 3분 수동 대기.
-- `get_product_images`: `__PRELOADED_STATE__` → HTML 정규식 → DOM 3단계 fallback, 최대 20장.
-- CDP `connect_over_cdp`로 기존 Chrome에 새 탭, 작업 후 탭만 닫음.
-
-**CLI**: `--start-chrome`, `--brand`, `--model-no`, `--limit`, `--dry-run`, `--price-checked-only`
-**DB**: R `ace_products`+images+`mall_sites`, W `ace_product_images`
-
 ---
 
 ## 5. buyma_cleaners/ (정리 스크립트)
