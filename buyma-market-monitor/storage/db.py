@@ -303,8 +303,10 @@ def _mysql_connect() -> "_MySQLConn":
         charset="utf8mb4",
         autocommit=True,       # sqlite isolation_level=None 동등
         connect_timeout=10,    # ★ 재연결이 무한 대기(hung) 방지
-        read_timeout=60,       # 쿼리 응답 대기 상한
-        write_timeout=60,
+        # 집계쿼리(recompute hot_warm ~35s)가 부하 spike때 타임아웃으로 죽지 않게 넉넉히.
+        # 대형셀러 20분멈춤은 묶음저장으로 근본해결됨 → 짧은 read_timeout 불필요.
+        read_timeout=300,      # 쿼리 응답 대기 상한(진짜 hang은 여기서 끊고 재연결)
+        write_timeout=300,
     )
     return _MySQLConn(params)
 

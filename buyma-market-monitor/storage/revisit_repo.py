@@ -68,9 +68,11 @@ def seed_backfill(conn: sqlite3.Connection) -> int:
             ) AS last_obs,
             (SELECT COUNT(*) FROM stats_history s WHERE s.item_id = i.item_id) AS cnt
           FROM items i
+          LEFT JOIN revisit_state r ON r.item_id = i.item_id
           WHERE i.status = 'ACTIVE' AND i.detail_fetched_at IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM revisit_state r WHERE r.item_id = i.item_id)
-        )
+            AND r.item_id IS NULL
+          LIMIT 10000
+        ) AS seed_src
         """
     )
     return cur.rowcount

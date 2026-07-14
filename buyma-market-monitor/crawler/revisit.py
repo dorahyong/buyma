@@ -80,7 +80,14 @@ def run_revisit(
 
     main_conn = connect(db_path)
     init_schema(main_conn)
-    summary.seeded = revisit_repo.seed_backfill(main_conn)
+    # seed_backfill은 대량 스캔이라 caught-up 상태에서도 수십초 걸릴 수 있다. 실패(연결드롭 등)해도
+    # 데몬을 죽이지 않는다: 후보가 없으면 건너뛰어도 무손실, 있으면 다음 라운드에 재시도.
+    # (다음 main_conn 사용 시 shim이 자동 재연결)
+    try:
+        summary.seeded = revisit_repo.seed_backfill(main_conn)
+    except Exception as e:
+        on_error(stage="seed_backfill", url="", status=None, reason=repr(e))
+        summary.seeded = 0
 
     deadline = None if max_hours is None else time.monotonic() + max_hours * 3600.0
 

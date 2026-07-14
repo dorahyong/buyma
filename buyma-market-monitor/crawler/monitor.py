@@ -17,6 +17,9 @@ from storage.items_repo import (
     record_price_observation,
     get_active_item_ids_for_seller,
     get_item,
+    get_seller_items_state,
+    bulk_upsert_scanned_items,
+    bulk_record_price_observations,
     update_detail_fields,
     mark_status,
     replace_item_images,
@@ -55,33 +58,37 @@ def apply_seller_scan_to_db(
 
     conn.execute("BEGIN")
     try:
-        prev_active = get_active_item_ids_for_seller(conn, seller_id)
+        # One SELECT loads every existing item of this seller; the new/resurrected/
+        # price-change/disappeared decisions are then made in Python, and all writes
+        # go out as two batched statements. On remote MySQL this turns a whale
+        # seller's thousands of round-trips into a handful.
+        existing = get_seller_items_state(conn, seller_id)
+        prev_active = {iid for iid, (status, _) in existing.items() if status == "ACTIVE"}
         scanned_ids: set[str] = set()
 
+        upsert_rows: list[tuple] = []
+        price_rows: list[tuple] = []
         for it in scanned_items:
             item_id = it["item_id"]
             scanned_ids.add(item_id)
             price = it["price"]
+            upsert_rows.append((item_id, seller_id, it["name"], price, "ACTIVE", now, now))
 
-            prior = get_item(conn, item_id)
-            prior_status = prior["status"] if prior else None
-            prior_price = prior["current_price"] if prior else None
-
-            is_new = upsert_scanned_item(
-                conn, item_id=item_id, seller_id=seller_id,
-                name=it["name"], price=price, now=now,
-            )
-
-            if is_new:
+            prior = existing.get(item_id)
+            if prior is None:
                 outcome.new_item_ids.add(item_id)
                 if price is not None:
-                    record_price_observation(conn, item_id, price, now)
+                    price_rows.append((item_id, now, price))
             else:
+                prior_status, prior_price = prior
                 if prior_status in ("SOLD_OUT", "DELETED"):
                     outcome.resurrected_item_ids.add(item_id)
                 if price is not None and price != prior_price:
-                    record_price_observation(conn, item_id, price, now)
+                    price_rows.append((item_id, now, price))
                     outcome.price_changes += 1
+
+        bulk_upsert_scanned_items(conn, upsert_rows)
+        bulk_record_price_observations(conn, price_rows)
 
         outcome.disappeared_item_ids = prev_active - scanned_ids
         conn.execute("COMMIT")

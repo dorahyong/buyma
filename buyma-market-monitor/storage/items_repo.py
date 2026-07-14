@@ -59,6 +59,59 @@ def record_price_observation(
     )
 
 
+def get_seller_items_state(
+    conn: sqlite3.Connection, seller_id: str
+) -> dict[str, tuple]:
+    """One SELECT returning {item_id: (status, current_price)} for every item of a
+    seller. Replaces the per-item get_item lookups in the reconcile loop so a whale
+    seller costs one query instead of thousands of remote round-trips."""
+    rows = conn.execute(
+        "SELECT item_id, status, current_price FROM items WHERE seller_id = ?",
+        (seller_id,),
+    )
+    return {r["item_id"]: (r["status"], r["current_price"]) for r in rows}
+
+
+# NOTE: status is bound as a parameter (not a literal in the VALUES tuple) so
+# PyMySQL's executemany can rewrite this into a single multi-row INSERT.
+_BULK_UPSERT_SQL = (
+    "INSERT INTO items "
+    "(item_id, seller_id, name, current_price, status, first_seen_at, last_seen_at) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT(item_id) DO UPDATE SET "
+    "name = excluded.name, "
+    "current_price = excluded.current_price, "
+    "status = 'ACTIVE', "
+    "sold_out_at = NULL, "
+    "deleted_at = NULL, "
+    "last_seen_at = excluded.last_seen_at"
+)
+
+
+def bulk_upsert_scanned_items(conn: sqlite3.Connection, rows: list[tuple]) -> None:
+    """Insert-or-update many scanned items in ONE batched statement.
+    rows: (item_id, seller_id, name, current_price, status, first_seen_at, last_seen_at).
+    On conflict, existing rows are reactivated (status ACTIVE, sold_out/deleted cleared)
+    and keep their original first_seen_at; new rows take first_seen_at from the tuple.
+    Collapses thousands of per-item round-trips into a single multi-row upsert."""
+    if not rows:
+        return
+    conn.executemany(_BULK_UPSERT_SQL, rows)
+
+
+def bulk_record_price_observations(
+    conn: sqlite3.Connection, price_rows: list[tuple]
+) -> None:
+    """INSERT OR IGNORE many (item_id, observed_at, price) points in one batched
+    statement. Duplicate (item_id, observed_at) rows are ignored."""
+    if not price_rows:
+        return
+    conn.executemany(
+        "INSERT OR IGNORE INTO price_history (item_id, observed_at, price) VALUES (?, ?, ?)",
+        price_rows,
+    )
+
+
 def mark_status(
     conn: sqlite3.Connection,
     item_id: str,
