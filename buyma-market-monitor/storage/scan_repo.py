@@ -22,17 +22,19 @@ def recompute_seller_values(conn: sqlite3.Connection, now: str, recent_cutoff: s
         scored.append((hw * 10 + ro, sid))
     scored.sort(reverse=True)
     n = len(scored) or 1
-    existing = {r[0] for r in conn.execute("SELECT seller_id FROM seller_scan_state")}
-    for i, (score, sid) in enumerate(scored):
-        tier = tier_for_rank(i / n)
-        if sid in existing:
-            conn.execute("UPDATE seller_scan_state SET value_tier=?, value_score=? WHERE seller_id=?",
-                         (tier, score, sid))
-        else:
-            conn.execute(
-                "INSERT INTO seller_scan_state (seller_id, value_tier, value_score, "
-                "last_scanned_at, next_scan_at) VALUES (?,?,?,?,?)",
-                (sid, tier, score, None, now))
+    # 신규 셀러: last_scanned_at=NULL·next_scan_at=now(즉시 due)로 삽입. 기존 셀러:
+    # tier/score만 갱신하고 next_scan_at/last_scanned_at 보존(ON CONFLICT). 셀러당
+    # 단건 UPDATE/INSERT(원격 MySQL서 1만 왕복) → executemany 한 번으로.
+    rows = [(sid, tier_for_rank(i / n), score, None, now)
+            for i, (score, sid) in enumerate(scored)]
+    if rows:
+        conn.executemany(
+            "INSERT INTO seller_scan_state "
+            "(seller_id, value_tier, value_score, last_scanned_at, next_scan_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(seller_id) DO UPDATE SET "
+            "value_tier = excluded.value_tier, value_score = excluded.value_score",
+            rows)
 
 
 def get_due_sellers(conn: sqlite3.Connection, now: str, limit: int) -> list[str]:
