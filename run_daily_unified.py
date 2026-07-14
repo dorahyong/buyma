@@ -117,14 +117,23 @@ PRICE = _p('okmall', 'buyma_lowest_price_collector.py')
 TRANSLATE = _p('okmall', 'convert_to_japanese_gemini.py')
 IMG_COLLECT = _p('okmall', 'image_collector_parallel.py')
 IMG_UPLOAD = _p('okmall', 'r2_image_uploader.py')
+THUMBNAIL = _p('thumbnail', 'thumbnail_generator.py')        # 대표이미지에 뱃지 합성
 RECONCILE = _p('okmall', 'reconcile_runner.py')
 
 # =====================================================
 # 트랙 / 단계 구성
 # =====================================================
-NEW_STAGES = ['COLLECT', 'CONVERT', 'PRICE', 'TRANSLATE', 'IMAGE', 'REGISTER']
+# THUMBNAIL 은 IMAGE(=R2 업로드) 뒤, REGISTER 앞이어야 한다:
+#   업로드된 cloudflare_image_url 이 있어야 합성 가능하고, register/reconcile 의
+#   get_product_images·_images 가 ace_product_thumbnails 를 읽어 대표이미지를 뱃지본으로 보낸다.
+#   → 신규 상품이 '첫 등록부터' 뱃지를 달고 올라간다.
+NEW_STAGES = ['COLLECT', 'CONVERT', 'PRICE', 'TRANSLATE', 'IMAGE', 'THUMBNAIL', 'REGISTER']
 STOCK_STAGES = ['STOCK_REFRESH']     # _merge 스크립트가 내부에서 refresh + reconcile(scope published) 수행
 STAGE_PLAN = {'NEW': NEW_STAGES, 'STOCK': STOCK_STAGES}
+
+# 단계별 동시실행 상한(세마포어). 썸네일은 이미지 합성(CPU)+R2 업로드라 31몰이 한꺼번에
+#   붙으면 CPU·업로드가 몰린다 → 제한. 나머지 단계는 무제한(기존 동작 그대로).
+STAGE_CONCURRENCY = {'THUMBNAIL': 4}
 
 # 사이트 동시접속 잠금 대상 단계. naver(캡챠)만 collector·stock 1개씩 → site_resource='naver' 인 유닛만 잠김.
 #   9몰은 site_resource=None 이라 이 집합을 켜도 안 잠김(전부 병렬). naver 추가됐으니 ON.
@@ -179,6 +188,12 @@ def worker_resolver(unit, stage):
                 [PY, IMG_UPLOAD, '--source', mall],
             ]
         return [[PY, IMG_UPLOAD, '--source', mall]]
+
+    if stage == 'THUMBNAIL':
+        # 대표이미지(position=1)에 뱃지 합성 → R2 업로드 → ace_product_thumbnails 기록.
+        #   이미 생성된 건 스킵(멱등)이라 매일 돌아도 신규분만 처리.
+        #   등록/수정 시 get_product_images·_images 가 이 썸네일을 대표이미지로 대신 보낸다.
+        return [[PY, THUMBNAIL, '--source', mall]]
 
     if stage == 'REGISTER':
         # 신규등록 = reconcile auto --scope new (미등록 그룹만 → ensure_group → CREATE)
@@ -259,6 +274,7 @@ def main():
         units=units,
         stage_plan=STAGE_PLAN,
         worker_resolver=worker_resolver,
+        stage_concurrency=STAGE_CONCURRENCY,
         site_access_stages=SITE_ACCESS_STAGES,
         max_workers=args.max_workers,
         dry_run=args.dry_run,

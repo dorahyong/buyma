@@ -64,7 +64,12 @@ def _winner_offering(conn, listing):
 
 
 def _images(conn, listing_id):
-    """listing_images → register.build_images_array 입력 규격(cloudflare_image_url, position)."""
+    """listing_images → register.build_images_array 입력 규격(cloudflare_image_url, position).
+    ★ 대표이미지(position=1)는 뱃지 썸네일이 있으면 그 주소를 대신 쓴다
+      (reg.get_product_images 와 같은 규칙). CREATE/EDIT 둘 다 이 경로를 타므로
+      run_daily 등록·수정 모두 뱃지가 적용된다. 원본(listing_images)은 그대로 보존.
+      listing_images 엔 image_id 가 없어 thumbnails.source_cf_url 로 매칭하되,
+      source_cf_url 은 인덱스가 없으므로 ace_product_id(인덱스)로 이 목록의 멤버로 먼저 좁힌다."""
     with conn.cursor() as cur:
         cur.execute("""
             SELECT position, cloudflare_image_url
@@ -72,7 +77,26 @@ def _images(conn, listing_id):
             WHERE listing_id=%s AND cloudflare_image_url IS NOT NULL
             ORDER BY position LIMIT 20
         """, (listing_id,))
-        return cur.fetchall()
+        rows = cur.fetchall()
+        for r in rows:
+            if r['position'] != 1:
+                continue
+            cur.execute("""
+                SELECT t.thumbnail_cloudflare_url
+                FROM ace_product_thumbnails t
+                JOIN source_offerings so ON so.ace_product_id = t.ace_product_id
+                                       AND so.listing_id = %s AND so.is_active = 1
+                WHERE t.is_generated = 1
+                  AND t.source_cf_url = %s
+                  AND t.thumbnail_cloudflare_url IS NOT NULL
+                  AND t.thumbnail_cloudflare_url <> ''
+                LIMIT 1
+            """, (listing_id, r['cloudflare_image_url']))
+            th = cur.fetchone()
+            if th:
+                r['cloudflare_image_url'] = th['thumbnail_cloudflare_url']
+            break
+        return rows
 
 
 def _listing_options(conn, listing_id):
