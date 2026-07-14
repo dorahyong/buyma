@@ -233,11 +233,14 @@ class ThumbnailGenerator:
                             config=Config(signature_version='s3v4', retries={'max_attempts': 3}))
 
     def fetch_pending(self, limit=None, retry_failed=False, ace_product_id=None,
-                      brand=None, published_only=False, regenerate=False) -> List[ImageRecord]:
+                      brand=None, published_only=False, regenerate=False,
+                      source=None, exclude_source=None) -> List[ImageRecord]:
         """썸네일 작업이 안 된 (또는 실패한) 대표 이미지 조회.
         ace_product_thumbnails 에 완료 기록(is_generated=1)이 없는 이미지를 고른다.
         published_only=True → 이미 BUYMA 게시된 상품만(스토어에 실제 반영되는 대상).
         brand → 특정 브랜드만(brand_name LIKE).
+        source → 특정 수집처(몰)만(ace_products.source_site). 통합 파이프라인이 몰별로 부를 때 사용.
+        exclude_source → 제외할 수집처 목록(예: ['lotte']). source_site 가 NULL 인 건 제외 안 함.
         regenerate=True → 이미 만든 것도 포함(설정 바꿔 전부 다시 생성/덮어쓰기)."""
         with self.engine.connect() as conn:
             params = {'pos': TARGET_POSITION}
@@ -261,6 +264,17 @@ class ThumbnailGenerator:
             if brand:
                 base += " AND UPPER(a.brand_name) LIKE :brand "
                 params['brand'] = f"%{brand.upper()}%"
+            if source:
+                base += " AND a.source_site = :source_site "
+                params['source_site'] = source.lower()
+            if exclude_source:
+                keys = []
+                for i, s in enumerate(exclude_source):
+                    k = f'ex{i}'
+                    keys.append(f':{k}')
+                    params[k] = s.lower()
+                # source_site 가 NULL 인 상품은 제외 대상이 아니므로 남긴다.
+                base += f" AND (a.source_site IS NULL OR a.source_site NOT IN ({', '.join(keys)})) "
             if ace_product_id:
                 base += " AND api.ace_product_id = :apid "
                 params['apid'] = ace_product_id
@@ -357,14 +371,18 @@ class ThumbnailGenerator:
             conn.commit()
 
     def run(self, limit=None, retry_failed=False, ace_product_id=None, workers=DEFAULT_WORKERS,
-            brand=None, published_only=False, regenerate=False) -> Dict:
+            brand=None, published_only=False, regenerate=False, source=None,
+            exclude_source=None) -> Dict:
         log("=" * 60)
         log(f"썸네일 생성 시작 (병렬 {workers}스레드)"
             + (f" | 게시분만" if published_only else "") + (f" | 브랜드={brand}" if brand else "")
+            + (f" | 수집처={source}" if source else "")
+            + (f" | 제외={','.join(exclude_source)}" if exclude_source else "")
             + (f" | 재생성(덮어쓰기)" if regenerate else ""))
         if self.dry_run:
             log(f"*** DRY RUN — 업로드/DB 없음, 미리보기 저장: {PREVIEW_DIR} ***", "WARNING")
-        imgs = self.fetch_pending(limit, retry_failed, ace_product_id, brand, published_only, regenerate)
+        imgs = self.fetch_pending(limit, retry_failed, ace_product_id, brand, published_only,
+                                  regenerate, source, exclude_source)
         if not imgs:
             log("작업할 이미지가 없습니다.")
             return {'total': 0, 'success': 0, 'failed': 0}
@@ -406,6 +424,10 @@ def main():
     ap.add_argument('--retry-failed', action='store_true', help='실패분만 재시도')
     ap.add_argument('--ace-product-id', type=int, default=None)
     ap.add_argument('--brand', type=str, default=None, help='특정 브랜드만 (brand_name LIKE)')
+    ap.add_argument('--source', type=str, default=None,
+                    help='특정 수집처(몰)만 처리 (예: okmall, kasina) — ace_products.source_site')
+    ap.add_argument('--exclude-source', type=str, default=None,
+                    help='제외할 수집처(몰). 쉼표로 여러 개 (예: lotte / lotte,musinsa)')
     ap.add_argument('--published-only', action='store_true', help='이미 BUYMA 게시된 상품만')
     ap.add_argument('--regenerate', action='store_true', help='이미 만든 것도 다시 생성(설정 바꾼 뒤 덮어쓰기)')
     ap.add_argument('--workers', type=int, default=DEFAULT_WORKERS)
@@ -413,9 +435,12 @@ def main():
 
     try:
         gen = ThumbnailGenerator(dry_run=args.dry_run)
+        excl = ([s.strip() for s in args.exclude_source.split(',') if s.strip()]
+                if args.exclude_source else None)
         gen.run(limit=args.limit, retry_failed=args.retry_failed,
                 ace_product_id=args.ace_product_id, workers=args.workers,
-                brand=args.brand, published_only=args.published_only, regenerate=args.regenerate)
+                brand=args.brand, published_only=args.published_only, regenerate=args.regenerate,
+                source=args.source, exclude_source=excl)
     except Exception as e:
         log(f"실행 오류: {e}", "ERROR")
         import traceback
