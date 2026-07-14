@@ -1490,19 +1490,58 @@ class RawToAceConverter:
                     VALUES (:ace_product_id, :color_value, :size_value, :color_value_original, :size_value_original, :options_json, :stock_type, :stocks, :source_option_code, :source_stock_status)
                 """), var)
 
-            # 4. ace_product_images: 기존 삭제 후 재생성 (kasina 자체 이미지)
-            conn.execute(text("DELETE FROM ace_product_images WHERE ace_product_id = :ace_product_id"),
-                        {'ace_product_id': ace_product_id})
+            # 4. ace_product_images: 자리(position)별로 '바뀐 것만' 갱신한다.
+            #    재변환은 대개 가격/재고만 바뀌고 이미지는 그대로다. 그런데 통째로 DELETE 후
+            #    재INSERT 하면 cloudflare_image_url(R2 주소)이 NULL 로 초기화돼
+            #      ① 같은 이미지를 매 재변환마다 다시 다운로드·재업로드하고
+            #      ② 이미지 행 id 가 새로 생겨 뱃지 썸네일 연결(thumbnails.image_id)이 끊겨 재생성된다.
+            #    미등록 상품은 수집처 가격/재고가 바뀔 때마다 재변환되므로 이 낭비가 매일 반복됐다.
+            #    → 같은 자리에 같은 URL 이면 그 행은 손대지 않는다(R2 주소·id·썸네일 보존).
+            #      URL 이 바뀐 자리만 교체하고 그 자리의 R2 정보만 초기화한다(그 한 장만 재업로드).
+            #    ★ 수집기가 이미지를 0장 반환하면(파싱 실패·사이트 변경) 기존 이미지를 유지한다.
+            #      예전엔 이 경우 이미지가 통째로 삭제되는 사고가 났다.
             source_images = ace_data.get('source_images', [])
-            for idx, img_url in enumerate(source_images):
-                url = img_url if img_url.startswith('http') else f'https:{img_url}'
-                conn.execute(text("""
-                    INSERT INTO ace_product_images
-                    (ace_product_id, position, source_image_url, is_uploaded)
-                    VALUES (:ace_product_id, :position, :url, 0)
-                """), {'ace_product_id': ace_product_id, 'position': idx + 1, 'url': url})
-            if source_images:
-                log(f"  → 자체 이미지 {len(source_images)}장 갱신 (source: kasina)")
+            new_urls = [(u if u.startswith('http') else f'https:{u}') for u in source_images]
+
+            cur_rows = conn.execute(text(
+                "SELECT position, source_image_url FROM ace_product_images "
+                "WHERE ace_product_id = :ace_product_id ORDER BY position"),
+                {'ace_product_id': ace_product_id}).fetchall()
+            cur_by_pos = {r[0]: r[1] for r in cur_rows}
+
+            if not new_urls:
+                if cur_by_pos:
+                    log(f"  → raw 이미지 0장 → 기존 {len(cur_by_pos)}장 유지 (수집 실패 대비)")
+            elif (len(cur_by_pos) == len(new_urls)
+                    and [cur_by_pos.get(i + 1) for i in range(len(new_urls))] == new_urls):
+                log(f"  → 이미지 변경 없음, {len(new_urls)}장 유지 (R2 주소·썸네일 보존)")
+            else:
+                changed = 0
+                for idx, url in enumerate(new_urls):
+                    pos = idx + 1
+                    if cur_by_pos.get(pos) == url:
+                        continue                     # 같은 자리·같은 URL → 손대지 않음
+                    changed += 1
+                    if pos in cur_by_pos:
+                        # 그 자리만 교체 + R2 정보 초기화 (새 이미지라 다시 올려야 함)
+                        conn.execute(text("""
+                            UPDATE ace_product_images
+                            SET source_image_url = :url, cloudflare_image_url = NULL,
+                                is_uploaded = 0, upload_error = NULL
+                            WHERE ace_product_id = :ace_product_id AND position = :position
+                        """), {'ace_product_id': ace_product_id, 'position': pos, 'url': url})
+                    else:
+                        conn.execute(text("""
+                            INSERT INTO ace_product_images
+                            (ace_product_id, position, source_image_url, is_uploaded)
+                            VALUES (:ace_product_id, :position, :url, 0)
+                        """), {'ace_product_id': ace_product_id, 'position': pos, 'url': url})
+                # 장수가 줄었으면 뒤쪽 자리 정리
+                conn.execute(text(
+                    "DELETE FROM ace_product_images "
+                    "WHERE ace_product_id = :ace_product_id AND position > :n"),
+                    {'ace_product_id': ace_product_id, 'n': len(new_urls)})
+                log(f"  → 이미지 {len(cur_by_pos)}장 → {len(new_urls)}장 (바뀐 자리 {changed}장만 갱신)")
 
             conn.commit()
             log(f"  → ace_product_id={ace_product_id} 업데이트 완료 (가격, options, variants)")
