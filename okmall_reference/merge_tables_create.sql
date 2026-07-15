@@ -48,7 +48,10 @@ CREATE TABLE IF NOT EXISTS `buyma_listings` (
     INDEX `idx_buyma_product_id`     (`buyma_product_id`),
     INDEX `idx_is_published`         (`is_published`),
     INDEX `idx_model_no`             (`model_no`),
-    INDEX `idx_winner_offering`      (`winner_offering_id`)
+    INDEX `idx_winner_offering`      (`winner_offering_id`),
+    -- ensure_group 의 브랜드별 listing 조회용. 없으면 source_offerings 12만행 풀스캔(건당 16~18초).
+    --   추가 후 register·stock 상품당 처리 16초→1초 이하. (2026-07-15 운영 적용)
+    INDEX `idx_brand_active`         (`brand_id`, `is_active`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='MERGE: 출품 정체성 (BUYMA 1:1)';
 
 -- ② 수집처별 상품 (그룹 멤버)
