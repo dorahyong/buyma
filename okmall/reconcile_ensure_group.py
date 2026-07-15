@@ -20,7 +20,7 @@ import reconcile_buyma_push as push
 from dedup_corrector_merge import canonicalize, SOURCE_PRIORITY
 from offering_options_loader_merge import load_options, INSERT_SQL as OPT_INSERT_SQL
 from resolve_merge import resolve_listing, DEFAULT_SHIPPING_FEE
-from image_union_loader_merge import pick_donor, MAX_IMAGES
+from image_union_loader_merge import combine_images, MAX_IMAGES
 
 
 MIN_FUZZY_LEN = 6  # contains 편입 시 짧은 canonical 최소 길이 (짧은 색상코드 오편입 방지)
@@ -318,17 +318,44 @@ def _write_images(conn, listing_id, offerings, winner_offering_id):
             for r in cur.fetchall():
                 images_by_ace[r['ace_product_id']].append(r)
     listing = {'id': listing_id, 'winner_offering_id': winner_offering_id}
-    donor, images = pick_donor(listing, offerings_by_listing, offering_by_id, images_by_ace)
+    # winner 부터 전 소싱 이미지를 이어붙여 최대 20장 (대표=winner 첫 이미지 → 뱃지 일치)
+    images = combine_images(listing, offerings_by_listing, offering_by_id, images_by_ace)
     if not images:
         return
+    def _ins(cur, pos, img):
+        cur.execute("""INSERT INTO listing_images
+            (listing_id, position, source_site, source_image_url, cloudflare_image_url, buyma_image_path, is_uploaded)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (listing_id, pos, img['source_site'], img['source_image_url'],
+             img['cloudflare_image_url'], img['buyma_image_path'], 1 if img['cloudflare_image_url'] else 0))
+
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM listing_images WHERE listing_id=%s", (listing_id,))
-        for pos, img in enumerate(images, start=1):
-            cur.execute("""INSERT INTO listing_images
-                (listing_id, position, source_site, source_image_url, cloudflare_image_url, buyma_image_path, is_uploaded)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)""",
-                (listing_id, pos, donor['source_site'], img['source_image_url'],
-                 img['cloudflare_image_url'], img['buyma_image_path'], 1 if img['cloudflare_image_url'] else 0))
+        # 대표사진(및 기존 자리)은 고정하되, 새 소싱에서 들어온 '아직 없는' 이미지는 빈 뒤쪽에
+        #   추가해 20장까지 채운다.
+        #   - 미등록(신규): winner-first 로 새로 구성 → 대표=winner 첫 이미지(뱃지 썸네일과 일치).
+        #   - 이미 등록됨: 기존 자리는 절대 안 바꾼다(대표 고정 = 첫 등록 winner 유지). 대신 아직
+        #     없는 새 이미지만 뒤에 append → 단일이던 상품이 나중에 중복(새 수집처)이 되면
+        #     이미지가 20장까지 늘어난다. 같은 URL 은 건너뜀(멱등 — 매 실행마다 중복 추가 방지).
+        cur.execute("SELECT buyma_product_id FROM buyma_listings WHERE id=%s", (listing_id,))
+        _row = cur.fetchone()
+        already_live = bool(_row and _row.get('buyma_product_id'))
+        if already_live:
+            cur.execute("SELECT position, cloudflare_image_url FROM listing_images WHERE listing_id=%s", (listing_id,))
+            _ex = cur.fetchall()
+            _have = {r['cloudflare_image_url'] for r in _ex}
+            _pos = max((r['position'] for r in _ex), default=0)
+            for img in images:
+                if _pos >= MAX_IMAGES:
+                    break
+                if img['cloudflare_image_url'] in _have:
+                    continue   # 이미 있는 이미지(대표 등) = 고정, 건너뜀
+                _pos += 1
+                _ins(cur, _pos, img)
+                _have.add(img['cloudflare_image_url'])
+        else:
+            cur.execute("DELETE FROM listing_images WHERE listing_id=%s", (listing_id,))
+            for pos, img in enumerate(images, start=1):
+                _ins(cur, pos, img)
 
 
 # ============================================================

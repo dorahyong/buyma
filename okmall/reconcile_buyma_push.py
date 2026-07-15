@@ -181,6 +181,11 @@ def build_create_request(conn, listing):
     """
     winner = _winner_offering(conn, listing)
     images = _images(conn, listing['id'])
+    if not images:
+        # 이미지 0장으로 CREATE 하면 BUYMA 가 거부한다(images 필수) → 요청 자체를 안 보낸다.
+        #   업로더가 '등록 가능한 상품만' R2 에 올리도록 바뀌면서, 그룹의 어떤 멤버도 아직
+        #   업로드 안 된 순간이 생길 수 있다. 그때 빈 요청을 쏘지 않게 하는 안전망.
+        return None
     lopts = _listing_options(conn, listing['id'])
 
     # 표기 통합 맵 (색/사이즈 각각)

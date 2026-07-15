@@ -201,9 +201,25 @@ class R2ImageUploader:
             )
         )
 
+    # BUYMA 에 등록될 수 없는 상품의 이미지는 R2 에 올릴 이유가 없다.
+    #   조건은 등록 게이트(reconcile_runner.select_groups_to_process)와 동일하게 맞춘다.
+    #   ★ 등록 게이트의 나머지 조건인 "cloudflare_image_url 이 있을 것"은 여기서 뺀다 —
+    #     그게 바로 지금 만들려는 것이라, 넣으면 닭-달걀이 된다.
+    #   실측: 이 필터만으로 업로드 대상의 상당수가 걸러진다(롯데는 대부분 카테고리 미매핑·한글
+    #     상품명이라 애초에 등록 불가). position<=20 은 BUYMA 이미지 한도.
+    REGISTERABLE_SQL = """
+                      AND ap.is_active = 1
+                      AND (ap.status IS NULL OR ap.status <> 'deleted')
+                      AND ap.category_id IS NOT NULL AND ap.category_id > 0
+                      AND ap.name NOT REGEXP '[가-힣]'
+                      AND ap.model_no IS NOT NULL AND ap.model_no <> ''
+                      AND ap.model_no NOT REGEXP '[가-힣ㄱ-ㅎㅏ-ㅣ]'
+                      AND api.position <= 20
+    """
+
     def fetch_pending_images(self, limit: int = None, retry_failed: bool = False, ace_product_id: int = None, brand: str = None, source_site: str = None) -> List[ImageRecord]:
         """
-        업로드 대기 중인 이미지 조회
+        업로드 대기 중인 이미지 조회 (BUYMA 등록 가능한 상품만 — REGISTERABLE_SQL 참고)
 
         Args:
             limit: 최대 조회 건수
@@ -227,7 +243,7 @@ class R2ImageUploader:
                       AND api.source_image_url != :not_found
                       AND api.source_image_url != ''
                       AND api.upload_error IS NOT NULL
-                """
+                """ + self.REGISTERABLE_SQL
             else:
                 # 아직 업로드 안된 것 (is_uploaded = 0, cloudflare_image_url이 NULL)
                 query = """
@@ -239,7 +255,7 @@ class R2ImageUploader:
                       AND api.source_image_url != ''
                       AND (api.cloudflare_image_url IS NULL OR api.cloudflare_image_url = '')
                       AND api.is_uploaded = 0
-                """
+                """ + self.REGISTERABLE_SQL
 
             if ace_product_id:
                 query += " AND api.ace_product_id = :ace_product_id"

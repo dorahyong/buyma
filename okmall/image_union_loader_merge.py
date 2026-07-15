@@ -119,73 +119,64 @@ def pick_donor(listing, offerings_by_listing, offering_by_id, images_by_ace):
     return donor, images[:MAX_IMAGES]
 
 
+def combine_images(listing, offerings_by_listing, offering_by_id, images_by_ace):
+    """listing 의 모든 소싱 이미지를 winner 부터 이어붙여 최대 MAX_IMAGES(20) 장 반환.
+    각 이미지 dict 에 그 소싱의 source_site 를 실어 준다(멤버마다 다름).
+
+    순서: winner offering 먼저 → 나머지 멤버(SOURCE_PRIORITY 순).
+    R2 에 업로드된(cloudflare_image_url 있는) 이미지만 — BUYMA 는 이미지를 URL 로 받으므로
+    업로드 안 된 건 보낼 수 없다. 중복 사진은 제거하지 않는다(몰마다 이미 걸러 수집).
+    → 대표(position 1) = winner 첫 이미지 → 뱃지 썸네일(winner 기준 생성)과 정확히 일치해
+      신규 등록부터 대표이미지에 뱃지가 붙는다. (기존 pick_donor 는 '한 개 몰'만 골라
+      대표가 winner 가 아닐 수 있어 뱃지가 어긋났다 — 이 함수로 대체한다.)
+    """
+    winner = offering_by_id.get(listing['winner_offering_id'])
+    members = offerings_by_listing.get(listing['id'], [])
+
+    # winner 먼저, 그다음 나머지 멤버를 SOURCE_PRIORITY 순으로
+    ordered = ([winner] if winner else []) + [
+        o for o in sorted(members, key=lambda x: SOURCE_PRIORITY.get(x['source_site'], 99))
+        if not (winner and o['id'] == winner['id'])
+    ]
+
+    def uploaded(off):
+        return [i for i in images_by_ace.get(off['ace_product_id'], [])
+                if off and i.get('cloudflare_image_url')]
+
+    combined = []
+    for off in ordered:
+        for img in uploaded(off):
+            combined.append({**img, 'source_site': off['source_site']})
+            if len(combined) >= MAX_IMAGES:
+                return combined
+    return combined
+
+
 def run(conn, dry_run=True):
+    # ★ 백필도 라이브 등록과 '똑같은' 규칙을 쓰도록 reconcile_ensure_group._write_images 재사용:
+    #     winner-first 합치기 + 이미 등록분은 대표 고정·새 이미지만 뒤에 추가(20장까지).
+    #   예전엔 백필이 pick_donor('한 개 몰')로 DELETE+재삽입이라, 재실행하면 라이브 대표사진까지
+    #   덮어써 churn 위험이 있었다. 이제 라이브/백필 로직이 완전히 일치한다.
+    #   지연 import: 두 모듈이 서로 참조하므로 순환 import 방지.
+    from reconcile_ensure_group import _write_images
     listings, offerings_by_listing, offering_by_id, images_by_ace = load_all(conn)
-    cur = conn.cursor()
 
-    stats = {
-        'total': len(listings), 'donor_winner': 0, 'donor_fallback': 0,
-        'no_image': 0, 'images_loaded': 0, 'donor_by_source': defaultdict(int),
-    }
-
-    rows = []
-    BATCH = 2000
-    processed = 0
-
-    def flush():
-        if dry_run:
-            rows.clear(); return
-        if rows:
-            cur.executemany("""
-                INSERT INTO listing_images
-                    (listing_id, position, source_site, source_image_url, cloudflare_image_url,
-                     buyma_image_path, is_uploaded)
-                VALUES (%(listing_id)s, %(position)s, %(source_site)s, %(source_image_url)s,
-                        %(cloudflare_image_url)s, %(buyma_image_path)s, %(is_uploaded)s)
-                ON DUPLICATE KEY UPDATE
-                    source_site=VALUES(source_site),
-                    source_image_url=VALUES(source_image_url),
-                    cloudflare_image_url=VALUES(cloudflare_image_url),
-                    buyma_image_path=VALUES(buyma_image_path),
-                    is_uploaded=VALUES(is_uploaded),
-                    updated_at=CURRENT_TIMESTAMP
-            """, rows)
-            conn.commit()
-            rows.clear()
-
-    for listing in listings:
-        winner = offering_by_id.get(listing['winner_offering_id'])
-        donor, images = pick_donor(listing, offerings_by_listing, offering_by_id, images_by_ace)
-
+    stats = {'total': len(listings), 'no_image': 0, 'targets': 0}
+    for i, listing in enumerate(listings, start=1):
+        lid = listing['id']
+        images = combine_images(listing, offerings_by_listing, offering_by_id, images_by_ace)
         if not images:
             stats['no_image'] += 1
             continue
-
-        if winner and donor and donor['id'] == winner['id']:
-            stats['donor_winner'] += 1
-        else:
-            stats['donor_fallback'] += 1
-        stats['donor_by_source'][donor['source_site']] += 1
-
-        for pos, img in enumerate(images, start=1):
-            rows.append({
-                'listing_id': listing['id'],
-                'position': pos,
-                'source_site': donor['source_site'],
-                'source_image_url': img['source_image_url'],
-                'cloudflare_image_url': img['cloudflare_image_url'],
-                'buyma_image_path': img['buyma_image_path'],
-                'is_uploaded': 1 if img['cloudflare_image_url'] else 0,
-            })
-            stats['images_loaded'] += 1
-
-        processed += 1
-        if len(rows) >= BATCH:
-            flush()
-        if processed % 3000 == 0:
-            logger.info(f"  진행: {processed}/{len(listings)}, images={stats['images_loaded']}")
-
-    flush()
+        stats['targets'] += 1
+        if not dry_run:
+            _write_images(conn, lid, offerings_by_listing.get(lid, []), listing['winner_offering_id'])
+            if i % 2000 == 0:
+                conn.commit()
+        if i % 5000 == 0:
+            logger.info(f"  진행: {i}/{len(listings)}, 적재대상 {stats['targets']}")
+    if not dry_run:
+        conn.commit()
     return stats
 
 
@@ -194,15 +185,11 @@ def print_report(stats, dry_run):
     logger.info("=" * 60)
     logger.info(f"  MERGE 이미지 적재 결과 [{mode}]")
     logger.info("=" * 60)
-    logger.info(f"  출품가능 listing:             {stats['total']}")
-    logger.info(f"  donor=winner:                 {stats['donor_winner']}")
-    logger.info(f"  donor=폴백(최다 멤버):        {stats['donor_fallback']}")
-    logger.info(f"  이미지 없음:                  {stats['no_image']}")
-    logger.info(f"  listing_images 적재:          {stats['images_loaded']}장")
-    logger.info("-" * 60)
-    logger.info("  donor 수집처 분포:")
-    for src, cnt in sorted(stats['donor_by_source'].items(), key=lambda x: -x[1]):
-        logger.info(f"    {src:18} {cnt}건")
+    logger.info(f"  출품가능 listing:   {stats['total']}")
+    logger.info(f"  적재 대상(이미지有): {stats['targets']}")
+    logger.info(f"  이미지 없음:        {stats['no_image']}")
+    if dry_run:
+        logger.info("  (DRY-RUN — 실제 기록 안 함. --execute 로 _write_images 적재)")
     logger.info("=" * 60)
 
 
