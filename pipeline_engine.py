@@ -39,6 +39,12 @@ DB_CONFIG = {
     'database': os.getenv('DB_NAME'),
     'charset': 'utf8mb4',
     'cursorclass': pymysql.cursors.DictCursor,
+    # 연결/조회 타임아웃 — 엔진 상태기록(pipeline_control) 쿼리는 모두 1초 미만이라
+    #   아래 값에 정상적으로는 절대 안 걸린다. 원격이 먹통(RST 미수신 등)일 때
+    #   '영영 멈춤' 대신 타임아웃으로 풀려 해당 유닛만 실패처리(다음 실행 재시도)된다.
+    'connect_timeout': 15,
+    'read_timeout': 60,
+    'write_timeout': 60,
 }
 
 _log_lock = threading.Lock()

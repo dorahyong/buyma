@@ -27,6 +27,8 @@ import json
 import time
 import argparse
 
+import pymysql   # 연결 끊김(OperationalError/InterfaceError) 판별용
+
 import reconcile_buyma_push as push
 import reconcile_ensure_group as eg
 import authority_flag
@@ -170,7 +172,7 @@ def select_groups_to_process(conn, limit=3, source=None, model_no=None, shard=No
     #   OFF(옛): ace.is_published  /  ON(새): 그 model_no 조각들이 속한 listing 의 is_published+번호
     #   listing 엔 model_no 가 없으므로(묶음 단위) source_offerings 다리로 연결.
     if authority_flag.use_listing_authority():
-        _pub_sql = ("EXISTS (SELECT 1 FROM ace_products p2 "
+        _pub_sql = ("EXISTS (SELECT 1 FROM ace_products p2 FORCE INDEX (idx_model_no) "
                     "JOIN source_offerings so2 ON so2.ace_product_id=p2.id "
                     "JOIN buyma_listings bl2 ON bl2.id=so2.listing_id "
                     "WHERE p2.model_no=a.model_no AND bl2.is_active=1 "
@@ -191,7 +193,8 @@ def select_groups_to_process(conn, limit=3, source=None, model_no=None, shard=No
         i, n = shard
         where.append("MOD(CRC32(a.model_no), %s)=%s"); params += [n, i]
     sql = f"""
-        SELECT a.model_no, a.brand_id, MAX(a.id) AS max_id
+        SELECT a.model_no, a.brand_id, MAX(a.id) AS max_id,
+               MAX(a.brand_name) AS brand_name
         FROM ace_products a
         WHERE {' AND '.join(where)}
         GROUP BY a.model_no, a.brand_id
@@ -210,7 +213,8 @@ def select_groups_to_process(conn, limit=3, source=None, model_no=None, shard=No
         if key in seen:
             continue
         seen.add(key)
-        groups.append((r['model_no'], r['brand_id']))
+        # 로그용 ace id·브랜드명 동봉 (같은 스캔에서 나온 값 — 추가 쿼리/JOIN 없음)
+        groups.append((r['model_no'], r['brand_id'], r['max_id'], r['brand_name']))
         if len(groups) >= limit:
             break
     return groups
@@ -236,7 +240,8 @@ def _has_instock_options(conn, listing_id):
         return cur.fetchone()['n'] > 0
 
 
-def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, scope='all', no_push=False):
+def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, scope='all', no_push=False,
+                      tag=''):
     """그룹락 안에서: ensure_group(즉석 빌드) → 분류(CREATE/EDIT/COLLAPSE) → push.
     락을 여기서 한 번 잡고, 내부는 비-safe execute 사용(이중 락 방지).
 
@@ -255,15 +260,19 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
         # 1) 그룹 즉석 빌드 (execute 시 실제 적재; dry_run 은 기존 그룹만 미리보기)
         res = eg.ensure_group(conn, model_no, brand_id, dry_run=dry_run)
         listing_id = res.get('listing_id')
-        # 한 줄 요약: 이 push 그룹의 model_no + 멤버수(멤버 2+ = 여러 몰 병합 = 중복 model)
+        # 한 줄 요약 — tag(몰·진행률·ace#·브랜드)는 호출자가 넘긴다. 여기 값은 전부 이미
+        #   메모리에 있는 것(ensure_group 결과 / 아래 fetch_listing)이라 추가 쿼리·JOIN 없음.
         _members = res.get('members') or []
-        _dup = '중복O(병합)' if len(_members) >= 2 else '중복X(단일)'
-        print(f"  [reconcile] model_no={model_no!r} 멤버{len(_members)} {_dup}", flush=True)
+        _dup = '병합' if len(_members) >= 2 else '단일'
         if not listing_id:
+            print(f"{tag}{model_no!r} 멤버{len(_members)}({_dup}) listing없음", flush=True)
             return {'skipped': True, 'reason': res.get('reason', 'listing 없음'),
                     'model_no': model_no, 'members': len(res.get('members', []))}
 
         listing = push.fetch_listing(conn, listing_id)
+        _bp = listing.get('buyma_product_id')
+        print(f"{tag}{model_no!r} 멤버{len(_members)}({_dup}) listing#{listing_id}"
+              + (f" buyma#{_bp}" if _bp else ""), flush=True)
         n_pub = _n_published(conn, listing_id)
 
         # ── 단일권위 스위치: create/edit/collapse 판단 근거 (authority_flag) ──
@@ -323,13 +332,50 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
                     'model_no': model_no}
 
 
+# 원격 MySQL 연결이 처리 도중 끊길 때(2013/2006/InterfaceError, WinError 10054 등)의
+#   에러코드. 이런 에러면 '연결 끊김'으로 보고 연결을 되살린다. (market-monitor 와 동일 판별)
+_LOST_CODES = (2013, 2006, 2055, 0)
+
+
+def _is_lost_connection(e) -> bool:
+    if not isinstance(e, (pymysql.err.OperationalError, pymysql.err.InterfaceError)):
+        return False
+    code = e.args[0] if e.args else None
+    msg = str(e)
+    return (code in _LOST_CODES
+            or 'Lost connection' in msg or 'gone away' in msg
+            or 'Broken pipe' in msg or '10054' in msg)
+
+
 def _run_auto(args):
-    """AUTO 모드 실행: 상품 그룹 선정 → process_one_group 반복."""
+    """AUTO 모드 실행: 상품 그룹 선정 → process_one_group 반복.
+
+    ★ 원격 MySQL 은 처리 도중(부하·네트워크 순단) 연결을 끊는다. 예전엔 그 순간 예외가
+      루프 밖으로 튀어 그 몰 전체가 죽었다(수천 그룹 미처리). 이제는 그 그룹 1개만
+      실패로 넘기고 연결을 되살려 다음 그룹부터 계속한다. 넘어간 그룹은 아직 미등록이라
+      다음 파이프라인에서 다시 대상이 된다.
+      (즉시 재시도는 하지 않는다 — CREATE API 성공 직후 끊긴 극소수 케이스에서 중복
+       등록이 날 수 있어서. 다음 실행 때 status='pending' 가드가 걸러준다.)"""
     conn = push.get_connection()
     try:
-        groups = select_groups_to_process(
-            conn, limit=args.limit, source=args.source,
-            model_no=args.model_no, shard=parse_shard(args.shard), scope=args.scope)
+        # 그룹 선정 쿼리도 원격 끊김(부하·순단) 대비 재연결 재시도(최대 3회).
+        #   안 끊기면 첫 시도에 통과 → 기존 동작과 100% 동일. 끊길 때만 재연결.
+        #   (이 쿼리는 예전엔 try 밖이라 여기서 끊기면 몰 전체가 죽었다.)
+        for _sel_try in range(3):
+            try:
+                groups = select_groups_to_process(
+                    conn, limit=args.limit, source=args.source,
+                    model_no=args.model_no, shard=parse_shard(args.shard), scope=args.scope)
+                break
+            except Exception as e:
+                if not _is_lost_connection(e) or _sel_try == 2:
+                    raise   # 연결 문제 아니거나 재시도 소진 → 그대로 터뜨림(버그 숨김 방지)
+                print(f"  🔌 그룹 선정 중 DB 연결 끊김 → 재연결 재시도 ({_sel_try + 1}/3): {e}")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = push.get_connection()
 
         do_writes = args.execute                        # --execute 라야 실제 기록(merge/BUYMA)
         do_buyma = args.execute and not args.no_push    # 실제 BUYMA push 여부 (no_push면 merge만)
@@ -348,13 +394,28 @@ def _run_auto(args):
         label = 'EXECUTE' if do_buyma else ('MERGE-ONLY' if args.no_push else 'DRY-RUN')
         print(f"[{label}/auto] 대상 그룹 {len(groups)}건\n")
         cnt = {'create': 0, 'edit': 0, 'collapse': 0, 'merge_only': 0, 'skip': 0, 'ok': 0, 'err': 0}
-        for model_no, brand_id in groups:
-            res = process_one_group(conn, model_no, brand_id, dry_run=not do_writes,
-                                    scope=args.scope, no_push=args.no_push)
-            print("=" * 70)
-            print(f"model_no={model_no!r}  brand_id={brand_id}")
+        _mall = args.source or 'ALL'
+        _total = len(groups)
+        for _i, (model_no, brand_id, _ace_id, _brand) in enumerate(groups, 1):
+            # tag = 몰 · 진행률 · ace#(기준 테이블 id) · 브랜드명(id) — 전부 위 SELECT 결과라 비용 0
+            _tag = f"[{_mall} {_i}/{_total}] ace#{_ace_id} {_brand or '-'}({brand_id}) "
+            try:
+                res = process_one_group(conn, model_no, brand_id, dry_run=not do_writes,
+                                        scope=args.scope, no_push=args.no_push, tag=_tag)
+            except Exception as e:
+                if not _is_lost_connection(e):
+                    raise   # 연결 문제가 아닌 진짜 에러는 원래대로 터뜨린다(버그 숨김 방지).
+                # 연결이 끊김 → 연결만 되살리고 이 그룹은 넘긴다(다음 실행에서 재시도됨).
+                print(f"  🔌 DB 연결 끊김 → 재연결, 이 그룹 건너뜀 (model_no={model_no!r}): {e}")
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                conn = push.get_connection()
+                cnt['err'] += 1
+                continue
             if res.get('skipped'):
-                print(f"  스킵: {res['reason']}")
+                print(f"  ⏭ 스킵: {res['reason']}")
                 cnt['skip'] += 1
                 continue
             if res.get('mode') == 'merge_only':
@@ -369,7 +430,8 @@ def _run_auto(args):
             mode = res.get('mode')
             resp = res.get('response') or {}
             if resp.get('success'):
-                print(f"  ✅ {mode} 성공 listing#{res['listing_id']} status_code={resp.get('status_code')}")
+                _ref = res.get('ref')   # CREATE 응답에 담겨오는 BUYMA reference_number (추가 조회 없음)
+                print(f"  ✅ {mode} 성공 ({resp.get('status_code')})" + (f" ref={_ref}" if _ref else ""))
                 cnt['ok'] += 1
                 cnt[mode] = cnt.get(mode, 0) + 1
             else:

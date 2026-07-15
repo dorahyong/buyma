@@ -863,8 +863,12 @@ class StockPriceSynchronizer:
                 groups.append((r['model_no'], r['brand_id']))
             log(f"[MERGE] reconcile push 대상(이번 refresh 그룹): {len(groups)}건")
             ok = err = skip = 0
-            for model_no, brand_id in groups:
-                res = rr.process_one_group(conn, model_no, brand_id, dry_run=False, scope='published')
+            # 로그용 몰이름 — 이미 조회된 products 에서 꺼냄(추가 쿼리·JOIN 없음).
+            _mall = (products[0].get('source_site') or '?') if products else '?'
+            _total = len(groups)
+            for _i, (model_no, brand_id) in enumerate(groups, 1):
+                res = rr.process_one_group(conn, model_no, brand_id, dry_run=False, scope='published',
+                                           tag=f"[{_mall} {_i}/{_total}] ")
                 resp = res.get('response') or {}
                 if res.get('skipped'):
                     skip += 1
