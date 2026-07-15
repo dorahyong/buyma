@@ -57,7 +57,13 @@ DB_CONFIG = {
 }
 
 # 부팅 시 캐시 워밍업 시작 (gunicorn import 시점)
-products_cache.start({k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'})
+# [임시차단 2026-07-15] products(레거시) 캐시 새로고침 중단.
+#   원인: build_payload 가 raw_scraped_data 75만행을 통째 GROUP BY(LIMIT/인덱스 없음) → 100분+
+#   → 5분마다 자동 재실행되며 안 끝나고 쌓여 DB 를 상시 짓누름(파이프라인·인덱스 지연).
+#   products2(신규, buyma_listings 인덱스 기반)는 정상이므로 그대로 둠.
+#   ▶ 되돌리기: 아래 products_cache.start(...) 주석만 해제 후 관리서버 재시작.
+#   ▶ 근본해결(별도): products_api.build_payload 최적화(페이징/사전집계) 후 재개.
+# products_cache.start({k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'})
 products2_cache.start({k: v for k, v in DB_CONFIG.items() if k != 'cursorclass'})
 
 _MANAGE_LIMIT_CHOICES = (50, 100, 200, 500)
@@ -108,7 +114,23 @@ def health():
 @app.route("/manage/products/")
 @require_login
 def manage_products_view():
-    return send_from_directory(_STATS_DIR, "products.html")
+    # [임시차단 2026-07-15] 레거시 products 페이지 점검 안내.
+    #   raw_scraped_data 75만행 집계로 DB 과부하 → 신규 products2 로 안내.
+    #   ▶ 되돌리기: 아래 return 문(안내) 지우고 send_from_directory(...products.html) 복원.
+    html = (
+        "<!doctype html><html lang='ko'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>점검 중 · 상품 관리</title></head>"
+        "<body style='font-family:system-ui,\"Malgun Gothic\",sans-serif;"
+        "max-width:560px;margin:14vh auto;padding:0 24px;color:#222;line-height:1.7;text-align:center'>"
+        "<div style='font-size:44px;margin-bottom:12px'>&#128295;</div>"
+        "<h1 style='font-size:22px;margin:0 0 12px'>상품 관리 페이지 점검 중입니다</h1>"
+        "<p style='color:#555;margin:0'>이 페이지는 데이터 처리 성능 개선을 위해 "
+        "일시적으로 중단되었습니다.</p>"
+        "</body></html>"
+    )
+    return Response(html, mimetype='text/html'), 503
+    # return send_from_directory(_STATS_DIR, "products.html")  # 원복용
 
 
 @app.route("/manage/products/data.json")
