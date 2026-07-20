@@ -96,6 +96,7 @@
       <table>
         <thead>
           <tr>
+            <th class="nowrap">ID</th>
             <th class="nowrap">등록일</th>
             <th>buyma_id</th>
             <th>BUYMA</th>
@@ -112,7 +113,7 @@
           </tr>
         </thead>
         <tbody id="tbody">
-          <tr><td colspan="13" class="empty">불러오는 중…</td></tr>
+          <tr><td colspan="14" class="empty">불러오는 중…</td></tr>
         </tbody>
       </table>
     </div>
@@ -134,14 +135,14 @@ async function load(){
     const j = await r.json();
     render(j.rows || []);
   }catch(e){
-    $('tbody').innerHTML = `<tr><td colspan="13" class="empty">불러오기 실패: ${esc(e)}</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="14" class="empty">불러오기 실패: ${esc(e)}</td></tr>`;
   }
 }
 
 function render(rows){
   $('cnt').textContent = `${rows.length}건`;
   if(!rows.length){
-    $('tbody').innerHTML = `<tr><td colspan="13" class="empty">문의가 없습니다.</td></tr>`;
+    $('tbody').innerHTML = `<tr><td colspan="14" class="empty">문의가 없습니다.</td></tr>`;
     return;
   }
   $('tbody').innerHTML = rows.map(rowHtml).join('');
@@ -165,6 +166,7 @@ function rowHtml(r){
   const created = (r.created_at||'').slice(0,16);
   const burl = r.buyma_url || (r.buyma_product_id ? `https://www.buyma.com/item/${esc(r.buyma_product_id)}/` : '');
   return `<tr class="${trClass(r.status)}" data-id="${r.id}">
+    <td class="nowrap">${esc(r.id)}</td>
     <td class="nowrap">${esc(created)}</td>
     <td class="nowrap">${esc(r.buyma_product_id||'')}</td>
     <td>${linkCell(burl, '열기')}</td>
