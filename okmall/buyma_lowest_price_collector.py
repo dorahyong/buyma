@@ -295,7 +295,7 @@ class BuymaLowestPriceCollector:
         - 중고 상품도 제외
         - 내 상품만 있으면 None 반환 (경쟁자 없음)
         """
-        encoded_model_no = urllib.parse.quote(model_no, safe='')
+        encoded_model_no = urllib.parse.quote(model_no.replace('/', ' ').replace('#', ' ').replace('&', ' ').replace('?', ' ').strip(), safe='')
         url = BUYMA_SEARCH_URL.format(model_no=encoded_model_no)
 
         try:

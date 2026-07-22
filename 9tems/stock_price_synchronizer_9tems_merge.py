@@ -741,7 +741,7 @@ class StockPriceSynchronizer:
         if not model_no:
             return None, "모델번호 없음"
 
-        encoded = urllib.parse.quote(model_no, safe='')
+        encoded = urllib.parse.quote(model_no.replace('/', ' ').replace('#', ' ').replace('&', ' ').replace('?', ' ').strip(), safe='')
         url = BUYMA_SEARCH_URL.format(model_no=encoded)
 
         try:
