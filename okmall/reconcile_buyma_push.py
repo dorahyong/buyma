@@ -113,6 +113,60 @@ def _listing_options(conn, listing_id):
         return cur.fetchall()
 
 
+def _shop_urls(conn, listing_id, winner_offering_id):
+    """이 목록의 소싱처 전부 → BUYMA shop_urls(買付先) 배열.
+
+    winner 를 맨 앞(기존과 동일), 나머지는 매입가 싼 순.
+    label = "몰 ₩매입가", description = 재고 있는 옵션("사이즈/색상").
+    상한 15칸(reg.MAX_SHOP_URLS) — 초과분은 제일 비싼 몰부터 잘린다.
+    쿼리 2개, 호출부의 기존 연결을 그대로 쓴다(새 연결 안 엶).
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, source_site, source_product_url, purchase_price_krw
+            FROM source_offerings
+            WHERE listing_id=%s AND is_active=1
+        """, (listing_id,))
+        offerings = cur.fetchall()
+        cur.execute("""
+            SELECT soo.offering_id, soo.color_value, soo.size_value, soo.stock_type
+            FROM source_offering_options soo
+            JOIN source_offerings so ON so.id = soo.offering_id
+            WHERE so.listing_id=%s AND so.is_active=1
+        """, (listing_id,))
+        opt_rows = cur.fetchall()
+
+    stock_by_off = {}
+    for r in opt_rows:
+        if r['stock_type'] == 'out_of_stock':
+            continue
+        sz, cl = (r['size_value'] or '').strip(), (r['color_value'] or '').strip()
+        lbl = f"{sz}/{cl}" if sz and cl else (sz or cl)
+        if not lbl:
+            continue
+        lst = stock_by_off.setdefault(r['offering_id'], [])
+        if lbl not in lst:
+            lst.append(lbl)
+
+    offerings.sort(key=lambda o: (0 if o['id'] == winner_offering_id else 1,
+                                  float(o['purchase_price_krw'] or 0)))
+    out = []
+    for o in offerings:
+        if not o['source_product_url']:
+            continue
+        stocks = stock_by_off.get(o['id'], [])
+        price = int(float(o['purchase_price_krw'] or 0))
+        # ★ label 은 BUYMA 의 '구매처(買付先)' 이름으로 그대로 등록되고 검색에도 쓰인다.
+        #   가격 같은 변동값을 넣으면 값이 바뀔 때마다 구매처가 새로 생겨 목록이 오염된다.
+        #   → label 은 몰 이름만. 가격·재고는 description 에.
+        out.append({
+            "url": o['source_product_url'],
+            "label": o['source_site'],
+            "description": f"₩{price:,} " + (("재고 " + " ".join(stocks)) if stocks else "재고없음"),
+        })
+    return out[:reg.MAX_SHOP_URLS]
+
+
 def _ace_option_meta(conn, ace_id, option_type, value):
     """소싱 ace 의 ace_product_options 에서 (master_id, details_json) 조회. 없으면 (0, None)."""
     if not ace_id or value is None:
@@ -265,6 +319,8 @@ def build_create_request(conn, listing):
         'colorsize_comments_jp': listing.get('colorsize_comments'),
         'source_product_url': winner['source_product_url'] if winner else None,
         'source_site': winner['source_site'] if winner else None,
+        # 매입처 전부(병합 상품은 여럿). winner 맨 앞, 상한 15칸.
+        'shop_urls': _shop_urls(conn, listing['id'], listing.get('winner_offering_id')),
     }
 
     # 4) 검증된 빌더 재사용 (control=publish, id 없음 → CREATE)
@@ -499,6 +555,8 @@ def build_edit_request(conn, listing, pub):
         'colorsize_comments_jp': listing.get('colorsize_comments'),
         'source_product_url': winner['source_product_url'] if winner else None,
         'source_site': winner['source_site'] if winner else None,
+        # 매입처 전부(병합 상품은 여럿). winner 맨 앞, 상한 15칸.
+        'shop_urls': _shop_urls(conn, listing['id'], listing.get('winner_offering_id')),
     }
     req = reg.build_request_json(product, images, options_rows, formatted_variants)
     if req is None:
