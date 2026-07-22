@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-통합 일일 자동화 — 31몰 (okmall 1 + 멀티소스 9: kasina·nextzennpack·labellusso·9tems·
-brickmansion·loromoda·milaneez·maisonparco·musinsa + naver 21). naver 만 캡챠로 사이트접속 직렬.
+통합 일일 자동화 — 33몰 (okmall 1 + 멀티소스 10: kasina·nextzennpack·labellusso·9tems·
+brickmansion·loromoda·milaneez·maisonparco·musinsa·laprima + naver 22). naver 만 캡챠로 사이트접속 직렬.
 
 pipeline_engine.PipelineEngine 위에 "무엇을 어떻게 돌릴지"만 주입하는 설정층.
   - 비즈니스 로직 0 — 마진·가격·중복판정·필드매핑은 기존 완성 스크립트를 그대로 호출.
@@ -43,13 +43,13 @@ def _p(*parts):
 # =====================================================
 OKMALL = 'okmall'
 MULTISOURCE = ['kasina', 'nextzennpack', 'labellusso', '9tems',
-               'brickmansion', 'loromoda', 'milaneez', 'maisonparco', 'musinsa']
+               'brickmansion', 'loromoda', 'milaneez', 'maisonparco', 'musinsa', 'laprima']
 # naver 21몰 (run_daily_naver.py SOURCES 와 동일). 캡챠로 사이트접속 직렬 → site_resource='naver'.
 NAVER = ['premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
          'dmont', 'tuttobene', 'thefactor2',
          'carpi', 'joharistore',
          'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
-         'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano']
+         'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'trendmecca']
 MALLS = [OKMALL] + MULTISOURCE + NAVER
 
 # only-naver 3분할 (PC별, IP 분산 목적). 큰 몰(bblue·unico·larlashoes·upset·carpi)을
@@ -58,7 +58,7 @@ MALLS = [OKMALL] + MULTISOURCE + NAVER
 NAVER_SPLIT = {
     1: ['bblue', 'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall'],
     2: ['unico', 'upset', 'dmont', 'tuttobene', 'thefactor2', 'joharistore', 'maniaon'],
-    3: ['larlashoes', 'carpi', 'luxlimit', 'thegrande', 'euroline', 'kometa', 'pano'],
+    3: ['larlashoes', 'carpi', 'luxlimit', 'thegrande', 'euroline', 'kometa', 'pano', 'trendmecca'],
 }
 
 # naver collector 3종 (run_daily_naver.py COLLECTOR_MAP 와 동일). 모두 공용 → --source 필요.
@@ -73,6 +73,7 @@ NAVER_COLLECTOR = {
     'maniaon': _NV_CATEGORY, 'bblue': _NV_CATEGORY, 'euroline': _NV_CATEGORY,
     'unico': _NV_CATEGORY, 'kometa': _NV_CATEGORY, 'larlashoes': _NV_CATEGORY,
     'thegrande': _NV_CATEGORY, 'upset': _NV_CATEGORY, 'luxlimit': _NV_CATEGORY, 'pano': _NV_CATEGORY,
+    'trendmecca': _NV_CATEGORY,
 }
 # naver stock = 21몰 공용 1개 스크립트(_merge) → --source 로 1몰씩.
 NAVER_STOCK_MERGE = _p('naver', 'stock_price_synchronizer_naver_merge.py')
@@ -88,6 +89,7 @@ COLLECTOR = {
     'milaneez': _p('milaneez', 'milaneez_collector.py'),
     'maisonparco': _p('maisonparco', 'maisonparco_collector.py'),
     'musinsa': _p('musinsa_boutique', 'musinsa_collector.py'),
+    'laprima': _p('laprima', 'laprima_collector.py'),
 }
 # 수집 직후 카테고리 채우기가 필요한 몰만(같은 collector를 플래그로 1회 더). 멀티소스와 동일.
 CATEGORY_FILL = {
@@ -108,6 +110,7 @@ STOCK_MERGE = {
     'milaneez': _p('milaneez', 'stock_price_synchronizer_milaneez_merge.py'),
     'maisonparco': _p('maisonparco', 'stock_price_synchronizer_maisonparco_merge.py'),
     'musinsa': _p('musinsa_boutique', 'stock_price_synchronizer_musinsa_merge.py'),
+    'laprima': _p('laprima', 'stock_price_synchronizer_laprima_merge.py'),
 }
 
 # 공용 스크립트
@@ -220,7 +223,7 @@ def build_units(malls, track):
 
 
 def main():
-    ap = argparse.ArgumentParser(description='통합 일일 자동화 (31몰: okmall + 멀티소스 9 + naver 21)')
+    ap = argparse.ArgumentParser(description='통합 일일 자동화 (33몰: okmall + 멀티소스 10 + naver 22)')
     ap.add_argument('--plan', action='store_true', help='실행 명령만 출력(DB·실행 없음)')
     ap.add_argument('--dry-run', action='store_true', help='엔진 가동(상태기록)하되 명령은 no-op 로그')
     ap.add_argument('--only', type=str, help=f'특정 몰만 (지원: {", ".join(MALLS)})')
