@@ -53,12 +53,15 @@ def get_connection():
 
 
 def load_ace_key_index(conn):
-    """(source_site, model_no) -> [ace_product_id]  (active+duple)."""
+    """(source_site, model_no) -> [ace_product_id]  (살아있는 ace 만).
+
+    ★ 2026-07-22: 옛 `OR status='duple'` 제거 (reconcile_ensure_group._load_brand_aces 와 동일 사유).
+    """
     cur = conn.cursor()
     cur.execute("""
         SELECT id, source_site, model_no
         FROM ace_products
-        WHERE is_active = 1 OR status = 'duple'
+        WHERE is_active = 1
     """)
     idx = defaultdict(list)
     n = 0

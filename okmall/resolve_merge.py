@@ -127,7 +127,7 @@ def load_all(conn):
     # ace 가격/정보: buyma_lowest_price(경쟁자), 신선도, buying_shop_name
     cur.execute("""
         SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at, buying_shop_name
-        FROM ace_products WHERE is_active=1 OR status='duple'
+        FROM ace_products WHERE is_active=1
     """)
     ace_info = {r['id']: r for r in cur.fetchall()}
     logger.info(f"ace 가격정보 로드: {len(ace_info)}")

@@ -27,13 +27,20 @@ MIN_FUZZY_LEN = 6  # contains 편입 시 짧은 canonical 최소 길이 (짧은 
 
 
 def _load_brand_aces(conn, brand_id):
-    """같은 브랜드의 active+duple ace 행 (그룹핑·소싱 후보)."""
+    """같은 브랜드의 살아있는 ace 행 (그룹핑·소싱 후보).
+
+    ★ 2026-07-22: 옛 `OR status='duple'` 제거.
+      죽은(is_active=0) duple 은 STOCK 이 갱신하지 않으므로(대상 조건 ap.is_active=1)
+      매입가·재고가 죽은 시점에 냉동된다. 그런데 winner 는 최저 매입가로 뽑히므로
+      냉동된 옛 가격이 계속 이겨서, 실제로 살 수 없는 소싱처가 winner 가 됐다.
+      (실사례: 주문 34975478 취소 — reports/issue_dead_ace_walkthrough_order_34975478.md)
+    """
     with conn.cursor() as cur:
         cur.execute("""
             SELECT id, source_site, name, brand_id, brand_name, category_id, model_no,
                    source_product_url, source_model_id, purchase_price_krw, is_active, status
             FROM ace_products
-            WHERE brand_id = %s AND (is_active = 1 OR status = 'duple')
+            WHERE brand_id = %s AND is_active = 1
               AND model_no IS NOT NULL AND model_no <> ''
         """, (brand_id,))
         return cur.fetchall()
