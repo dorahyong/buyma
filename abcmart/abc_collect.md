@@ -312,11 +312,20 @@ Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like 
 
 > 참고: `totalStockQty=999`는 "재고 무제한/미관리" 센티넬 값일 수 있음(정상, 저장 대상).
 
-### 소재
-- `div#product-detail-notice-wrapper tbody#product-detail-notice`에서 `th="소재"`에 해당하는 `td` 값을 추출
-```html
-<tr><th scope="row">소재</th><td><span>폴리에스터+합성가죽</span></td></tr>
-```
+### 소재 / 원산지
+- 소재와 원산지는 `GET /product/info/detail?prdtNo={prdtNo}`의 `notice[]`에서 조회한다.
+  (`#product-detail-notice`는 JS로 렌더링되며, 원본 HTML과 `/product/info`에는 포함되지 않음.)
+
+#### 추출 규칙
+- **소재**: `infoNotcName == '소재'` → `prdtAddInfo`
+- **원산지**: `infoNotcName == '제조국'` → `prdtAddInfo`
+- `내용없음`, `상세페이지참조` 등 의미 없는 값은 제외
+
+#### 저장
+- `material`
+- `origin`
+- `composition` (`소재`, `원산지`)
+- 제조자, A/S 등 기타 고시 항목은 저장하지 않음.
 ---
 
 ### 카테고리

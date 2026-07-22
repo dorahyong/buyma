@@ -18,9 +18,12 @@ DB에는 source_site 를 각각 따로 넣는다 (abcmart / grandstage).
                brandNo, styleInfo(모델), prdtName/engPrdtName, genderGbnCode
   3) 카테고리: GET /product/new?prdtNo={prdtNo}  (HTML) → #prdtCtgrCrumb breadcrumb
              → "KIDS>신발>스니커즈>라이프스타일" (성별/연령 포함. JSON-LD/히든필드는 성별 빠져서 안 씀)
+  4) 소재  : GET /product/info/detail?prdtNo={prdtNo}  (JSON) → notice[]
+             → infoNotcName=='소재'의 prdtAddInfo(소재), '제조국'의 prdtAddInfo(원산지)
 
 매핑:
   - raw_scraped_data : source_site=abcmart/grandstage, mall_product_id=prdtNo, model_id=styleInfo
+  - raw_json_data    : options/images/gender + material·origin·composition(소재/원산지)
   - mall_categories  : full_path(성별 포함)로 중복판별, 없으면 INSERT
   - mall_brands      : 이미 수집됨. 수집기는 읽기만 함 (등록 안 함).
 
@@ -75,7 +78,10 @@ CHANNELS = {
 
 LIST_PATH = '/display/search-word/result/list'
 INFO_PATH = '/product/info'
+INFO_DETAIL_PATH = '/product/info/detail'
 DETAIL_PATH = '/product/new'
+
+NOTICE_SKIP_VALUES = {'내용없음', '상세페이지참조', '상세참조', '-', ''}
 
 PAGE_SIZE = 30
 REQUEST_DELAY_MIN = 0.2
@@ -199,7 +205,10 @@ def get_info(session: requests.Session, domain: str, prdt_no: str) -> Optional[D
 
 def parse_options(info: Dict) -> List[Dict]:
     """productOption[] → 옵션 리스트. 품절/재고0 제외.
-    신발 = 1차원(optnName=사이즈), 의류 = 2차원(optnName=색상, addOptn2Text=사이즈)."""
+    차원은 상품종류(신발/의류) 무관, addOptn2Text 유무로 판별:
+      - addOptn2Text 없음 → 1차원 (optnName=사이즈)
+      - addOptn2Text 있음 → 2차원 (optnName=색상, addOptn2Text=사이즈)
+    ⚠️ sellStatCode=10001(판매중)인데 재고 0인 옵션 존재 → 재고까지 봐야 함."""
     out = []
     for o in info.get('productOption') or []:
         stock = o.get('totalStockQty') or 0
@@ -218,6 +227,45 @@ def parse_options(info: Dict) -> List[Dict]:
             'size': size,
             'stock': stock,
         })
+    return out
+
+
+def get_notice(session: requests.Session, domain: str, prdt_no: str) -> Dict[str, str]:
+    """품목정보고시(소재/제조국/제조자 등). GET /product/info/detail 의 notice[].
+    {infoNotcName: prdtAddInfo} 딕트로 반환. 무의미 값은 제외."""
+    referer = f"{domain}/product/new?prdtNo={prdt_no}"
+    r = _get(session, domain + INFO_DETAIL_PATH, params={'prdtNo': prdt_no}, referer=referer)
+    if r is None:
+        return {}
+    try:
+        data = r.json()
+    except ValueError:
+        return {}
+
+    def find_notice(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k.lower() == 'notice' and isinstance(v, list):
+                    return v
+                found = find_notice(v)
+                if found is not None:
+                    return found
+        elif isinstance(o, list):
+            for x in o:
+                found = find_notice(x)
+                if found is not None:
+                    return found
+        return None
+
+    notice = find_notice(data) or []
+    out = {}
+    for item in notice:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get('infoNotcName') or '').strip()
+        val = (item.get('prdtAddInfo') or '').strip()
+        if name and val and val not in NOTICE_SKIP_VALUES:
+            out[name] = val
     return out
 
 
@@ -310,7 +358,8 @@ def ensure_category(conn, channel_site: str, cat: Dict, seen: set) -> None:
 
 
 def convert_to_raw_data(channel_site: str, domain: str, prdt_no: str,
-                        info: Dict, options: List[Dict], cat: Optional[Dict]) -> Optional[Dict]:
+                        info: Dict, options: List[Dict], cat: Optional[Dict],
+                        notice: Optional[Dict] = None) -> Optional[Dict]:
     product_name = (info.get('prdtName') or info.get('engPrdtName') or '').strip()
     if not product_name:
         return None
@@ -320,6 +369,16 @@ def convert_to_raw_data(channel_site: str, domain: str, prdt_no: str,
     stock_status = 'in_stock' if options else 'out_of_stock'
     images = build_images(info)
 
+    notice = notice or {}
+    material = notice.get('소재', '')
+    origin = notice.get('제조국', '')
+    # 변환기가 쓰는 composition (nextzennpack 관례) — 소재/원산지만
+    composition = {}
+    if material:
+        composition['소재'] = material
+    if origin:
+        composition['원산지'] = origin
+
     raw_json = {
         'brand_no': info.get('brandNo') or '',
         'style_info': info.get('styleInfo') or '',
@@ -327,6 +386,9 @@ def convert_to_raw_data(channel_site: str, domain: str, prdt_no: str,
         'gender_gbn_code': info.get('genderGbnCode') or '',
         'gender': cat['gender'] if cat else '',
         'eng_product_name': info.get('engPrdtName') or '',
+        'material': material,
+        'origin': origin,
+        'composition': composition,
         'options': options,
         'images': images,
         'thumbnail': images[0] if images else '',
@@ -420,15 +482,18 @@ def run_collection(args):
                 continue
             options = parse_options(info)
             cat = get_breadcrumb(session, domain, prdt_no)
+            notice = get_notice(session, domain, prdt_no)
             _sleep()
-            raw = convert_to_raw_data(channel_site, domain, prdt_no, info, options, cat)
+            raw = convert_to_raw_data(channel_site, domain, prdt_no, info, options, cat, notice)
             if not raw:
                 continue
             raw['brand_name_en'] = brand_en  # 브랜드 기준 수집이므로 확정
 
             if args.dry_run:
+                _rj = json.loads(raw['raw_json_data'])
                 logger.info(f"    [DRY] {prdt_no} | {brand_en} | {raw['product_name']} | "
-                            f"{raw['raw_price']}원 | {raw['category_path']} | 옵션 {len(options)}개 | 이미지 {len(json.loads(raw['raw_json_data'])['images'])}장")
+                            f"{raw['raw_price']}원 | {raw['category_path']} | 옵션 {len(options)}개 | "
+                            f"이미지 {len(_rj['images'])}장 | 소재: {_rj['material'] or '(없음)'}")
             else:
                 # 카테고리 없으면 INSERT
                 if cat:
