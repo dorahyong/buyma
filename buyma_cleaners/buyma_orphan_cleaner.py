@@ -66,11 +66,11 @@ DB_CONFIG = {
 
 BUYMA_BASE_URL = "https://www.buyma.com"
 
-# 출품 리스트 URL (rows=100, 페이지당 100개)
+# 출품 리스트 URL (rows=1000, 페이지당 1000개 — buyma 리스트가 지원하는 최대치)
 BUYMA_LIST_URL_TEMPLATE = (
     "{base}/my/sell?duty_kind=all"
     "&facet=brand_id%2Ccate_pivot%2Cstatus%2Ctag_ids%2Cshop_labels%2Cstock_state"
-    "&order=desc&page={{page}}&rows=100&sale_kind=all&sort=item_id"
+    "&order=desc&page={{page}}&rows=1000&sale_kind=all&sort=item_id"
     "&status=for_sale&timesale_kind=all"
 ).format(base=BUYMA_BASE_URL)
 
@@ -189,7 +189,7 @@ def _load_progress():
         return None
 
 
-def crawl_buyma_product_ids() -> List[Dict]:
+def crawl_buyma_product_ids(restart: bool = False) -> List[Dict]:
     """
     바이마 출품 리스트 전체를 크롤링하여 상품ID를 수집.
 
@@ -197,6 +197,7 @@ def crawl_buyma_product_ids() -> List[Dict]:
       - 페이지마다 PROGRESS_FILE 에 진행상황 저장
       - 중단(stop/네트워크/세션만료) 시 PROGRESS_FILE 이 남아, 다음 --scan 이 이어받음
       - 끝까지 완료해야만 BUYMA_IDS_FILE 저장 + PROGRESS_FILE 삭제 (=완료 표시)
+      - restart=True 면 남아있는 진행상황을 버리고 1페이지부터 새로 크롤링
 
     HTML 셀렉터:
       <input type="checkbox" name="chkitems" value="128400709">
@@ -207,8 +208,13 @@ def crawl_buyma_product_ids() -> List[Dict]:
     page_num = 1
 
     log("=" * 60)
-    log("Phase 1: 바이마 출품 리스트 크롤링 (rows=100)")
+    log("Phase 1: 바이마 출품 리스트 크롤링 (rows=1000)")
     log("=" * 60)
+
+    # --restart: 중단된 진행상황을 무시하고 처음(1페이지)부터 새로 시작
+    if restart and os.path.exists(PROGRESS_FILE):
+        os.remove(PROGRESS_FILE)
+        log("--restart: 기존 진행상황 삭제 → 1페이지부터 새로 크롤링")
 
     # 이어하기: 중단된 진행상황이 있으면 재개
     prog = _load_progress()
@@ -679,6 +685,8 @@ def main():
                         help='브라우저 로그인 & 쿠키 저장 (최초 1회)')
     parser.add_argument('--scan', action='store_true',
                         help='크롤링 + DB 비교 → 고아/유령 상품 목록 생성')
+    parser.add_argument('--restart', action='store_true',
+                        help='중단된 진행상황을 무시하고 처음(1페이지)부터 다시 크롤링 (--scan 과 함께)')
     parser.add_argument('--delete', action='store_true',
                         help='고아 상품 삭제 (바이마에만 있는 것)')
     parser.add_argument('--clean-ghost', action='store_true',
@@ -696,7 +704,7 @@ def main():
         asyncio.run(login_and_save_cookies())
 
     if args.scan:
-        products = crawl_buyma_product_ids()
+        products = crawl_buyma_product_ids(restart=args.restart)
         if products:
             find_orphans(products)
             find_ghosts(products)
