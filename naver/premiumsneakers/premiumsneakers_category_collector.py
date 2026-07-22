@@ -105,12 +105,17 @@ NAME_CLEANUP_PATTERNS = {
     'unico':      [r'\s+\d{2}[A-Z]\s*$'],                         # 끝의 시즌코드 '26S' (unico 특정)
     'lovegrande': [r'^\s*\d{2}년\s*\d+월\d+째주[_\s]*', r'\[국내신상\]\s*'],  # 앞의 '26년 4월3째주' + [국내신상]
     'pano':       [r'\[국내신상\]\s*'],
-    'larlashoes': [r'\(국내매장판\)\s*'],
-    'luxlimit':   [r'\[국내당일\]\s*'],
+    'larlashoes': [r'[\[(]\s*(?:국내매장판|국내매장|국냄매장판)\s*[\])]\s*'],           # 국내매장판/매장/오타 국냄매장판 (괄호무관, 브랜드명 제외)
+    'luxlimit':   [r'[\[(]\s*(?:국내백화점|국내매장판|국내매장|국내당일|관부가세포함)\s*[\])]\s*'],  # 국내백화점/매장판/매장/당일/관부가세포함 (괄호무관, 브랜드명 제외)
 }
 
 # 전역 시즌코드 제거 (모든 스토어 상품명에 적용): 26SS, 25FW, 26S, 24SU 등
 SEASON_PATTERN = r'(?i)\b2[0-9](?:SS|FW|SU|AW|WT|SP|S|F|W)\b\s*'
+
+# 전역 국내판매 마커 제거 (모든 스토어): [국내...]/(국내...) 괄호토큰 + 관부가세포함 + 국냄매장판(오타).
+#   국내백화점/매장판/매장/당일/판/배송/신상/매장발송 등 '국내~' 전부. 브랜드명은 국내로 시작 안 함 → 안전.
+#   ★일본어 번역 변형(国内店舗版/国内正規品/韓国百貨店/国内当日 등)은 이 한글 마커를 지우면 원천 발생 안 함.
+GLOBAL_DOMESTIC_PATTERN = r'[\[(]\s*(?:국내[^\]\)]*|관부가세포함|국냄매장판)\s*[\])]\s*'
 
 
 # 스토어별 제외 키워드 (category_path 또는 product_name에 포함 시 수집 스킵)
@@ -128,6 +133,8 @@ def clean_product_name(source_site: str, name: str) -> str:
     cleaned = name
     for pat in patterns:
         cleaned = _re.sub(pat, '', cleaned)
+    # 전역: 국내판매 마커 ([국내배송]/[국내매장판]/(국내백화점) 등) 제거 — 모든 스토어
+    cleaned = _re.sub(GLOBAL_DOMESTIC_PATTERN, '', cleaned)
     # 전역: 시즌코드 (26SS, 25FW 등) 제거
     cleaned = _re.sub(SEASON_PATTERN, '', cleaned)
     # 중복 공백 정리
