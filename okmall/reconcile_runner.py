@@ -288,10 +288,14 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
         already_live = bool(listing.get('reference_number')) and (
             listing.get('status') in ('pending', 'success') or listing.get('is_published'))
 
-        # ── scope 게이트 (register/stock 분담) ── (OFF/ON 동일: listing_mode!=create ⟺ n_pub>=1)
+        # ── scope 게이트 (register/stock 분담) ──
+        #   scope 'new' = 아직 바이마에 "게시중"이 아닌 그룹 처리: 신규 CREATE + ★출품정지(soldout) 부활(같은 id 재게시).
+        #     이미 게시중(already_live)인 그룹만 stock 담당으로 넘긴다. 정지분(is_published=0·status='soldout'·buyma_id有)은
+        #     edit 모드지만 not-live → register 가 다시 살린다(execute_edit). deleted 는 select 의 status<>'deleted' 가드로 애초에 제외.
+        #   ※ already_live=True 면 group_on_buyma 도 항상 True → 이 변경은 "정지분(edit·not live)"만 통과시키고 create·게시중은 종전과 동일.
         group_on_buyma = (listing_mode != 'create') or already_live
-        if scope == 'new' and group_on_buyma:
-            return {'skipped': True, 'reason': '이미 바이마 등록된 그룹 → stock 담당',
+        if scope == 'new' and already_live:
+            return {'skipped': True, 'reason': '이미 바이마 게시중 → stock 담당',
                     'listing_id': listing_id, 'model_no': model_no}
         if scope == 'published' and not group_on_buyma:
             return {'skipped': True, 'reason': '미등록 그룹 → register 담당',
@@ -347,6 +351,14 @@ def _is_lost_connection(e) -> bool:
             or 'Broken pipe' in msg or '10054' in msg)
 
 
+def _is_deadlock(e) -> bool:
+    """MySQL 데드락(1213). 동시 프로세스가 listing_images 등을 같이 쓸 때 발생.
+    ensure_group(이미지 쓰기)에서 나며 BUYMA push 전이라 롤백 후 재시도해도 중복등록 위험 없음."""
+    if not isinstance(e, pymysql.err.OperationalError):
+        return False
+    return (e.args[0] if e.args else None) == 1213 or 'Deadlock' in str(e)
+
+
 def _run_auto(args):
     """AUTO 모드 실행: 상품 그룹 선정 → process_one_group 반복.
 
@@ -399,20 +411,42 @@ def _run_auto(args):
         for _i, (model_no, brand_id, _ace_id, _brand) in enumerate(groups, 1):
             # tag = 몰 · 진행률 · ace#(기준 테이블 id) · 브랜드명(id) — 전부 위 SELECT 결과라 비용 0
             _tag = f"[{_mall} {_i}/{_total}] ace#{_ace_id} {_brand or '-'}({brand_id}) "
-            try:
-                res = process_one_group(conn, model_no, brand_id, dry_run=not do_writes,
-                                        scope=args.scope, no_push=args.no_push, tag=_tag)
-            except Exception as e:
-                if not _is_lost_connection(e):
-                    raise   # 연결 문제가 아닌 진짜 에러는 원래대로 터뜨린다(버그 숨김 방지).
-                # 연결이 끊김 → 연결만 되살리고 이 그룹은 넘긴다(다음 실행에서 재시도됨).
-                print(f"  🔌 DB 연결 끊김 → 재연결, 이 그룹 건너뜀 (model_no={model_no!r}): {e}")
+            _dl_try = 0
+            while True:
                 try:
-                    conn.close()
-                except Exception:
-                    pass
-                conn = push.get_connection()
-                cnt['err'] += 1
+                    res = process_one_group(conn, model_no, brand_id, dry_run=not do_writes,
+                                            scope=args.scope, no_push=args.no_push, tag=_tag)
+                    break
+                except Exception as e:
+                    # 데드락(1213): 동시 프로세스와의 DB 경합. BUYMA push 전 지점이라
+                    #   롤백 후 이 그룹만 재시도해도 중복등록 위험 없음. 최대 3회, 소진되면 건너뜀.
+                    if _is_deadlock(e):
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        if _dl_try < 3:
+                            _dl_try += 1
+                            print(f"  🔁 데드락(1213) → 롤백 후 재시도 ({_dl_try}/3) (model_no={model_no!r})")
+                            time.sleep(0.5 * _dl_try)
+                            continue
+                        print(f"  ⚠️ 데드락 재시도 소진 → 이 그룹 건너뜀 (다음 실행 재시도) (model_no={model_no!r})")
+                        cnt['err'] += 1
+                        res = None
+                        break
+                    if not _is_lost_connection(e):
+                        raise   # 연결 문제가 아닌 진짜 에러는 원래대로 터뜨린다(버그 숨김 방지).
+                    # 연결이 끊김 → 연결만 되살리고 이 그룹은 넘긴다(다음 실행에서 재시도됨).
+                    print(f"  🔌 DB 연결 끊김 → 재연결, 이 그룹 건너뜀 (model_no={model_no!r}): {e}")
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = push.get_connection()
+                    cnt['err'] += 1
+                    res = None
+                    break
+            if res is None:
                 continue
             if res.get('skipped'):
                 print(f"  ⏭ 스킵: {res['reason']}")
