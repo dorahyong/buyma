@@ -32,10 +32,12 @@ DB에는 source_site 를 각각 따로 넣는다 (abcmart / grandstage).
     python abc_collector.py --channel grandstage              # grandstage
     python abc_collector.py --channel abcmart --brand 000003  # 특정 브랜드만
     python abc_collector.py --channel abcmart --limit 5 --dry-run   # 5개만, DB 저장 X (테스트)
+    python abc_collector.py --channel abcmart --skip-existing       # 이미 등록 완료된 상품은 건너뛰고 신규+미등록만
 """
 
 import os
 import re
+import sys
 import json
 import time
 import random
@@ -49,6 +51,9 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
 
 # ===========================================
 # 환경 설정
@@ -82,6 +87,12 @@ INFO_DETAIL_PATH = '/product/info/detail'
 DETAIL_PATH = '/product/new'
 
 NOTICE_SKIP_VALUES = {'내용없음', '상세페이지참조', '상세참조', '-', ''}
+
+# 상품명에 이 표시가 있으면 매장에서만 파는 '오프라인 전용상품' → 온라인 구매 불가라 수집/출품 제외.
+# 예: "[오프라인 전용 상품] 헤이든 클로그". 띄어쓰기 변형 대비해 '오프라인'+'전용' 동시 포함으로 판별.
+def is_offline_only(name: str) -> bool:
+    n = name or ''
+    return '오프라인' in n and '전용' in n
 
 PAGE_SIZE = 30
 REQUEST_DELAY_MIN = 0.2
@@ -326,6 +337,26 @@ def load_brands(channel_site: str, only_brand: Optional[str]) -> List[Dict]:
     return [{'no': r[0], 'en': r[1]} for r in rows]
 
 
+def get_published_product_ids(channel_site: str, brand_name: Optional[str] = None) -> set:
+    """등록 완료된 상품의 mall_product_id 목록 (신규+미등록만 수집하려고 스킵 대상 조회).
+    source_site 는 채널별로 다름(abcmart/grandstage)."""
+    with engine.connect() as conn:
+        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        query = f"""
+            SELECT r.mall_product_id
+            FROM raw_scraped_data r
+            INNER JOIN ace_products a ON r.id = a.raw_data_id
+            WHERE r.source_site = :site
+            AND {_reg}
+        """
+        params = {'site': channel_site}
+        if brand_name:
+            query += " AND r.brand_name_en = :brand"
+            params['brand'] = brand_name
+        result = conn.execute(text(query), params)
+        return {str(r[0]) for r in result}
+
+
 def load_existing_category_paths(channel_site: str) -> set:
     with engine.connect() as conn:
         rows = conn.execute(text(
@@ -464,14 +495,25 @@ def run_collection(args):
     logger.info(f"[{channel_site}] 대상 브랜드 {len(brands)}개")
 
     cat_seen = load_existing_category_paths(channel_site)
+    published_ids = get_published_product_ids(channel_site) if args.skip_existing else set()
+    if args.skip_existing:
+        logger.info(f"[{channel_site}] 등록 완료 상품 {len(published_ids)}개 — 스킵 대상 (신규+미등록만 수집)")
     total_saved = 0
     processed = 0          # 처리한 상품 수 (--limit 판정용, dry-run 포함)
+    total_skipped = 0      # skip-existing 으로 건너뛴 수
     buffer: List[Dict] = []
 
     for bi, brand in enumerate(brands, 1):
         brand_no, brand_en = brand['no'], brand['en']
         prdt_ids = get_product_ids(session, domain, channel, brand_no)
-        logger.info(f"  ({bi}/{len(brands)}) {brand_en}({brand_no}): 상품 {len(prdt_ids)}개")
+        if args.skip_existing:
+            before = len(prdt_ids)
+            prdt_ids = [p for p in prdt_ids if str(p) not in published_ids]
+            skipped = before - len(prdt_ids)
+            total_skipped += skipped
+            logger.info(f"  ({bi}/{len(brands)}) {brand_en}({brand_no}): 상품 {before}개 중 등록완료 {skipped}개 스킵 → {len(prdt_ids)}개 수집")
+        else:
+            logger.info(f"  ({bi}/{len(brands)}) {brand_en}({brand_no}): 상품 {len(prdt_ids)}개")
 
         for pi, prdt_no in enumerate(prdt_ids, 1):
             if args.limit and processed >= args.limit:
@@ -479,6 +521,9 @@ def run_collection(args):
             processed += 1
             info = get_info(session, domain, prdt_no)
             if not info:
+                continue
+            if is_offline_only(info.get('prdtName') or info.get('engPrdtName') or ''):
+                logger.info(f"    [오프라인전용 스킵] {prdt_no} | {info.get('prdtName')}")
                 continue
             options = parse_options(info)
             cat = get_breadcrumb(session, domain, prdt_no)
@@ -514,7 +559,8 @@ def run_collection(args):
         save_to_database(buffer)
         total_saved += len(buffer)
 
-    logger.info(f"[{channel_site}] 완료 — raw 저장 {total_saved}건 (dry-run={args.dry_run})")
+    skip_msg = f", 등록완료 스킵 {total_skipped}건" if args.skip_existing else ""
+    logger.info(f"[{channel_site}] 완료 — raw 저장 {total_saved}건{skip_msg} (dry-run={args.dry_run})")
 
 
 def main():
@@ -524,6 +570,7 @@ def main():
     ap.add_argument('--brand', default=None, help='특정 브랜드 번호만 (예: 000003)')
     ap.add_argument('--limit', type=int, default=None, help='최대 상품 수 (테스트용)')
     ap.add_argument('--dry-run', action='store_true', help='DB 저장 없이 출력만')
+    ap.add_argument('--skip-existing', action='store_true', help='등록 완료 상품 스킵 (신규+미등록만 수집)')
     args = ap.parse_args()
     run_collection(args)
 
