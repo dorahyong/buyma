@@ -94,6 +94,17 @@ BUYMA_FIXED_VALUES = {
 # 구매처명 템플릿: 브랜드명 + 正規販売店
 BUYING_SHOP_NAME_TEMPLATE = "{brand_name}正規販売店"
 
+# 무신사 부티크 필수 안내사항 (한국어 원문). colorsize_comments 에 저장 → 번역배치가
+# 하드코딩 매핑으로 정확한 일본어(【商品ディテールに関するご注意】…)로 치환. 문구 수정 시
+# convert_to_japanese_gemini.py 의 매핑 키도 동일하게 맞춰야 함(안 그러면 번역 누락).
+MUSINSA_NOTICE_KO = (
+    "【상품 상세 안내】\n"
+    "자수 및 패치, 각종 라벨, 가죽 제품 로고 양각 및 음각 방식, 개체별 제조국 등의 상품 디테일 및 "
+    "브랜드 택, 브랜드 포장 봉투, 브랜드 더스트 백, 하드케이스, 보증서 등 브랜드 구성품의 경우 "
+    "생산 시기 및 입출고 시점에 따라 촬영된 상품 사진 및 상세페이지상의 정보와 고객님께서 받아보는 "
+    "실제 상품의 디테일이 상이할 수 있습니다."
+)
+
 # =====================================================
 # 사이즈 상세(options.details) 매핑
 # =====================================================
@@ -1217,6 +1228,13 @@ class RawToAceConverter:
                     colorsize_comments_parts.append(f"{key}: {value}")
         
         colorsize_comments = "\n".join(colorsize_comments_parts) if colorsize_comments_parts else None
+
+        # 무신사 전용: 실측 사이즈(size_info, 있으면) + 필수 안내사항(항상 포함).
+        # 무신사는 실측이 표(measurements)가 아니라 텍스트라 위 블록이 비어있음 → 여기서 새로 구성.
+        # 다른 몰은 이 블록을 타지 않는다(기존 measurements 로직 그대로).
+        if raw_data.get('source_site') == 'musinsa':
+            size_info = (json_data.get('size_info') or '').strip()
+            colorsize_comments = f"{size_info}\n\n{MUSINSA_NOTICE_KO}" if size_info else MUSINSA_NOTICE_KO
 
         # 일본어 번역은 배치 처리에서 수행 (colorsize_comments_jp = NULL로 저장)
         colorsize_comments_jp = None

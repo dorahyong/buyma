@@ -27,6 +27,7 @@
 """
 
 import os
+import re
 import json
 import time
 import random
@@ -72,6 +73,8 @@ DETAIL_API = 'https://goods-detail.musinsa.com/api2/goods/{}'
 OPTIONS_API = 'https://goods-detail.musinsa.com/api2/goods/{}/options'
 # 옵션 API에는 사이즈별 품절이 없다. 사이즈별 실시간 재고는 이 POST 엔드포인트에서만 나온다.
 INVENTORY_API = 'https://goods-detail.musinsa.com/api2/goods/{}/options/v2/prioritized-inventories'
+# 실측 사이즈표(구조화). data.sizes[].items[]{name,value} → 사이즈별 부위 치수(cm). 없으면 data=null.
+SIZE_API = 'https://goods-detail.musinsa.com/api2/goods/{}/actual-size'
 IMAGE_HOST = 'https://image.msscdn.net'   # 상세 imageUrl이 상대경로(/images/...)라 앞에 붙임
 PRODUCT_URL = 'https://www.musinsa.com/products/{}'
 
@@ -319,7 +322,49 @@ def ensure_category(conn, full_path: str, category_id: str, depths: List[str], s
     seen.add(full_path)
 
 
-def convert_to_raw_data(detail: Dict, options_data: Dict, full_path: str) -> Optional[Dict]:
+# mdOpinion 뒤쪽에 붙는 공통 안내문(보일러플레이트) 시작 마커. 이 앞부분만 사이즈 텍스트다.
+_MD_DISCLAIMER_MARKER = "자수 및 패치"
+
+
+def get_actual_size(session: requests.Session, goods_no) -> Optional[str]:
+    """실측 사이즈표 API → 텍스트. 사이즈표 없는 상품(이미지형 등)은 data=null → None.
+    예) 'S: 총장 55cm / 가슴단면 37cm\\nM: 총장 57cm / ...'"""
+    data = fetch_json(session, SIZE_API.format(goods_no))
+    d = (data or {}).get('data') if data else None
+    if not d or not d.get('sizes'):
+        return None
+    lines = []
+    for sz in d['sizes']:
+        parts = []
+        for it in (sz.get('items') or []):
+            name, val = it.get('name'), it.get('value')
+            if name and val:
+                num = f"{val:g}" if isinstance(val, (int, float)) else str(val)  # 87.0→87, 3.5→3.5
+                parts.append(f"{name} {num}cm")
+        if parts:
+            lines.append(f"{sz.get('name', '')}: " + " / ".join(parts))
+    return "\n".join(lines) if lines else None
+
+
+def extract_md_size(md_opinion: Optional[str]) -> Optional[str]:
+    """mdOpinion(MD 자유 텍스트)에서 안내문 앞의 사이즈 텍스트만 추출. 대부분은 안내문뿐이라 None."""
+    if not md_opinion:
+        return None
+    idx = md_opinion.find(_MD_DISCLAIMER_MARKER)
+    text = (md_opinion[:idx] if idx >= 0 else md_opinion).strip()
+    text = re.sub(r'^사이즈\s*\n?', '', text)          # 앞의 '사이즈' 헤더 제거(아래서 【실측 사이즈】 붙임)
+    text = re.sub(r'\n{3,}', '\n\n', text).strip()
+    return text or None                                # 내용 없으면 None
+
+
+def build_size_info(session: requests.Session, goods_no, detail: Dict) -> Optional[str]:
+    """실측 사이즈 텍스트. actual-size(구조화) 우선, 없으면 mdOpinion 텍스트(예외 케이스). 둘 다 없으면 None."""
+    size_text = get_actual_size(session, goods_no) or extract_md_size(detail.get('mdOpinion'))
+    return ("【실측 사이즈】\n" + size_text) if size_text else None
+
+
+def convert_to_raw_data(detail: Dict, options_data: Dict, full_path: str,
+                        size_info: Optional[str] = None) -> Optional[Dict]:
     """상세 + 옵션 → raw_scraped_data 형식"""
     goods_no = detail.get('goodsNo')
     if not goods_no:
@@ -358,6 +403,8 @@ def convert_to_raw_data(detail: Dict, options_data: Dict, full_path: str) -> Opt
         'discount_rate': gp.get('discountRate'),
         'scraped_at': datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
     }
+    if size_info:   # 실측 사이즈(있는 상품만). 변환기가 colorsize_comments 로 사용.
+        raw_json['size_info'] = size_info
 
     return {
         'source_site': SOURCE_SITE,
@@ -463,8 +510,9 @@ def run_collection(args):
                 continue
 
             options_data = get_options(session, goods_no)
+            size_info = build_size_info(session, goods_no, detail)   # 실측 사이즈(actual-size 우선, mdOpinion 보조)
             full_path, category_id, depths = build_category(detail)
-            data = convert_to_raw_data(detail, options_data, full_path)
+            data = convert_to_raw_data(detail, options_data, full_path, size_info)
             if not data:
                 total_skipped += 1
                 time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
