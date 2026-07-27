@@ -127,12 +127,14 @@ NAVER_MALLS = [
     'carpi', 'joharistore',
     'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
     'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'shinsegae',
+    'luvgrande', 'bobu',
 ]
 SMARTSTORE_MALLS = {
     'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
     'dmont', 'tuttobene', 'thefactor2',
     'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
     'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'shinsegae',
+    'luvgrande', 'bobu',
 }
 BRANDSTORE_MALLS = {'carpi', 'joharistore'}
 

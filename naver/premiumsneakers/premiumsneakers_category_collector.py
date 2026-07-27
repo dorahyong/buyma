@@ -74,14 +74,14 @@ STORE_ALL_PRODUCT_URLS = {
     'euroline':   'https://smartstore.naver.com/euroline/category/b4faac568c4e4f0caa620e7022d3b858?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'unico':      'https://smartstore.naver.com/unicoselectshop/category/2x8wQfzcssxk4zLN38r9c_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'kometa':     'https://smartstore.naver.com/shinsegaejeju01/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
-    # lovegrande: 제외 (스톤아일랜드 modelName이 색상코드만 들어와 model_id 품질 불량)
-    # 'lovegrande': 'https://smartstore.naver.com/fsrs/category/2sWDwiTbo5sxFgR2EEnww_ALL_PRODUCT?...',
     'larlashoes': 'https://smartstore.naver.com/larlashoes/category/ALL?st=RECENT&dt=BIG_IMAGE&page=1&size=80&filters=oa',
     'thegrande':  'https://smartstore.naver.com/thegrande/category/96db6b37f40742028c3babc59a541669?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'upset':      'https://smartstore.naver.com/upset/category/43565b8658a8424ead3abf5a6f2b323e?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'luxlimit':   'https://smartstore.naver.com/luxlimit/category/618b4b385c0b41f7a81f8c0bd16e32e4?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
     'pano':       'https://smartstore.naver.com/panokorea/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'shinsegae':  'https://smartstore.naver.com/ssg01/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'bobu':       'https://smartstore.naver.com/contemforest/category/a528ebf76c33464ebd3e5b2f48d309f5?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
+    'luvgrande':  'https://smartstore.naver.com/fsrs/category/2sWDwiTbo5sxFgR2EEnww_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     # brand.naver.com 도메인 (fetch는 /n/v2/ 사용)
     'trendmecca': 'https://brand.naver.com/trendmecca/category/af9ae952a4054de0bc4762485e779b02?st=RECENT&dt=IMAGE&page=1&size=80',
 }
@@ -109,7 +109,9 @@ NAME_CLEANUP_PATTERNS = {
     ],
     'maniaon':    [r'\s*매니아온\s*$', r'\[국내배송\]\s*'],       # 끝의 '매니아온' suffix + [국내배송]
     'unico':      [r'\s+\d{2}[A-Z]\s*$'],                         # 끝의 시즌코드 '26S' (unico 특정)
-    'lovegrande': [r'^\s*\d{2}년\s*\d+월\d+째주[_\s]*', r'\[국내신상\]\s*'],  # 앞의 '26년 4월3째주' + [국내신상]
+    # 앞의 '실시간유럽' 머리말. 괄호 있는 것([실시간유럽])과 없는 것(실시간유럽 프라다…)이 섞여 있고
+    # 2026-07-27 199건 중 42건(괄호 14/민 28) 전부 맨 앞 → 괄호 옵셔널 + ^ 앵커.
+    'luvgrande':  [r'^\s*[\[(]?\s*실시간유럽\s*[\])]?\s*'],
     'pano':       [r'\[국내신상\]\s*'],
     'larlashoes': [r'[\[(]\s*(?:국내매장판|국내매장|국냄매장판)\s*[\])]\s*'],           # 국내매장판/매장/오타 국냄매장판 (괄호무관, 브랜드명 제외)
     'luxlimit':   [r'[\[(]\s*(?:국내백화점|국내매장판|국내매장|국내당일|관부가세포함)\s*[\])]\s*'],  # 국내백화점/매장판/매장/당일/관부가세포함 (괄호무관, 브랜드명 제외)
