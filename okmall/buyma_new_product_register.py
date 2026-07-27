@@ -384,19 +384,21 @@ def get_products_to_register(conn, limit: int = None, brand: str = None, product
 
 def get_product_images(conn, ace_product_id: int) -> List[Dict]:
     """상품 이미지 조회.
-    ★ 대표이미지(position=1)는 뱃지 썸네일이 있으면 그 주소를 대신 반환한다.
-      (ace_product_thumbnails.is_generated=1). 없으면 원본 cloudflare_image_url 사용.
-      → 신규 등록/수정 모두 자동으로 뱃지 썸네일을 씀. 속도영향 無(주소만 교체).
-      원본은 그대로 보존(썸네일 재생성·뱃지교체·몰별 예외 대비)."""
+    ★ 대표이미지(position=1)에 뱃지 썸네일이 있으면(ace_product_thumbnails.is_generated=1)
+      뱃지본을 '맨 앞에 추가'하고 원본 1번은 그대로 뒤에 남긴다.
+      → 최종 순서: [뱃지본] → [원본1] → [원본2] → …  (뱃지본 + 원본 전부 업로드)
+      없으면 원본만 그대로. position 은 build_images_array 가 1부터 다시 매기므로 여기선 순서만 중요.
+      BUYMA 이미지 상한 20 → 뱃지 추가로 21이 되면 마지막 1장을 잘라 20으로 맞춘다."""
     with conn.cursor() as cursor:
         sql = """
             SELECT api.position,
+                   api.cloudflare_image_url AS cloudflare_image_url,
                    CASE WHEN api.position = 1
                              AND t.thumbnail_cloudflare_url IS NOT NULL
                              AND t.thumbnail_cloudflare_url <> ''
                         THEN t.thumbnail_cloudflare_url
-                        ELSE api.cloudflare_image_url
-                   END AS cloudflare_image_url
+                        ELSE NULL
+                   END AS badge_url
             FROM ace_product_images api
             LEFT JOIN ace_product_thumbnails t
                    ON t.image_id = api.id AND t.is_generated = 1
@@ -406,7 +408,15 @@ def get_product_images(conn, ace_product_id: int) -> List[Dict]:
             LIMIT 20
         """
         cursor.execute(sql, (ace_product_id,))
-        return cursor.fetchall()
+        rows = cursor.fetchall()
+
+    out: List[Dict] = []
+    for r in rows:
+        if r['position'] == 1 and r.get('badge_url'):
+            # 뱃지본을 맨 앞에, 이어서 원본 1번도 유지
+            out.append({'position': 0, 'cloudflare_image_url': r['badge_url']})
+        out.append({'position': r['position'], 'cloudflare_image_url': r['cloudflare_image_url']})
+    return out[:20]  # BUYMA 이미지 상한
 
 
 def get_product_options(conn, ace_product_id: int) -> List[Dict]:

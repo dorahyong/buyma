@@ -65,11 +65,13 @@ def _winner_offering(conn, listing):
 
 def _images(conn, listing_id):
     """listing_images → register.build_images_array 입력 규격(cloudflare_image_url, position).
-    ★ 대표이미지(position=1)는 뱃지 썸네일이 있으면 그 주소를 대신 쓴다
-      (reg.get_product_images 와 같은 규칙). CREATE/EDIT 둘 다 이 경로를 타므로
-      run_daily 등록·수정 모두 뱃지가 적용된다. 원본(listing_images)은 그대로 보존.
+    ★ 대표이미지(position=1)에 뱃지 썸네일이 있으면 뱃지본을 '맨 앞에 추가'하고
+      원본 1번은 그대로 뒤에 남긴다 (reg.get_product_images 와 같은 규칙).
+      → 최종 순서: [뱃지본] → [원본1] → [원본2] → …  CREATE/EDIT 둘 다 이 경로를 타므로
+      run_daily 등록·수정 모두 뱃지본+원본 전부 올라간다. 원본(listing_images)은 그대로 보존.
       listing_images 엔 image_id 가 없어 thumbnails.source_cf_url 로 매칭하되,
-      source_cf_url 은 인덱스가 없으므로 ace_product_id(인덱스)로 이 목록의 멤버로 먼저 좁힌다."""
+      source_cf_url 은 인덱스가 없으므로 ace_product_id(인덱스)로 이 목록의 멤버로 먼저 좁힌다.
+      BUYMA 이미지 상한 20 → 뱃지 추가로 21이 되면 마지막 1장을 잘라 20으로 맞춘다."""
     with conn.cursor() as cur:
         cur.execute("""
             SELECT position, cloudflare_image_url
@@ -78,6 +80,7 @@ def _images(conn, listing_id):
             ORDER BY position LIMIT 20
         """, (listing_id,))
         rows = cur.fetchall()
+        badge_url = None
         for r in rows:
             if r['position'] != 1:
                 continue
@@ -94,8 +97,12 @@ def _images(conn, listing_id):
             """, (listing_id, r['cloudflare_image_url']))
             th = cur.fetchone()
             if th:
-                r['cloudflare_image_url'] = th['thumbnail_cloudflare_url']
+                badge_url = th['thumbnail_cloudflare_url']
             break
+        if badge_url:
+            # 뱃지본을 맨 앞에 추가(원본 1번은 유지), 상한 20 맞춤
+            rows = [{'position': 0, 'cloudflare_image_url': badge_url}] + list(rows)
+            rows = rows[:20]
         return rows
 
 
