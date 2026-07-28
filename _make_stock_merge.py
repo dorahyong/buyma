@@ -17,6 +17,7 @@ TARGETS = [
     ("maisonparco",  "maisonparco",  "stock_price_synchronizer_maisonparco.py"),
     ("musinsa_boutique", "musinsa",   "stock_price_synchronizer_musinsa.py"),
     ("naver",        "naver",        "stock_price_synchronizer_naver.py"),
+    ("lotte",        "lotte",        "stock_price_synchronizer_lotte.py"),
 ]
 
 # ---- Hunk 1: win32 stdout wrap 제거 + reconcile import (okmall/ 경로 추가) ----
@@ -30,7 +31,8 @@ H1_NEW = """# [MERGE] reconcile 엔진(okmall/)을 여기서 import.
 #   stdout wrap 은 bnpr 한 곳만, import 도 모듈 로드 시 한 번만.
 #   reconcile 모듈들은 okmall/ 에 있으므로 sys.path 에 추가 후 import.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'okmall'))
-import reconcile_runner  # noqa: E402  (stdout utf-8 wrap 부수효과 포함)"""
+import reconcile_runner  # noqa: E402  (stdout utf-8 wrap 부수효과 포함)
+import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)"""
 
 # ---- Hunk 2: _mark_all_out_of_stock + _reconcile_published 메서드 추가 ----
 H2_OLD = """                \"\"\", (ace_product_id,))
@@ -222,6 +224,31 @@ H4_NEW = """            # 7. DB 업데이트 (refresh) — [MERGE] 항상 수행
                 stats['success'] += 1
             log_batch(logs)  # 로그 한 번에 출력"""
 
+# ---- Hunk 6: 대상 조회를 단일권위 스위치(authority_flag) 기준으로 ----
+#   OFF=게시된 ace(winner) 1개 / ON=이 몰의 offering 중 등록 listing 소속 전부(멤버 포함).
+#   ★ 이 훅이 없으면 재생성 시 기존 _merge.py 에서 authority_flag 분기가 통째로 사라진다.
+#   naver 는 base 가 이미 f-string(placeholders) 이라 sql 선언 줄 모양이 달라 갈래를 나눔.
+H6_REG_BLOCK = """                # 대상 선정: OFF=게시된 ace(winner) 1개 / ON=이 몰의 offering 중 등록 listing 소속 전부(멤버 포함)
+                _reg = (authority_flag.registered_sql('ap')
+                        if authority_flag.use_listing_authority()
+                        else "ap.is_published = 1 AND ap.buyma_product_id IS NOT NULL")
+"""
+H6_OLD = """                sql = \"\"\"
+                    SELECT"""
+H6_NEW = H6_REG_BLOCK + """                sql = f\"\"\"
+                    SELECT"""
+# naver: 이미 f-string 이라 선언 줄은 그대로 두고 _reg 블록만 앞에 끼움
+H6_OLD_FSTR = """                sql = f\"\"\"
+                    SELECT"""
+H6_NEW_FSTR = H6_REG_BLOCK + H6_OLD_FSTR
+
+# ---- Hunk 7: WHERE 절을 _reg 로 교체 (몰 공통) ----
+H7_OLD = """                    WHERE ap.is_published = 1
+                      AND ap.buyma_product_id IS NOT NULL
+                      AND ap.source_product_url IS NOT NULL"""
+H7_NEW = """                    WHERE {_reg}
+                      AND ap.source_product_url IS NOT NULL"""
+
 # ---- Hunk 5: run() 끝에 reconcile push ----
 H5_OLD = """        log(f"  오류: {stats['errors']}건")
         log("=" * 60)
@@ -288,6 +315,11 @@ for folder, mall, fname in TARGETS:
     t = apply_one(H4_OLD, H4_NEW, t, "Hunk4 step7/8", fname)
     h5_old, h5_new = H5_OVERRIDE.get(mall, (H5_OLD, H5_NEW))
     t = apply_one(h5_old, h5_new, t, "Hunk5 run-end", fname)
+    if H6_OLD in t:
+        t = apply_one(H6_OLD, H6_NEW, t, "Hunk6 authority_flag(_reg)", fname)
+    else:  # naver 처럼 base sql 이 이미 f-string 인 경우
+        t = apply_one(H6_OLD_FSTR, H6_NEW_FSTR, t, "Hunk6 authority_flag(_reg, f-string)", fname)
+    t = apply_one(H7_OLD, H7_NEW, t, "Hunk7 WHERE _reg", fname)
     with open(dst, "w", encoding="utf-8") as f:
         f.write(t)
     print(f"OK  {dst}")
