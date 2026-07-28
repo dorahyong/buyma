@@ -106,16 +106,20 @@ def _images(conn, listing_id):
         return rows
 
 
-def _listing_options(conn, listing_id):
-    """출품 옵션 + 각 옵션의 소싱 ace_product_id (master_id/details 끌어올 대상)."""
+def _listing_options(conn, listing_id, include_inactive=False):
+    """출품 옵션 + 각 옵션의 소싱 ace_product_id (master_id/details 끌어올 대상).
+
+    include_inactive=True 는 출품정지(전체 품절) 전용이다. 사유는 execute_retire 주석 참고.
+    """
+    cond = "" if include_inactive else " AND lo.is_active=1"
     with conn.cursor() as cur:
-        cur.execute("""
+        cur.execute(f"""
             SELECT lo.color_value, lo.size_value, lo.stock_type, lo.stocks,
                    so.ace_product_id
             FROM listing_options lo
             LEFT JOIN source_offering_options soo ON soo.id = lo.sourced_offering_option_id
             LEFT JOIN source_offerings so ON so.id = soo.offering_id
-            WHERE lo.listing_id=%s AND lo.is_active=1
+            WHERE lo.listing_id=%s{cond}
         """, (listing_id,))
         return cur.fetchall()
 
@@ -659,6 +663,14 @@ def execute_retire(conn, listing, dry_run=True):
     if not ref:
         return {'skipped': True, 'reason': '미등록(ref 없음) → 내릴 것 없음'}
     opts = _listing_options(conn, listing['id'])
+    if not opts:
+        # ★ 전부 품절이면 resolve 가 listing_options 를 통째로 비활성으로 꺼둔다(재고있는 옵션이
+        #   없어 union 이 비므로). 그 상태로 여기 오면 '보낼 변이가 없다'며 스킵되어,
+        #   정작 내려야 할 상품이 BUYMA 에 그대로 남았다.
+        #   (2026-07-28 실측: 게시중 72,503건 중 5,185건이 '팔 옵션 0개인데 판매중')
+        #   비활성 행에는 직전까지 BUYMA 에 올려두던 옵션이 남아 있으므로 그걸 그대로 쓴다.
+        #   ※ 마진X 로 내리는 경로는 listing_options 를 안 건드려 종전에도 정상 동작했다.
+        opts = _listing_options(conn, listing['id'], include_inactive=True)
     if not opts:
         return {'skipped': True, 'reason': '옵션 없음 → 품절 보낼 변이 없음', 'ref': ref}
     if dry_run:
