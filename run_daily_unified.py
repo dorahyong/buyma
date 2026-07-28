@@ -44,20 +44,23 @@ def _p(*parts):
 OKMALL = 'okmall'
 MULTISOURCE = ['kasina', 'nextzennpack', 'labellusso', '9tems',
                'brickmansion', 'loromoda', 'milaneez', 'maisonparco', 'musinsa', 'laprima']
-# naver 21몰 (run_daily_naver.py SOURCES 와 동일). 캡챠로 사이트접속 직렬 → site_resource='naver'.
+# naver 24몰. 캡챠로 사이트접속 직렬 → site_resource='naver'.
 NAVER = ['premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
          'dmont', 'tuttobene', 'thefactor2',
          'carpi', 'joharistore',
          'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
-         'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'trendmecca']
+         'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'trendmecca',
+         'luvgrande', 'bobu']
 MALLS = [OKMALL] + MULTISOURCE + NAVER
 
 # only-naver 3분할 (PC별, IP 분산 목적). 큰 몰(bblue·unico·larlashoes·upset·carpi)을
 #   서로 다른 PC로 흩어 대략 균형. 각 PC는 자기 몫만(disjoint) → 같은 배치 공유해도 안 부딪힘.
 #   naver 직렬잠금(Semaphore)은 프로세스별이라 3 PC = 3 IP 병렬.
 NAVER_SPLIT = {
-    1: ['bblue', 'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall'],
-    2: ['unico', 'upset', 'dmont', 'tuttobene', 'thefactor2', 'joharistore', 'maniaon'],
+    1: ['bblue', 'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
+        'bobu'],
+    2: ['unico', 'upset', 'dmont', 'tuttobene', 'thefactor2', 'joharistore', 'maniaon',
+        'luvgrande'],
     3: ['larlashoes', 'carpi', 'luxlimit', 'thegrande', 'euroline', 'kometa', 'pano', 'trendmecca'],
 }
 
@@ -74,6 +77,7 @@ NAVER_COLLECTOR = {
     'unico': _NV_CATEGORY, 'kometa': _NV_CATEGORY, 'larlashoes': _NV_CATEGORY,
     'thegrande': _NV_CATEGORY, 'upset': _NV_CATEGORY, 'luxlimit': _NV_CATEGORY, 'pano': _NV_CATEGORY,
     'trendmecca': _NV_CATEGORY,
+    'luvgrande': _NV_CATEGORY, 'bobu': _NV_CATEGORY,
 }
 # naver stock = 21몰 공용 1개 스크립트(_merge) → --source 로 1몰씩.
 NAVER_STOCK_MERGE = _p('naver', 'stock_price_synchronizer_naver_merge.py')
