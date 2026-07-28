@@ -68,6 +68,35 @@ BUYMA_FIXED_VALUES = {
 #   {"errors":{"shop_urls":["買付先は15件以内で入力してください。"]}}  (2026-07-22 실측)
 MAX_SHOP_URLS = 15
 
+# 매입처 설명 글자수 상한. 초과하면 BUYMA 가 422 로 거부한다:
+#   {"errors":{"shop_urls":{"2":{"description":["買付先説明は200文字以内で入力してください。"]}}}}
+#   (2026-07-27 실측)
+MAX_SHOP_URL_DESC = 200
+
+
+def shop_url_description(price_krw, stocks) -> str:
+    """매입처 설명 한 칸. 200자를 절대 넘지 않게 만든다.
+
+    사이즈 목록을 넣되, 상한에 걸리면 거기서 끊고 '외 N개' 로 마무리한다.
+    (그냥 잘라내면 '240/그레이(GREY) 2' 처럼 토막난 채로 등록된다)
+    ★ okmall/reconcile_buyma_push.shop_url_description 과 같은 규칙 —
+      한쪽만 고치면 서로 덮어쓴다.
+    """
+    head = f"₩{int(price_krw):,} "
+    if not stocks:
+        return head + "재고없음"
+    kept = []
+    for s in stocks:
+        remain = len(stocks) - (len(kept) + 1)
+        tail = f" 외{remain}개" if remain > 0 else ""
+        if len(head + "재고 " + " ".join(kept + [s]) + tail) > MAX_SHOP_URL_DESC:
+            break
+        kept.append(s)
+    if not kept:
+        return (head + f"재고 {len(stocks)}개")[:MAX_SHOP_URL_DESC]
+    remain = len(stocks) - len(kept)
+    return head + "재고 " + " ".join(kept) + (f" 외{remain}개" if remain > 0 else "")
+
 
 def _buyma_width(s: str) -> int:
     w = 0
@@ -566,7 +595,7 @@ class FastPriceUpdater:
             out.append({
                 "url": o['source_product_url'],
                 "label": o['source_site'],
-                "description": f"₩{price:,} " + (("재고 " + " ".join(stocks)) if stocks else "재고없음"),
+                "description": shop_url_description(price, stocks),
             })
         return out[:MAX_SHOP_URLS]
 
