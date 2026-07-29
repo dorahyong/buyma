@@ -697,6 +697,14 @@ class StockPriceSynchronizer:
                         if '색상' in header:
                             color = tds[1].get_text(strip=True)
 
+            # --- 전체 품절 여부 (is_soldout_icon='T' → 모든 옵션 품절) ---
+            #   ★ labellusso 는 상품을 통째로 품절 처리해도 옵션별 is_selling/is_display/stock_number
+            #     값이 그대로 남아 있어, 옵션만 보면 '재고있음' 으로 읽힌다.
+            #     그 결과 몰에서 품절인 상품이 BUYMA 에서 계속 팔렸다(2026-07-28 표본 60건 중 4건).
+            #     brickmansion·loromoda·milaneez·maisonparco·9tems 는 이미 이 값을 본다. 같은 방식으로 맞춘다.
+            som = re.search(r"var\s+is_soldout_icon\s*=\s*'([^']*)'", html)
+            product_soldout = bool(som and som.group(1) == 'T')
+
             # --- 옵션/재고 추출 ---
             # 1. option_stock_data JS 변수 파싱
             stock_data = {}
@@ -747,7 +755,7 @@ class StockPriceSynchronizer:
 
                         # 사이즈 매칭 (포함 관계로 비교)
                         if size_raw in opt_value or opt_value in size_raw or size_raw.upper() == opt_value.upper():
-                            if is_selling == 'T' and is_display == 'T' and stock_number > 0:
+                            if is_selling == 'T' and is_display == 'T' and stock_number > 0 and not product_soldout:
                                 status = 'in_stock'
                             break
 
@@ -768,7 +776,7 @@ class StockPriceSynchronizer:
                         stock_number = int(opt_info.get('stock_number', 0))
 
                         size = normalize_size(opt_value)
-                        status = 'in_stock' if (is_selling == 'T' and is_display == 'T' and stock_number > 0) else 'out_of_stock'
+                        status = 'in_stock' if (is_selling == 'T' and is_display == 'T' and stock_number > 0 and not product_soldout) else 'out_of_stock'
 
                         result['options'].append({
                             'color': color,
@@ -790,7 +798,7 @@ class StockPriceSynchronizer:
                         is_disabled = opt_tag.get('disabled') is not None
                         is_soldout = '품절' in opt_text
 
-                        status = 'out_of_stock' if (is_disabled or is_soldout) else 'in_stock'
+                        status = 'out_of_stock' if (is_disabled or is_soldout or product_soldout) else 'in_stock'
 
                         result['options'].append({
                             'color': color,
@@ -805,7 +813,7 @@ class StockPriceSynchronizer:
                     'color': color,
                     'size': 'FREE',
                     'option_code': '',
-                    'status': 'in_stock'
+                    'status': 'out_of_stock' if product_soldout else 'in_stock'
                 })
 
             return result, None
