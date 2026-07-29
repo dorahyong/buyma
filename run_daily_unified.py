@@ -50,7 +50,8 @@ NAVER = ['premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'verosh
          'carpi', 'joharistore',
          'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
          'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'trendmecca',
-         'luvgrande', 'bobu']
+         'luvgrande', 'bobu',
+         'stellastore', 'reasonershop', 'artemoa', 'adonis', 'milanobridge']
 MALLS = [OKMALL] + MULTISOURCE + NAVER
 
 # only-naver 3분할 (PC별, IP 분산 목적). 큰 몰(bblue·unico·larlashoes·upset·carpi)을
@@ -58,10 +59,11 @@ MALLS = [OKMALL] + MULTISOURCE + NAVER
 #   naver 직렬잠금(Semaphore)은 프로세스별이라 3 PC = 3 IP 병렬.
 NAVER_SPLIT = {
     1: ['bblue', 'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
-        'bobu'],
+        'bobu', 'adonis', 'reasonershop'],
     2: ['unico', 'upset', 'dmont', 'tuttobene', 'thefactor2', 'joharistore', 'maniaon',
-        'luvgrande'],
-    3: ['larlashoes', 'carpi', 'luxlimit', 'thegrande', 'euroline', 'kometa', 'pano', 'trendmecca'],
+        'luvgrande', 'artemoa', 'stellastore'],
+    3: ['larlashoes', 'carpi', 'luxlimit', 'thegrande', 'euroline', 'kometa', 'pano', 'trendmecca',
+        'milanobridge'],
 }
 
 # naver collector 3종 (run_daily_naver.py COLLECTOR_MAP 와 동일). 모두 공용 → --source 필요.
@@ -78,6 +80,8 @@ NAVER_COLLECTOR = {
     'thegrande': _NV_CATEGORY, 'upset': _NV_CATEGORY, 'luxlimit': _NV_CATEGORY, 'pano': _NV_CATEGORY,
     'trendmecca': _NV_CATEGORY,
     'luvgrande': _NV_CATEGORY, 'bobu': _NV_CATEGORY,
+    'stellastore': _NV_CATEGORY, 'reasonershop': _NV_CATEGORY, 'artemoa': _NV_CATEGORY,
+    'adonis': _NV_CATEGORY, 'milanobridge': _NV_CATEGORY,
 }
 # naver stock = 21몰 공용 1개 스크립트(_merge) → --source 로 1몰씩.
 NAVER_STOCK_MERGE = _p('naver', 'stock_price_synchronizer_naver_merge.py')
