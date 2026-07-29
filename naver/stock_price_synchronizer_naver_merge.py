@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-재고 및 가격 동기화 스크립트 (네이버 21개 mall 공용)
+재고 및 가격 동기화 스크립트 (네이버 mall 공용, 30개 = smartstore 26 + brandstore 4)
 
-대상 mall (smartstore 19 + brandstore 2 = 21, 실제 목록은 아래 NAVER_MALLS):
-  - smartstore: premiumsneakers, fabstyle, loutique, t1global, vvano, veroshopmall,
-                dmont, tuttobene, thefactor2,
-                maniaon, bblue, euroline, unico, kometa,
-                larlashoes, thegrande, upset, luxlimit, pano
-  - brandstore: carpi, joharistore
+대상 mall 목록은 아래 NAVER_MALLS / SMARTSTORE_MALLS / BRANDSTORE_MALLS 참조.
 
 수집 방식: Playwright 단일 브라우저 + XHR 캡처
   - products API (상품 JSON): salePrice, optionCombinations, saleStatus
@@ -19,7 +14,7 @@
   - MAX_WORKERS=1 (Playwright 세션 1개 공유, 직렬 처리)
 
 사용법:
-    python stock_price_synchronizer_naver.py                         # 11개 mall 전부
+    python stock_price_synchronizer_naver.py                         # 전체 mall
     python stock_price_synchronizer_naver.py --source premiumsneakers
     python stock_price_synchronizer_naver.py --source carpi --dry-run
     python stock_price_synchronizer_naver.py --brand NIKE
@@ -124,7 +119,7 @@ BUYMA_FIXED_VALUES = {
 # 네이버 설정
 # =====================================================
 
-# 11개 mall 분류
+# mall 분류
 NAVER_MALLS = [
     'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
     'dmont', 'tuttobene', 'thefactor2',
@@ -132,6 +127,7 @@ NAVER_MALLS = [
     'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
     'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'trendmecca', 'shinsegae',
     'luvgrande', 'bobu',
+    'reasonershop', 'artemoa', 'adonis', 'milanobridge', 'stellastore',
 ]
 SMARTSTORE_MALLS = {
     'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
@@ -139,8 +135,9 @@ SMARTSTORE_MALLS = {
     'maniaon', 'bblue', 'euroline', 'unico', 'kometa',
     'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'shinsegae',
     'luvgrande', 'bobu',
+    'reasonershop', 'artemoa', 'adonis', 'milanobridge',
 }
-BRANDSTORE_MALLS = {'carpi', 'joharistore', 'trendmecca'}
+BRANDSTORE_MALLS = {'carpi', 'joharistore', 'trendmecca', 'stellastore'}
 
 # 쿠키 파일 (naver/ 디렉토리)
 COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'naver_cookies.json')
@@ -592,7 +589,7 @@ class StockPriceSynchronizer:
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
-                # source_site 필터: --source로 단일 mall, 미지정시 11개 전체
+                # source_site 필터: --source로 단일 mall, 미지정시 전체
                 if source:
                     if source not in NAVER_MALLS:
                         raise ValueError(f"지원하지 않는 source: {source} (지원: {NAVER_MALLS})")
@@ -2075,7 +2072,7 @@ KONNECT（コネクト）では、すべて追跡可能な配送方法でお届�
 def main():
     parser = argparse.ArgumentParser(description='바이마 재고/가격 동기화 (네이버 11 malls)')
     parser.add_argument('--source', type=str, default=None,
-                        help=f'특정 mall만 처리 (지원: {", ".join(NAVER_MALLS)}). 미지정시 11개 전체')
+                        help=f'특정 mall만 처리 (지원: {", ".join(NAVER_MALLS)}). 미지정시 전체')
     parser.add_argument('--id', type=int, default=None, help='특정 상품 ID (ace_products.id)')
     parser.add_argument('--limit', type=int, default=None, help='최대 처리 건수')
     parser.add_argument('--brand', type=str, default=None, help='특정 브랜드만 처리')

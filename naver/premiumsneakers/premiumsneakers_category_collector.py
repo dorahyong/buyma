@@ -82,8 +82,14 @@ STORE_ALL_PRODUCT_URLS = {
     'shinsegae':  'https://smartstore.naver.com/ssg01/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'bobu':       'https://smartstore.naver.com/contemforest/category/a528ebf76c33464ebd3e5b2f48d309f5?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
     'luvgrande':  'https://smartstore.naver.com/fsrs/category/2sWDwiTbo5sxFgR2EEnww_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'reasonershop':  'https://smartstore.naver.com/reasonershop/category/9e4d920d708943489393d2ca83467562?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'artemoa':    'https://smartstore.naver.com/artemoa/category/2z0OiK5VWFHnLnBfOxrLe_ALL_PRODUCT?st=RECENT&dt=IMAGE&page=1&size=80&filters=oa',
+    'adonis':     'https://smartstore.naver.com/luxadonis/category/659579b33d114115bcd29901a7252c77?st=REVIEW&dt=IMAGE&page=1&size=80&filters=oa',
+    'milanobridge':  'https://smartstore.naver.com/milanobridge/category/2ufZdqjTfnEbdqvSlquqA_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+
     # brand.naver.com 도메인 (fetch는 /n/v2/ 사용)
     'trendmecca': 'https://brand.naver.com/trendmecca/category/af9ae952a4054de0bc4762485e779b02?st=RECENT&dt=IMAGE&page=1&size=80',
+    'stellastore': 'https://brand.naver.com/stellastore/category/53907985141f4309a2e7867c3c876f2f?st=TOTALSALE&dt=IMAGE&page=1&size=80&filters=oa',
 }
 
 PAGE_SIZE = 80
@@ -113,6 +119,9 @@ NAME_CLEANUP_PATTERNS = {
     # 2026-07-27 199건 중 42건(괄호 14/민 28) 전부 맨 앞 → 괄호 옵셔널 + ^ 앵커.
     'luvgrande':  [r'^\s*[\[(]?\s*실시간유럽\s*[\])]?\s*'],
     'pano':       [r'\[국내신상\]\s*'],
+    # 시즌코드 6F/6S/5F/5S (=26FW/26SS/25FW/25SS). 전역 SEASON_PATTERN은 26FW 형태만 잡아 못 걸러냄.
+    # "[CP컴퍼니]6F 품번…" · "프라다/5S 품번…" 둘 다 처리.
+    'artemoa':    [(r'\s*/?\s*\b\d[FSW]\b\s*', ' ')],
     'larlashoes': [r'[\[(]\s*(?:국내매장판|국내매장|국냄매장판)\s*[\])]\s*'],           # 국내매장판/매장/오타 국냄매장판 (괄호무관, 브랜드명 제외)
     'luxlimit':   [r'[\[(]\s*(?:국내백화점|국내매장판|국내매장|국내당일|관부가세포함)\s*[\])]\s*'],  # 국내백화점/매장판/매장/당일/관부가세포함 (괄호무관, 브랜드명 제외)
     'shinsegae':  [
@@ -134,6 +143,11 @@ GLOBAL_DOMESTIC_PATTERN = r'[\[(]\s*(?:국내[^\]\)]*|관부가세포함|국냄�
 STORE_EXCLUDE_KEYWORDS = {
     'luxlimit': {'category': ['향수'], 'name': ['향수']},
     'shinsegae': {'category': ['식품'], 'name': []},
+    # 흠집상품(하자품) 제외. 상품명 접두사 '[흠집상품]' + 전용 카테고리 'REFURB' 양쪽으로 차단.
+    'stellastore': {'category': ['REFURB'], 'name': ['흠집']},
+    # 스크래치(하자) 상품 제외.
+    # 상품명이 '스크래치'로 시작하며 품번 앞에 'S'가 붙는다.
+    'adonis':     {'category': [], 'name': ['스크래치', '스크레치']},
 }
 
 
@@ -145,7 +159,11 @@ def clean_product_name(source_site: str, name: str) -> str:
     patterns = NAME_CLEANUP_PATTERNS.get(source_site, [])
     cleaned = name
     for pat in patterns:
-        cleaned = _re.sub(pat, '', cleaned)
+        # 문자열이면 '삭제', (패턴, 치환문자열) 튜플이면 '치환'
+        if isinstance(pat, tuple):
+            cleaned = _re.sub(pat[0], pat[1], cleaned)
+        else:
+            cleaned = _re.sub(pat, '', cleaned)
     # 전역: 국내판매 마커 ([국내배송]/[국내매장판]/(국내백화점) 등) 제거 — 모든 스토어
     cleaned = _re.sub(GLOBAL_DOMESTIC_PATTERN, '', cleaned)
     # 전역: 시즌코드 (26SS, 25FW 등) 제거
