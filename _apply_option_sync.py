@@ -25,13 +25,21 @@ import argparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
+# group 'json'  : 옵션 목록을 몰이 배열/JSON 으로 통째로 준다. 완전성 판정이 단순하다.
+# group 'cafe24': 페이지에 심어진 option_stock_data(JSON) 가 1순위, select 태그가 2순위.
+#   1순위에서 나온 목록만 완전으로 본다(2순위는 옵션 고유번호가 없어 이름 매칭에만 의존).
 TARGETS = [
-    ("kasina", "kasina", "stock_price_synchronizer_kasina_merge.py"),
-    ("musinsa", "musinsa_boutique", "stock_price_synchronizer_musinsa_merge.py"),
+    ("kasina", "json", "kasina", "stock_price_synchronizer_kasina_merge.py"),
+    ("musinsa", "json", "musinsa_boutique", "stock_price_synchronizer_musinsa_merge.py"),
     # lotte 는 실행 중이라 보류. 끝난 뒤 아래 줄을 살려 다시 돌린다.
     #   ★ 적용 전에 _lotte_norm_size 의 순서를 변환기와 맞출 것
     #     (지금: 품절임박 제거 → FREE 확인 / 변환기: FREE 확인 → 품절임박 제거)
-    # ("lotte", "lotte", "stock_price_synchronizer_lotte_merge.py"),
+    # ("lotte", "json", "lotte", "stock_price_synchronizer_lotte_merge.py"),
+    ("brickmansion", "cafe24", "brickmansion", "stock_price_synchronizer_brickmansion_merge.py"),
+    ("loromoda", "cafe24", "loromoda", "stock_price_synchronizer_loromoda_merge.py"),
+    ("milaneez", "cafe24", "milaneez", "stock_price_synchronizer_milaneez_merge.py"),
+    ("maisonparco", "cafe24", "maisonparco", "stock_price_synchronizer_maisonparco_merge.py"),
+    ("okmall", "json", "okmall", "stock_price_synchronizer_merge.py"),
 ]
 
 # ---- 1. 수집 결과에 options_complete 표시 ----
@@ -427,6 +435,23 @@ H21_NEW = """        if gone_detect_only:
 
         # ★ refresh 끝 → reconcile 사이에 번역을 한 번 끼운다."""
 
+# ---- cafe24 전용: 완전목록 확정 위치가 다르다 ----
+#   cafe24 는 옵션 경로가 3단계라 "if not result['options']:" 가 두 번 나온다.
+#     1) option_stock_data(JSON)  ← 이것만 완전한 목록으로 인정
+#     2) select#product_option_id1 fallback  ← 옵션 고유번호가 없어 이름 매칭에만 의존 → 인정 안 함
+#     3) 단일상품 FREE
+H2C_OLD = "            # fallback: option_stock_data 없으면 select#product_option_id1 (코드 불안정 → 사이즈 매칭)"
+H2C_NEW = ("            # ★ 여기까지 왔으면 목록은 페이지에 심어진 option_stock_data(JSON) 를 통째로\n"
+           "            #   훑은 결과다. JSON 은 통으로 파싱되거나 아예 실패하거나 둘뿐이라\n"
+           "            #   '일부만 읽힘' 이 성립하지 않는다 → 완전한 목록으로 확정.\n"
+           "            #   ★ 아래 select fallback 으로 만든 목록은 옵션 고유번호가 비어(코드 불안정)\n"
+           "            #     이름 매칭에만 의존하므로 '사라진 옵션' 판정 근거로 쓰지 않는다(False 유지).\n"
+           "            if result['options']:\n"
+           "                result['options_complete'] = True\n"
+           "\n"
+           "            # fallback: option_stock_data 없으면 select#product_option_id1 (코드 불안정 → 사이즈 매칭)")
+
+
 HUNKS = [
     ("options_complete 표시", H1_OLD, H1_NEW),
     ("완전목록 확정", H2_OLD, H2_NEW),
@@ -453,8 +478,16 @@ HUNKS = [
 ]
 
 
-def apply(src, path, check_only):
-    for name, old, new in HUNKS:
+def hunks_for(group):
+    """그룹별 hunk 목록. cafe24 는 '완전목록 확정' 만 다른 자리를 쓴다."""
+    if group == 'cafe24':
+        return [(n, o, w) if n != "완전목록 확정" else (n, H2C_OLD, H2C_NEW)
+                for n, o, w in HUNKS]
+    return HUNKS
+
+
+def apply(src, path, group):
+    for name, old, new in hunks_for(group):
         n = src.count(old)
         if n != 1:
             raise RuntimeError(f"[{path}] '{name}' 치환 대상 {n}회 (1회여야 함) → 중단")
@@ -467,21 +500,28 @@ def main():
     ap.add_argument('--check', action='store_true', help='적용 가능 여부만 확인')
     args = ap.parse_args()
 
-    for mall, folder, fname in TARGETS:
+    for mall, group, folder, fname in TARGETS:
         path = os.path.join(ROOT, folder, fname)
-        src = open(path, encoding='utf-8').read()
+        # 원본 줄바꿈 형식을 그대로 되돌려준다(okmall 만 LF, 나머지는 CRLF).
+        #   섞이면 파일 전체가 바뀐 것으로 기록돼 실제 변경을 볼 수 없다.
+        raw = open(path, 'rb').read()
+        newline = '\r\n' if b'\r\n' in raw else '\n'
+        src = raw.decode('utf-8').replace('\r\n', '\n')
+        if 'options_complete' in src:
+            print(f"⏭  {mall:14} 이미 적용됨 — 건너뜀")
+            continue
         try:
-            out = apply(src, f"{mall}", args.check)
+            out = apply(src, f"{mall}", group)
         except RuntimeError as e:
             print(f"❌ {e}")
             sys.exit(1)
         if args.check:
-            print(f"✅ {mall:10} 적용 가능 ({len(HUNKS)}개 변경)")
+            print(f"✅ {mall:14} 적용 가능 ({len(HUNKS)}개 변경, group={group})")
             continue
         shutil.copy2(path, path + '.bak')
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, 'w', encoding='utf-8', newline=newline) as f:
             f.write(out)
-        print(f"✅ {mall:10} 적용 완료 (원본 → {os.path.basename(path)}.bak)")
+        print(f"✅ {mall:14} 적용 완료 (원본 → {os.path.basename(path)}.bak)")
 
 
 if __name__ == '__main__':
