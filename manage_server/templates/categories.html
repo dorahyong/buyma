@@ -50,7 +50,7 @@
     td.bool-cell select { width: 100%; border: 0; background: transparent; font: inherit; padding: 0; }
 
     .pk-col { background: #fafafa; color: #555; font-family: monospace; font-size: 12px; }
-    .check-col { width: 28px; text-align: center; background: #fafafa; }
+    .check-col { width: 28px; text-align: center; background: #fafafa; user-select: none; }
     .buyma-cell { display: flex; gap: 4px; align-items: center; }
     .buyma-cell input { flex: 1; }
     .buyma-cell button.lookup {
@@ -178,6 +178,7 @@ let dirty = {};            // key="id" → {col: newValue}
 let checked = new Set();   // PK keys
 let activeBuymaTarget = null;  // 검색 팝업에서 선택 시 어느 행 갱신할지
 let sortState = {col: null, dir: null};  // 정렬 상태
+let lastCheckedIdx = null;  // Shift 범위선택 기준점 (현재 렌더된 행 순번)
 
 // ── 유틸 ──
 function pkKey(row) { return String(row.id); }
@@ -197,6 +198,53 @@ function updateDirtyCount() {
 
 function updateCheckedCount() {
   qs('checked-count').textContent = checked.size;
+}
+
+// ── 체크박스 (전체선택 · Shift 범위선택) ──
+function rowCheckboxes() {
+  return qs('tbody').querySelectorAll('input.row-check');
+}
+
+// 헤더 체크박스 상태를 현재 화면 기준으로 맞춤 (일부만 선택이면 중간상태)
+function syncCheckAll() {
+  const all = qs('check-all');
+  if (!all) return;
+  const boxes = rowCheckboxes();
+  const n = boxes.length;
+  const c = [...boxes].filter(b => b.checked).length;
+  all.checked = n > 0 && c === n;
+  all.indeterminate = c > 0 && c < n;
+}
+
+function setRowChecked(cb, on) {
+  cb.checked = on;
+  if (on) checked.add(cb.dataset.key); else checked.delete(cb.dataset.key);
+}
+
+// 개별 체크박스 클릭. Shift 누른 채 클릭하면 직전 클릭한 행부터 이번 행까지 같은 상태로.
+function onRowCheckClick(e, cb) {
+  const idx = Number(cb.dataset.idx);
+  if (e.shiftKey && lastCheckedIdx !== null && lastCheckedIdx !== idx) {
+    const boxes = rowCheckboxes();
+    const [from, to] = idx < lastCheckedIdx ? [idx, lastCheckedIdx] : [lastCheckedIdx, idx];
+    for (let i = from; i <= to; i++) {
+      if (boxes[i]) setRowChecked(boxes[i], cb.checked);
+    }
+  } else {
+    setRowChecked(cb, cb.checked);
+  }
+  lastCheckedIdx = idx;
+  updateCheckedCount();
+  syncCheckAll();
+}
+
+// 헤더 체크박스 — 지금 화면에 보이는 행 전체 선택/해제
+function onCheckAllChange() {
+  const on = qs('check-all').checked;
+  rowCheckboxes().forEach(cb => setRowChecked(cb, on));
+  lastCheckedIdx = null;
+  updateCheckedCount();
+  syncCheckAll();
 }
 
 // ── 데이터 로드 ──
@@ -273,7 +321,7 @@ function onHeaderClick(col) {
 // ── 테이블 렌더 ──
 function renderTable() {
   const thead = qs('thead-row');
-  thead.innerHTML = '<th class="check-col">✓</th>' +
+  thead.innerHTML = '<th class="check-col"><input type="checkbox" id="check-all" title="현재 목록 전체 선택/해제"></th>' +
     displayCols.map(c => {
       const isSorted = sortState.col === c;
       const arrow = isSorted ? `<span class="arrow">${sortState.dir === 'asc' ? '▲' : '▼'}</span>` : '';
@@ -293,11 +341,11 @@ function renderTable() {
     tdc.className = 'check-col';
     const cb = document.createElement('input');
     cb.type = 'checkbox';
+    cb.className = 'row-check';
     cb.checked = checked.has(k);
-    cb.addEventListener('change', () => {
-      if (cb.checked) checked.add(k); else checked.delete(k);
-      updateCheckedCount();
-    });
+    cb.dataset.key = k;
+    cb.dataset.idx = tbody.children.length;   // 현재 렌더 순번 (Shift 범위선택 기준)
+    cb.addEventListener('click', e => onRowCheckClick(e, cb));
     tdc.appendChild(cb);
     tr.appendChild(tdc);
     // 각 컬럼
@@ -366,6 +414,10 @@ function renderTable() {
     }
     tbody.appendChild(tr);
   }
+  // 헤더 체크박스는 매 렌더마다 새로 만들어지므로 여기서 다시 연결
+  qs('check-all').addEventListener('change', onCheckAllChange);
+  lastCheckedIdx = null;
+  syncCheckAll();
 }
 
 function handleEdit(row, td, col, newVal, origVal) {
