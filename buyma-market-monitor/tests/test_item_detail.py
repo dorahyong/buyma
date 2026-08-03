@@ -120,13 +120,13 @@ def test_parse_item_detail_brand_model_number():
     assert meta["brand_model_number"] == "BG0074 LF1320"
 
 
-def test_parse_item_detail_themes_fixture():
+def test_parse_item_detail_tags_fixture():
     html = FIXTURE.read_text(encoding="utf-8")
     meta = parse_item_detail(html)
-    assert meta["themes"] == ["ユニセックス", "円高還元セール", "ロゴ"]
+    assert meta["tags"] == ["ユニセックス", "円高還元セール", "ロゴ"]
 
 
-def test_parse_item_detail_themes_filters_ui_labels():
+def test_parse_item_detail_tags_filters_ui_labels():
     html = (
         '<html><body><p>タグ</p><div>'
         '<a href="#">ユニセックス</a><a href="#">ロゴ</a>'
@@ -134,13 +134,24 @@ def test_parse_item_detail_themes_filters_ui_labels():
         '</div></body></html>'
     )
     meta = parse_item_detail(html)
-    assert meta["themes"] == ["ユニセックス", "ロゴ"]
+    assert meta["tags"] == ["ユニセックス", "ロゴ"]
 
 
-def test_parse_item_detail_themes_empty_when_absent():
+def test_parse_item_detail_tags_empty_when_absent():
     meta = parse_item_detail("<html><body></body></html>")
-    assert meta["themes"] == []
+    assert meta["tags"] == []
     assert meta["brand_model_number"] is None
+
+
+def test_parse_item_detail_theme_fixture():
+    html = FIXTURE.read_text(encoding="utf-8")
+    meta = parse_item_detail(html)
+    assert meta["themes"] == "円高還元セール特集！"
+
+
+def test_parse_item_detail_theme_none_when_absent():
+    meta = parse_item_detail("<html><body></body></html>")
+    assert meta["themes"] is None
 
 
 def test_parse_item_detail_variants_shape():

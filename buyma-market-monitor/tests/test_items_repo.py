@@ -108,7 +108,8 @@ def test_update_detail_fields(tmp_path: Path):
         fav_count=7,
         inquiry_count=15,
         brand_model_number="BG0074",
-        themes='["ロゴ"]',
+        tags='["ロゴ"]',
+        themes="円高還元セール特集！",
         size_chart_json='{"S":{"胸囲":"90cm"}}',
         fetched_at="2026-06-09T11:00:00+09:00",
     )
@@ -123,7 +124,8 @@ def test_update_detail_fields(tmp_path: Path):
     assert row["fav_count"] == 7
     assert row["inquiry_count"] == 15
     assert row["brand_model_number"] == "BG0074"
-    assert row["themes"] == '["ロゴ"]'
+    assert row["tags"] == '["ロゴ"]'
+    assert row["themes"] == "円高還元セール特集！"
     assert row["size_chart_json"] == '{"S":{"胸囲":"90cm"}}'
     assert row["detail_fetched_at"] == "2026-06-09T11:00:00+09:00"
 
@@ -223,7 +225,7 @@ def test_get_unenriched_active_item_ids_for_seller(tmp_path: Path):
     update_detail_fields(
         conn, item_id="1", brand="x", category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None, view_count=None,
-        fav_count=None, inquiry_count=None, brand_model_number=None, themes=None,
+        fav_count=None, inquiry_count=None, brand_model_number=None, tags=None, themes=None,
         size_chart_json=None, fetched_at="2026-06-18T11:00:00+09:00",
     )
     ids = get_unenriched_active_item_ids_for_seller(conn, "S1")
@@ -245,7 +247,7 @@ def test_get_seller_ids_with_pending_enrich(tmp_path: Path):
     update_detail_fields(
         conn, item_id="1", brand="x", category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None, view_count=None,
-        fav_count=None, inquiry_count=None, brand_model_number=None, themes=None,
+        fav_count=None, inquiry_count=None, brand_model_number=None, tags=None, themes=None,
         size_chart_json=None, fetched_at="2026-06-23T11:00:00+09:00",
     )
     # S2: one item, NOT enriched → pending
@@ -256,7 +258,7 @@ def test_get_seller_ids_with_pending_enrich(tmp_path: Path):
     update_detail_fields(
         conn, item_id="3", brand="x", category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None, view_count=None,
-        fav_count=None, inquiry_count=None, brand_model_number=None, themes=None,
+        fav_count=None, inquiry_count=None, brand_model_number=None, tags=None, themes=None,
         size_chart_json=None, fetched_at="2026-06-23T11:00:00+09:00",
     )
     pending = get_seller_ids_with_pending_enrich(conn)

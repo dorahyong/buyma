@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 ITEM_DETAIL_URL_TEMPLATE = "https://www.buyma.com/item/{item_id}/"
 
 _DIGITS = re.compile(r"[\d,]+")
-_THEME_UI_LABELS = {"もっと見る", "閉じる"}
+_TAG_UI_LABELS = {"もっと見る", "閉じる"}
 
 
 def build_item_detail_url(item_id: str) -> str:
@@ -25,8 +25,11 @@ def parse_item_detail(html: str) -> dict[str, Any]:
 
     Keys returned: name, brand, category_path, origin_country, image_url,
     description, image_urls, view_count, fav_count, inquiry_count,
-    brand_model_number, themes, variants, size_guide_text, size_chart.
+    brand_model_number, tags, themes, variants, size_guide_text, size_chart.
     Missing fields are None (or "" for strings), never raise.
+
+    ``tags`` is the list of BUYMA 「タグ」 keywords (multiple). ``themes`` is the
+    single BUYMA 「テーマ」 (feature/campaign) name, or None.
 
     NOTE on ``name``: this key is returned for completeness and forensics.
     The listing-page name was already stored via ``upsert_scanned_item``, so
@@ -58,7 +61,8 @@ def parse_item_detail(html: str) -> dict[str, Any]:
         "fav_count": _extract_int_from_selector(soup, "span.fav_count"),
         "inquiry_count": _extract_int_from_selector(soup, "#tabmenu_inqcnt"),
         "brand_model_number": _extract_brand_model_number(soup),
-        "themes": _extract_themes(soup),
+        "tags": _extract_tags(soup),
+        "themes": _extract_theme(soup),
         "variants": _extract_variants(product_group),
         "size_guide_text": _extract_size_guide_text(soup),
         "size_chart": _extract_size_chart(soup),
@@ -273,7 +277,9 @@ def _extract_size_guide_text(soup) -> str | None:
     return text or None
 
 
-def _extract_themes(soup) -> list[str]:
+def _extract_tags(soup) -> list[str]:
+    """BUYMA 「タグ」 keywords (multiple), e.g. ['ユニセックス', 'ロゴ']. Parsed from
+    the 'この商品に関連するタグ' area. UI labels (もっと見る/閉じる) are excluded."""
     tag_p = soup.find("p", string=lambda s: s and "タグ" in s)
     if tag_p is None:
         return []
@@ -283,9 +289,22 @@ def _extract_themes(soup) -> list[str]:
     out: list[str] = []
     for a in container.select("a"):
         t = a.get_text(strip=True)
-        if t and t not in _THEME_UI_LABELS:
+        if t and t not in _TAG_UI_LABELS:
             out.append(t)
     return out
+
+
+def _extract_theme(soup) -> str | None:
+    """The single BUYMA 「テーマ」 (feature/campaign) name, e.g. '円高還元セール特集！'.
+    Parsed from the <dt>テーマ</dt> / <dd> spec row. Returns None when absent."""
+    for dt in soup.find_all("dt"):
+        if "テーマ" in dt.get_text():
+            dd = dt.find_next_sibling("dd")
+            if dd is None:
+                return None
+            text = dd.get_text(" ", strip=True)
+            return text or None
+    return None
 
 
 def _extract_int_from_selector(soup, selector: str) -> int | None:

@@ -1,5 +1,6 @@
 -- buyma-market-monitor → buyma MySQL DB (market_ 접두어). InnoDB / utf8mb4.
--- 원본: storage/db.py 의 SQLite 스키마(11 tables, schema_version=6) 1:1 변환.
+-- 원본: storage/db.py 의 SQLite 스키마(11 tables, schema_version=7) 1:1 변환.
+-- tags = BUYMA 「タグ」 JSON 배열(옛 themes 컬럼 rename), themes = 단일 「テーマ」 이름.
 -- 타임스탬프(*_at)는 코드가 ISO 문자열로 넣으므로 VARCHAR(32) 유지(무손실). 나중에 DATETIME 최적화 가능.
 -- ★ 역소싱 매칭용: market_items(brand_model_number) 인덱스 추가.
 
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS market_items (
   fav_count           INT,
   inquiry_count       INT,
   brand_model_number  VARCHAR(255),
+  tags                TEXT,
   themes              TEXT,
   size_chart_json     MEDIUMTEXT,
   status              VARCHAR(16)  NOT NULL,

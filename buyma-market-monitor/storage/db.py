@@ -15,7 +15,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 # ---- .env (buyma DB 자격증명) 로드: buyma-market-monitor 의 상위 buyma 폴더 .env ----
 _ENV_PATH = os.path.join(
@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS items (
   fav_count           INTEGER,
   inquiry_count       INTEGER,
   brand_model_number  TEXT,
+  tags                TEXT,
   themes              TEXT,
   size_chart_json     TEXT,
   status              TEXT NOT NULL,
