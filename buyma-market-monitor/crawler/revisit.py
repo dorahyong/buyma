@@ -101,14 +101,18 @@ def run_revisit(
     idle_seconds: float = 600.0,
     stop_event=None,
     clock: Callable[[], str] = now_iso,
+    never_idle: bool = True,
+    backfill_batch: int = 10_000,
 ) -> "RevisitSummary":
     """One revisit pass (or daemon loop): seed backfill, then fetch unobserved(1st) + due
     revisits(2nd) within the time budget. Stops promptly past deadline, on circuit breaker,
     or when stop_event is set (loop mode).
 
     loop=False: single pass, identical to previous behaviour.
-    loop=True: rounds repeat until deadline/cb/stop_event; when queue is empty, sleeps
-    idle_seconds (interruptible via stop_event) then retries.
+    loop=True: rounds repeat until deadline/cb/stop_event. never_idle(기본 True)이면 due가
+    비어도 잠들지 않고, next_revisit_at 임박 순으로 backfill_batch개를 앞당겨 수집해 남는
+    시간 budget을 데이터로 전환한다(속도는 그대로라 차단 위험 없음). backfill도 0건일 때만
+    idle_seconds 만큼 대기(빈 DB 등).
     """
     db_path = Path(db_path)
     summary = RevisitSummary()
@@ -199,6 +203,15 @@ def run_revisit(
                 work.put(iid)
                 had += 1
 
+            # never-idle: due가 하나도 없으면 잠들기 전에, 예정이 임박한(next_revisit_at 빠른)
+            # 상품을 앞당겨 채워 남는 시간 budget을 수집으로 전환한다. 속도(sleep/워커)는
+            # 그대로라 순간 처리율은 안 바뀌고 놀던 시간만 채운다. deadline/cb/stop 은 워커
+            # 루프가 매 요청 확인하므로 배치가 커도 즉시 멈춘다.
+            if loop and never_idle and had == 0:
+                for iid in revisit_repo.get_revisit_queue(main_conn, limit=backfill_batch, due_before=None):
+                    work.put(iid)
+                    had += 1
+
             # Drain with workers
             threads = [threading.Thread(target=worker, args=(work,), daemon=True) for _ in range(num_workers)]
             for t in threads:
@@ -211,7 +224,7 @@ def run_revisit(
             if _expired() or _cb_open() or _stopped():
                 break
             if had == 0:
-                # Nothing to do right now — idle until next due (interruptible)
+                # 앞당길 것조차 없음(빈 DB 등) — 다음 due까지 대기(interruptible)
                 if stop_event is not None:
                     stop_event.wait(idle_seconds)
                 else:

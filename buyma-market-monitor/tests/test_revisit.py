@@ -268,3 +268,66 @@ def test_run_revisit_loop_terminates_on_stop_event(tmp_path):
         loop=True, idle_seconds=5.0, stop_event=ev)
     timer.cancel()
     assert summary.observed == 0   # returns (does not hang); stop_event ended the loop
+
+
+def test_run_revisit_loop_backfills_when_no_due(tmp_path, monkeypatch):
+    # due가 없어도(예정이 미래) 잠들지 않고 앞당겨 수집한다 (never-idle).
+    db = tmp_path / "backfill.db"
+    conn = connect(str(db))
+    init_schema(conn)
+    now0 = "2026-06-20T00:00:00+09:00"
+    upsert_scanned_item(conn, item_id="future", seller_id="s1", name="n", price=1, now=now0)
+    update_detail_fields(
+        conn, item_id="future", brand=None, category_path=None, origin_country=None,
+        image_url=None, description=None, size_guide_text=None,
+        view_count=600, fav_count=0, inquiry_count=0, brand_model_number=None,
+        tags=None, themes=None, size_chart_json=None, listed_at=None, fetched_at=now0)
+    conn.execute("INSERT INTO stats_history VALUES ('future', ?, 600, 0, 0)", (now0,))
+    # 이미 revisit_state에 있고 next_revisit_at은 먼 미래 → due 아님
+    conn.execute(
+        "INSERT INTO revisit_state "
+        "(item_id,tier,base_tier,last_observed_at,next_revisit_at,obs_count,last_velocity) "
+        "VALUES ('future','WARM','WARM',?, '2099-01-01T00:00:00+09:00', 1, NULL)", (now0,))
+    conn.close()
+
+    monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: dict(_LOW_METRIC_FAKE))
+    ev = _threading.Event()
+    timer = _threading.Timer(0.2, ev.set); timer.start()
+    summary = run_revisit(
+        db_path=str(db), scan_client_factory=lambda: _FakeClient(),
+        num_workers=1, now="2026-06-29T00:00:00+09:00",
+        on_error=lambda **kw: None, max_hours=None,
+        loop=True, idle_seconds=5.0, stop_event=ev)
+    timer.cancel()
+    assert summary.observed >= 1   # idle 대신 미래 예정 상품을 backfill로 관측
+
+
+def test_run_revisit_loop_backfill_off_stays_idle(tmp_path, monkeypatch):
+    # never_idle=False면 due가 없을 때 앞당기지 않고 잠든다(기존 동작 보존).
+    db = tmp_path / "no_backfill.db"
+    conn = connect(str(db))
+    init_schema(conn)
+    now0 = "2026-06-20T00:00:00+09:00"
+    upsert_scanned_item(conn, item_id="future", seller_id="s1", name="n", price=1, now=now0)
+    update_detail_fields(
+        conn, item_id="future", brand=None, category_path=None, origin_country=None,
+        image_url=None, description=None, size_guide_text=None,
+        view_count=600, fav_count=0, inquiry_count=0, brand_model_number=None,
+        tags=None, themes=None, size_chart_json=None, listed_at=None, fetched_at=now0)
+    conn.execute("INSERT INTO stats_history VALUES ('future', ?, 600, 0, 0)", (now0,))
+    conn.execute(
+        "INSERT INTO revisit_state "
+        "(item_id,tier,base_tier,last_observed_at,next_revisit_at,obs_count,last_velocity) "
+        "VALUES ('future','WARM','WARM',?, '2099-01-01T00:00:00+09:00', 1, NULL)", (now0,))
+    conn.close()
+
+    monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: dict(_LOW_METRIC_FAKE))
+    ev = _threading.Event()
+    timer = _threading.Timer(0.2, ev.set); timer.start()
+    summary = run_revisit(
+        db_path=str(db), scan_client_factory=lambda: _FakeClient(),
+        num_workers=1, now="2026-06-29T00:00:00+09:00",
+        on_error=lambda **kw: None, max_hours=None,
+        loop=True, idle_seconds=5.0, stop_event=ev, never_idle=False)
+    timer.cancel()
+    assert summary.observed == 0   # 앞당기지 않고 idle
