@@ -14,7 +14,7 @@ def test_revisit_state_table_exists():
     conn = _mem()
     cols = {r[1] for r in conn.execute("PRAGMA table_info(revisit_state)")}
     assert cols == {
-        "item_id", "tier", "base_tier", "last_observed_at",
+        "item_id", "tier", "base_tier", "seller_id", "last_observed_at",
         "next_revisit_at", "obs_count", "last_velocity",
     }
 
@@ -22,7 +22,7 @@ def test_revisit_state_table_exists():
 def test_upsert_and_get_revisit_state():
     conn = _mem()
     revisit_repo.upsert_revisit_state(
-        conn, item_id="1", tier="HOT", base_tier="WARM",
+        conn, item_id="1", tier="HOT", base_tier="WARM", seller_id="s9",
         last_observed_at="2026-06-29T00:00:00+09:00",
         next_revisit_at="2026-06-30T00:00:00+09:00",
         obs_count=2, last_velocity=5.0,
@@ -30,9 +30,11 @@ def test_upsert_and_get_revisit_state():
     row = conn.execute("SELECT * FROM revisit_state WHERE item_id='1'").fetchone()
     assert row["tier"] == "HOT"
     assert row["base_tier"] == "WARM"
+    assert row["seller_id"] == "s9"
     assert row["obs_count"] == 2
     assert row["last_velocity"] == 5.0
 
+    # seller_id 미지정(None)이어도 기존 값은 COALESCE 로 보존된다.
     revisit_repo.upsert_revisit_state(
         conn, item_id="1", tier="COLD", base_tier="COLD",
         last_observed_at="2026-07-01T00:00:00+09:00",
@@ -41,6 +43,7 @@ def test_upsert_and_get_revisit_state():
     )
     row = conn.execute("SELECT * FROM revisit_state WHERE item_id='1'").fetchone()
     assert row["tier"] == "COLD"
+    assert row["seller_id"] == "s9"
     assert row["obs_count"] == 3
     assert row["last_velocity"] is None
 
@@ -80,9 +83,10 @@ def test_seed_backfill_registers_enriched_active_only():
     n = revisit_repo.seed_backfill(conn)
     assert n == 3
     seeded = {r[0]: r for r in conn.execute(
-        "SELECT item_id, tier, base_tier, last_observed_at, obs_count FROM revisit_state")}
+        "SELECT item_id, tier, base_tier, last_observed_at, obs_count, seller_id FROM revisit_state")}
     assert set(seeded) == {"hot", "warm", "cold"}
     assert seeded["hot"][1] == "HOT"
+    assert seeded["hot"][5] == "s1"   # seller_id 비정규화 저장(items.seller_id 복사)
     assert seeded["warm"][3] == "2026-06-20T00:00:00+09:00"
     assert seeded["hot"][3] == "2026-06-20T00:00:00+09:00"
 

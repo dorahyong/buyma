@@ -22,7 +22,16 @@ from storage.db import connect, init_schema
 from storage.store import now_iso
 
 
-def _sales_signal(conn: sqlite3.Connection, item_id: str, now: str) -> tuple[int, int, bool]:
+def _seller_id_of(conn: sqlite3.Connection, item_id: str) -> str | None:
+    row = conn.execute(
+        "SELECT seller_id FROM items WHERE item_id = ?", (item_id,)
+    ).fetchone()
+    return row[0] if row is not None else None
+
+
+def _sales_signal(
+    conn: sqlite3.Connection, item_id: str, seller_id: str | None, now: str
+) -> tuple[int, int, bool]:
     """상품 판매 블렌드 신호: (최근30일 판매수, 강한셀러 확장창(90일) 판매수, 강한셀러 여부).
 
     확장창 판매수는 강한 셀러일 때만 계산(불필요한 조회 회피). 조회 실패해도 재방문 자체를
@@ -31,10 +40,6 @@ def _sales_signal(conn: sqlite3.Connection, item_id: str, now: str) -> tuple[int
     try:
         recent = orders_repo.count_item_sales_since(
             conn, item_id, sales_cutoff(now, SALES_WINDOW_DAYS))
-        row = conn.execute(
-            "SELECT seller_id FROM items WHERE item_id = ?", (item_id,)
-        ).fetchone()
-        seller_id = row[0] if row is not None else None
         seller_strong = bool(
             seller_id is not None
             and sellers_repo.get_order_count(conn, seller_id) >= STRONG_SELLER_ORDER_COUNT
@@ -61,7 +66,8 @@ def apply_revisit(conn: sqlite3.Connection, item_id: str, html: str, now: str) -
     """
     apply_enrich(conn, item_id, html, now)  # writes stats_history row at `now`
     obs = revisit_repo.get_recent_two_observations(conn, item_id)
-    sales_recent, sales_extended, seller_strong = _sales_signal(conn, item_id, now)
+    seller_id = _seller_id_of(conn, item_id)
+    sales_recent, sales_extended, seller_strong = _sales_signal(conn, item_id, seller_id, now)
     state = compute_observation_state(
         obs, now=now,
         sales_recent=sales_recent, sales_extended=sales_extended,
@@ -71,7 +77,7 @@ def apply_revisit(conn: sqlite3.Connection, item_id: str, html: str, now: str) -
         "SELECT COUNT(*) FROM stats_history WHERE item_id = ?", (item_id,)
     ).fetchone()[0]
     revisit_repo.upsert_revisit_state(
-        conn, item_id=item_id,
+        conn, item_id=item_id, seller_id=seller_id,
         tier=state["tier"], base_tier=state["base_tier"],
         last_observed_at=state["last_observed_at"],
         next_revisit_at=state["next_revisit_at"],

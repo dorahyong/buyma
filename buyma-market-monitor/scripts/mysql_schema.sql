@@ -1,5 +1,5 @@
 -- buyma-market-monitor → buyma MySQL DB (market_ 접두어). InnoDB / utf8mb4.
--- 원본: storage/db.py 의 SQLite 스키마(11 tables, schema_version=8) 1:1 변환.
+-- 원본: storage/db.py 의 SQLite 스키마(11 tables, schema_version=9) 1:1 변환.
 -- tags = BUYMA 「タグ」 JSON 배열(옛 themes 컬럼 rename), themes = 단일 「テーマ」 이름.
 -- listed_at = 出品(公開)日 kokaidate. write-once(NULL일 때만 기록, 재출품시에도 불변).
 -- 타임스탬프(*_at)는 코드가 ISO 문자열로 넣으므로 VARCHAR(32) 유지(무손실). 나중에 DATETIME 최적화 가능.
@@ -120,11 +120,13 @@ CREATE TABLE IF NOT EXISTS market_revisit_state (
   item_id          VARCHAR(64) NOT NULL PRIMARY KEY,
   tier             VARCHAR(16),
   base_tier        VARCHAR(16),
+  seller_id        VARCHAR(64),
   last_observed_at VARCHAR(32),
   next_revisit_at  VARCHAR(32),
   obs_count        INT,
   last_velocity    DOUBLE,
-  KEY idx_market_revisit_next (next_revisit_at)
+  KEY idx_market_revisit_next (next_revisit_at),
+  KEY idx_market_revisit_tier_seller (tier, seller_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS market_seller_scan_state (

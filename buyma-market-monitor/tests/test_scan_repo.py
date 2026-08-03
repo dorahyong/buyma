@@ -23,10 +23,10 @@ def _add_seller(conn, sid):
     conn.execute("INSERT INTO sellers (seller_id) VALUES (?)", (sid,))
 
 
-def _set_tier(conn, iid, tier):
-    conn.execute("INSERT INTO revisit_state (item_id, tier, base_tier, last_observed_at, "
-                 "next_revisit_at, obs_count, last_velocity) VALUES (?,?,?,?,?,?,?)",
-                 (iid, tier, tier, "x", "y", 1, None))
+def _set_tier(conn, iid, tier, seller):
+    conn.execute("INSERT INTO revisit_state (item_id, tier, base_tier, seller_id, last_observed_at, "
+                 "next_revisit_at, obs_count, last_velocity) VALUES (?,?,?,?,?,?,?,?)",
+                 (iid, tier, tier, seller, "x", "y", 1, None))
 
 
 def test_recompute_and_due():
@@ -34,9 +34,9 @@ def test_recompute_and_due():
     for sid in ("hi", "mid", "low"):
         _add_seller(conn, sid)
     for i in range(5):
-        _add_item(conn, f"h{i}", "hi"); _set_tier(conn, f"h{i}", "HOT")
-    _add_item(conn, "m0", "mid"); _set_tier(conn, "m0", "WARM")
-    _add_item(conn, "l0", "low"); _set_tier(conn, "l0", "COLD")
+        _add_item(conn, f"h{i}", "hi"); _set_tier(conn, f"h{i}", "HOT", "hi")
+    _add_item(conn, "m0", "mid"); _set_tier(conn, "m0", "WARM", "mid")
+    _add_item(conn, "l0", "low"); _set_tier(conn, "l0", "COLD", "low")
     now = "2026-07-01T00:00:00+09:00"
     scan_repo.recompute_seller_values(conn, now=now, recent_cutoff="2026/06/01")
     tiers = dict(conn.execute("SELECT seller_id, value_tier FROM seller_scan_state"))
