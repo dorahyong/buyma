@@ -55,7 +55,10 @@ CREATE TABLE IF NOT EXISTS market_orders (
   collected_at VARCHAR(32) NOT NULL,
   KEY idx_market_orders_seller    (seller_id),
   KEY idx_market_orders_sale_date (sale_date),
-  KEY idx_market_orders_item      (item_id)
+  KEY idx_market_orders_item      (item_id),
+  KEY idx_market_orders_item_date   (item_id, sale_date),
+  KEY idx_market_orders_seller_date (seller_id, sale_date),
+  KEY idx_market_orders_date_seller (sale_date, seller_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS market_order_watermarks (
