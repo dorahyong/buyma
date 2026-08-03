@@ -76,7 +76,8 @@ def test_schema_v2_items_has_new_columns(tmp_path: Path):
         init_schema(conn)
         cols = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
         for c in ("size_guide_text", "view_count", "fav_count", "inquiry_count",
-                  "brand_model_number", "tags", "themes", "size_chart_json"):
+                  "brand_model_number", "tags", "themes", "size_chart_json",
+                  "listed_at"):
             assert c in cols, f"missing column {c}"
         assert "raw_meta_json" not in cols, "raw_meta_json should be removed"
     finally:
@@ -105,11 +106,11 @@ def test_schema_v2_new_tables_exist(tmp_path: Path):
         conn.close()
 
 
-def test_schema_version_is_7(tmp_path: Path):
+def test_schema_version_is_8(tmp_path: Path):
     conn = connect(tmp_path / "t.db")
     try:
         init_schema(conn)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 7
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 8
     finally:
         conn.close()
 

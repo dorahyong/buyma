@@ -111,6 +111,7 @@ def test_update_detail_fields(tmp_path: Path):
         tags='["ロゴ"]',
         themes="円高還元セール特集！",
         size_chart_json='{"S":{"胸囲":"90cm"}}',
+        listed_at="2026-06-09T15:20:53+09:00",
         fetched_at="2026-06-09T11:00:00+09:00",
     )
     row = get_item(conn, "100")
@@ -127,7 +128,34 @@ def test_update_detail_fields(tmp_path: Path):
     assert row["tags"] == '["ロゴ"]'
     assert row["themes"] == "円高還元セール特集！"
     assert row["size_chart_json"] == '{"S":{"胸囲":"90cm"}}'
+    assert row["listed_at"] == "2026-06-09T15:20:53+09:00"
     assert row["detail_fetched_at"] == "2026-06-09T11:00:00+09:00"
+
+
+def test_update_detail_fields_listed_at_write_once(tmp_path: Path):
+    """listed_at is set only while NULL; a later value must not overwrite it."""
+    conn = make_conn(tmp_path)
+    upsert_scanned_item(conn, "200", "S1", "Test", 1000, "2026-06-09T10:00:00+09:00")
+
+    def enrich(listed_at, fetched_at):
+        update_detail_fields(
+            conn, item_id="200", brand=None, category_path=None, origin_country=None,
+            image_url=None, description=None, size_guide_text=None, view_count=None,
+            fav_count=None, inquiry_count=None, brand_model_number=None, tags=None,
+            themes=None, size_chart_json=None, listed_at=listed_at, fetched_at=fetched_at,
+        )
+
+    # 1) NULL 상태 → 첫 관측 시 채워짐
+    enrich("2026-06-09T15:20:53+09:00", "2026-06-09T11:00:00+09:00")
+    assert get_item(conn, "200")["listed_at"] == "2026-06-09T15:20:53+09:00"
+
+    # 2) 재출품으로 값이 바뀌어도(다른 kokaidate) 기존 값 유지 (덮어쓰지 않음)
+    enrich("2026-08-01T09:00:00+09:00", "2026-08-01T12:00:00+09:00")
+    assert get_item(conn, "200")["listed_at"] == "2026-06-09T15:20:53+09:00"
+
+    # 3) 새 관측이 None 이어도 기존 값 유지
+    enrich(None, "2026-08-02T12:00:00+09:00")
+    assert get_item(conn, "200")["listed_at"] == "2026-06-09T15:20:53+09:00"
 
 
 def test_replace_item_images_inserts_ordered(tmp_path: Path):
@@ -226,7 +254,7 @@ def test_get_unenriched_active_item_ids_for_seller(tmp_path: Path):
         conn, item_id="1", brand="x", category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None, view_count=None,
         fav_count=None, inquiry_count=None, brand_model_number=None, tags=None, themes=None,
-        size_chart_json=None, fetched_at="2026-06-18T11:00:00+09:00",
+        size_chart_json=None, listed_at=None, fetched_at="2026-06-18T11:00:00+09:00",
     )
     ids = get_unenriched_active_item_ids_for_seller(conn, "S1")
     assert ids == {"2"}
@@ -248,7 +276,7 @@ def test_get_seller_ids_with_pending_enrich(tmp_path: Path):
         conn, item_id="1", brand="x", category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None, view_count=None,
         fav_count=None, inquiry_count=None, brand_model_number=None, tags=None, themes=None,
-        size_chart_json=None, fetched_at="2026-06-23T11:00:00+09:00",
+        size_chart_json=None, listed_at=None, fetched_at="2026-06-23T11:00:00+09:00",
     )
     # S2: one item, NOT enriched → pending
     upsert_scanned_item(conn, "2", "S2", "B", 200, "2026-06-23T10:00:00+09:00")
@@ -259,7 +287,7 @@ def test_get_seller_ids_with_pending_enrich(tmp_path: Path):
         conn, item_id="3", brand="x", category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None, view_count=None,
         fav_count=None, inquiry_count=None, brand_model_number=None, tags=None, themes=None,
-        size_chart_json=None, fetched_at="2026-06-23T11:00:00+09:00",
+        size_chart_json=None, listed_at=None, fetched_at="2026-06-23T11:00:00+09:00",
     )
     pending = get_seller_ids_with_pending_enrich(conn)
     assert pending == {"S2", "S3"}  # S1 fully enriched → excluded

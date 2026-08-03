@@ -170,8 +170,12 @@ def update_detail_fields(
     tags: str | None,
     themes: str | None,
     size_chart_json: str | None,
+    listed_at: str | None,
     fetched_at: str,
 ) -> None:
+    # listed_at (出品日/kokaidate) is write-once: set only while NULL, never
+    # overwritten. We want the FIRST observed listing date; a later re-listing
+    # that resets kokaidate must NOT clobber it. COALESCE keeps the existing value.
     conn.execute(
         """
         UPDATE items SET
@@ -188,12 +192,13 @@ def update_detail_fields(
           tags = ?,
           themes = ?,
           size_chart_json = ?,
+          listed_at = COALESCE(listed_at, ?),
           detail_fetched_at = ?
         WHERE item_id = ?
         """,
         (brand, category_path, origin_country, image_url, description,
          size_guide_text, view_count, fav_count, inquiry_count, brand_model_number,
-         tags, themes, size_chart_json, fetched_at, item_id),
+         tags, themes, size_chart_json, listed_at, fetched_at, item_id),
     )
 
 

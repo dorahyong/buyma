@@ -25,11 +25,12 @@ def parse_item_detail(html: str) -> dict[str, Any]:
 
     Keys returned: name, brand, category_path, origin_country, image_url,
     description, image_urls, view_count, fav_count, inquiry_count,
-    brand_model_number, tags, themes, variants, size_guide_text, size_chart.
-    Missing fields are None (or "" for strings), never raise.
+    brand_model_number, tags, themes, listed_at, variants, size_guide_text,
+    size_chart. Missing fields are None (or "" for strings), never raise.
 
     ``tags`` is the list of BUYMA 「タグ」 keywords (multiple). ``themes`` is the
-    single BUYMA 「テーマ」 (feature/campaign) name, or None.
+    single BUYMA 「テーマ」 (feature/campaign) name, or None. ``listed_at`` is the
+    出品(公開)日 (kokaidate) ISO string from the tracking meta, or None.
 
     NOTE on ``name``: this key is returned for completeness and forensics.
     The listing-page name was already stored via ``upsert_scanned_item``, so
@@ -63,6 +64,7 @@ def parse_item_detail(html: str) -> dict[str, Any]:
         "brand_model_number": _extract_brand_model_number(soup),
         "tags": _extract_tags(soup),
         "themes": _extract_theme(soup),
+        "listed_at": _extract_listed_at(soup),
         "variants": _extract_variants(product_group),
         "size_guide_text": _extract_size_guide_text(soup),
         "size_chart": _extract_size_chart(soup),
@@ -304,6 +306,28 @@ def _extract_theme(soup) -> str | None:
                 return None
             text = dd.get_text(" ", strip=True)
             return text or None
+    return None
+
+
+def _extract_listed_at(soup) -> str | None:
+    """出品(公開)日 = ``kokaidate`` inside the <meta name="buyma:track_item_json">
+    tracking JSON, e.g. '2026-06-09T15:20:53+09:00'. Not shown in the UI. Returns
+    None when the tag/field is absent or unparseable."""
+    m = soup.find("meta", attrs={"name": "buyma:track_item_json"})
+    if m is None:
+        return None
+    content = m.get("content")
+    if not content:
+        return None
+    try:
+        data = json.loads(content)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    v = data.get("kokaidate")
+    if isinstance(v, str) and v.strip():
+        return v.strip()
     return None
 
 
