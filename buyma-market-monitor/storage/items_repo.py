@@ -167,6 +167,7 @@ def update_detail_fields(
     fav_count: int | None,
     inquiry_count: int | None,
     brand_model_number: str | None,
+    tags: str | None,
     themes: str | None,
     size_chart_json: str | None,
     fetched_at: str,
@@ -184,6 +185,7 @@ def update_detail_fields(
           fav_count = ?,
           inquiry_count = ?,
           brand_model_number = ?,
+          tags = ?,
           themes = ?,
           size_chart_json = ?,
           detail_fetched_at = ?
@@ -191,7 +193,7 @@ def update_detail_fields(
         """,
         (brand, category_path, origin_country, image_url, description,
          size_guide_text, view_count, fav_count, inquiry_count, brand_model_number,
-         themes, size_chart_json, fetched_at, item_id),
+         tags, themes, size_chart_json, fetched_at, item_id),
     )
 
 

@@ -105,7 +105,7 @@ def apply_enrich(conn: sqlite3.Connection, item_id: str, html: str, now: str) ->
     plus item_images, item_variants, and a stats_history observation, all in
     one transaction so a crash cannot leave a half-enriched item."""
     meta = parse_item_detail(html)
-    themes = meta["themes"]
+    tags = meta["tags"]
     size_chart = meta["size_chart"]
     conn.execute("BEGIN")
     try:
@@ -121,7 +121,8 @@ def apply_enrich(conn: sqlite3.Connection, item_id: str, html: str, now: str) ->
             fav_count=meta["fav_count"],
             inquiry_count=meta["inquiry_count"],
             brand_model_number=meta["brand_model_number"],
-            themes=json.dumps(themes, ensure_ascii=False) if themes else None,
+            tags=json.dumps(tags, ensure_ascii=False) if tags else None,
+            themes=meta["themes"],
             size_chart_json=json.dumps(size_chart, ensure_ascii=False) if size_chart else None,
             fetched_at=now,
         )
