@@ -11,21 +11,26 @@ def upsert_revisit_state(
     next_revisit_at: str,
     obs_count: int,
     last_velocity: float | None,
+    seller_id: str | None = None,
 ) -> None:
+    # seller_id 를 revisit_state 에 비정규화 저장 → scan_repo 의 셀러 가치 집계가
+    # 12GB items 조인 없이 revisit_state 만으로 돌 수 있다. 셀러는 불변이므로
+    # 값이 없을(None) 때 기존 것을 덮어쓰지 않게 COALESCE 로 보존한다.
     conn.execute(
         """
         INSERT INTO revisit_state
-          (item_id, tier, base_tier, last_observed_at, next_revisit_at, obs_count, last_velocity)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+          (item_id, tier, base_tier, seller_id, last_observed_at, next_revisit_at, obs_count, last_velocity)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(item_id) DO UPDATE SET
           tier=excluded.tier,
           base_tier=excluded.base_tier,
+          seller_id=COALESCE(excluded.seller_id, seller_id),
           last_observed_at=excluded.last_observed_at,
           next_revisit_at=excluded.next_revisit_at,
           obs_count=excluded.obs_count,
           last_velocity=excluded.last_velocity
         """,
-        (item_id, tier, base_tier, last_observed_at, next_revisit_at, obs_count, last_velocity),
+        (item_id, tier, base_tier, seller_id, last_observed_at, next_revisit_at, obs_count, last_velocity),
     )
 
 
@@ -50,11 +55,12 @@ def seed_backfill(conn: sqlite3.Connection) -> int:
     cur = conn.execute(
         """
         INSERT INTO revisit_state
-          (item_id, tier, base_tier, last_observed_at, next_revisit_at, obs_count, last_velocity)
-        SELECT item_id, tier, tier, last_obs, last_obs, cnt, NULL
+          (item_id, tier, base_tier, seller_id, last_observed_at, next_revisit_at, obs_count, last_velocity)
+        SELECT item_id, tier, tier, seller_id, last_obs, last_obs, cnt, NULL
         FROM (
           SELECT
             i.item_id AS item_id,
+            i.seller_id AS seller_id,
             CASE
               WHEN COALESCE(i.fav_count,0) >= 50 OR COALESCE(i.view_count,0) >= 2000
                    OR COALESCE(i.inquiry_count,0) >= 5 THEN 'HOT'

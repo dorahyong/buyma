@@ -9,9 +9,11 @@ def recompute_seller_values(conn: sqlite3.Connection, now: str, recent_cutoff: s
     recent_cutoff: 'YYYY/MM/DD'. New sellers get next_scan_at=now (due now); existing
     sellers keep next_scan_at, only tier/score refreshed.
     Tiers are rank-based (distribution-relative): top 15% → HIGH, next 35% → MID, rest → LOW."""
+    # revisit_state.seller_id(비정규화)로 직접 집계 → 12GB items 조인 제거.
+    # (tier, seller_id) 인덱스로 커버되어 원격 MySQL 타임아웃(2013) 없이 순식간에 끝난다.
     hot_warm = {r[0]: r[1] for r in conn.execute(
-        "SELECT i.seller_id, COUNT(*) FROM revisit_state r JOIN items i ON i.item_id = r.item_id "
-        "WHERE r.tier IN ('HOT','WARM') GROUP BY i.seller_id")}
+        "SELECT seller_id, COUNT(*) FROM revisit_state "
+        "WHERE tier IN ('HOT','WARM') AND seller_id IS NOT NULL GROUP BY seller_id")}
     recent = {r[0]: r[1] for r in conn.execute(
         "SELECT seller_id, COUNT(*) FROM orders WHERE sale_date >= ? GROUP BY seller_id",
         (recent_cutoff,))}

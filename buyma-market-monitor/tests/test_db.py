@@ -106,11 +106,11 @@ def test_schema_v2_new_tables_exist(tmp_path: Path):
         conn.close()
 
 
-def test_schema_version_is_8(tmp_path: Path):
+def test_schema_version_is_9(tmp_path: Path):
     conn = connect(tmp_path / "t.db")
     try:
         init_schema(conn)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 9
     finally:
         conn.close()
 
