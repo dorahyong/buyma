@@ -47,6 +47,14 @@ def load_sellers(conn: sqlite3.Connection) -> dict[str, dict]:
     return {row["seller_id"]: {c: row[c] for c in _COLS} for row in rows}
 
 
+def get_order_count(conn: sqlite3.Connection, seller_id: str) -> int:
+    """셀러 누적 판매수(order_count). 없으면 0."""
+    row = conn.execute(
+        "SELECT order_count FROM sellers WHERE seller_id = ?", (seller_id,)
+    ).fetchone()
+    return (row[0] or 0) if row is not None else 0
+
+
 def get_seller(conn: sqlite3.Connection, seller_id: str) -> dict | None:
     row = conn.execute(
         "SELECT * FROM sellers WHERE seller_id = ?", (seller_id,)
