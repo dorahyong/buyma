@@ -1,10 +1,38 @@
-from crawler.revisit_scheduler import classify_tier, TIER_INTERVAL_DAYS, next_revisit_at_from, compute_velocity, apply_promotion, compute_observation_state
+from crawler.revisit_scheduler import (
+    classify_tier, TIER_INTERVAL_DAYS, next_revisit_at_from, compute_velocity,
+    apply_promotion, compute_observation_state, sales_cutoff,
+)
 
 
 def test_classify_tier_hot_by_each_signal():
     assert classify_tier(view=0, fav=50, inquiry=0) == "HOT"
     assert classify_tier(view=2000, fav=0, inquiry=0) == "HOT"
     assert classify_tier(view=0, fav=0, inquiry=5) == "HOT"
+
+
+def test_classify_tier_sales_signal_hot_and_warm():
+    # 조회·찜·문의가 전부 낮아도 판매만으로 승급 (럭셔리 구제)
+    assert classify_tier(view=0, fav=0, inquiry=0, sales_recent=3) == "HOT"
+    assert classify_tier(view=0, fav=0, inquiry=0, sales_recent=1) == "WARM"
+    assert classify_tier(view=0, fav=0, inquiry=0, sales_recent=0) == "COLD"
+
+
+def test_classify_tier_strong_seller_extended_window():
+    # 강한 셀러: 확장창(90일) 1건이면 WARM. 일반 셀러는 무시.
+    assert classify_tier(view=0, fav=0, inquiry=0, sales_recent=0,
+                         sales_extended=1, seller_strong=True) == "WARM"
+    assert classify_tier(view=0, fav=0, inquiry=0, sales_recent=0,
+                         sales_extended=1, seller_strong=False) == "COLD"
+
+
+def test_classify_tier_sales_none_treated_as_zero():
+    assert classify_tier(view=0, fav=0, inquiry=0,
+                         sales_recent=None, sales_extended=None) == "COLD"
+
+
+def test_sales_cutoff_formats_and_subtracts():
+    assert sales_cutoff("2026-06-29T00:00:00+09:00", 30) == "2026/05/30"
+    assert sales_cutoff("2026-06-29T00:00:00+09:00", 90) == "2026/03/31"
 
 
 def test_classify_tier_warm_boundaries():
@@ -93,6 +121,14 @@ def test_observation_state_single_obs_uses_base_tier():
     assert st["last_velocity"] is None
     assert st["next_revisit_at"] == "2026-07-03T00:00:00+09:00"
     assert st["last_observed_at"] == "2026-06-29T00:00:00+09:00"
+
+
+def test_observation_state_sales_signal_overrides_low_metrics():
+    obs = [("2026-06-29T00:00:00+09:00", 1, 0, 0)]  # 조회·찜 낮음 → 원래 COLD
+    st = compute_observation_state(obs, now="2026-06-29T00:00:00+09:00", sales_recent=3)
+    assert st["base_tier"] == "HOT"
+    assert st["tier"] == "HOT"
+    assert st["next_revisit_at"] == "2026-06-30T00:00:00+09:00"
 
 
 def test_observation_state_promotes_on_surge_and_shortens_interval():

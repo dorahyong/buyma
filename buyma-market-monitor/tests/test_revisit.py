@@ -47,6 +47,59 @@ def test_apply_revisit_records_observation_and_state(monkeypatch):
     assert conn.execute("SELECT COUNT(*) FROM stats_history WHERE item_id='1'").fetchone()[0] == 2
 
 
+_LOW_METRIC_FAKE = {
+    "name": "n", "brand": None, "category_path": None, "origin_country": None,
+    "image_url": None, "description": None, "size_guide_text": None,
+    "view_count": 1, "fav_count": 0, "inquiry_count": 0,
+    "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
+    "size_chart": None, "image_urls": [], "variants": [],
+}
+
+
+def test_apply_revisit_item_sales_promote_to_hot(monkeypatch):
+    conn = connect(":memory:")
+    init_schema(conn)
+    now = "2026-06-29T00:00:00+09:00"
+    _seed_item(conn, "1", now)
+    # 조회·찜 낮지만 최근 30일 판매 3건 → HOT
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO orders (seller_id,item_id,sale_date,collected_at) VALUES ('s1','1',?,?)",
+            (f"2026/06/2{i}", now))
+    monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: dict(_LOW_METRIC_FAKE))
+    apply_revisit(conn, "1", "<html>", now)
+    assert conn.execute("SELECT tier FROM revisit_state WHERE item_id='1'").fetchone()[0] == "HOT"
+
+
+def test_apply_revisit_strong_seller_extended_window_warm(monkeypatch):
+    conn = connect(":memory:")
+    init_schema(conn)
+    now = "2026-06-29T00:00:00+09:00"
+    _seed_item(conn, "1", now)
+    conn.execute("INSERT INTO sellers (seller_id, order_count) VALUES ('s1', 1500)")
+    # 최근 30일 판매 없음, 90일 창(2026/04/15)에 1건 → 강한 셀러라 WARM
+    conn.execute(
+        "INSERT INTO orders (seller_id,item_id,sale_date,collected_at) VALUES ('s1','1','2026/04/15',?)",
+        (now,))
+    monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: dict(_LOW_METRIC_FAKE))
+    apply_revisit(conn, "1", "<html>", now)
+    assert conn.execute("SELECT tier FROM revisit_state WHERE item_id='1'").fetchone()[0] == "WARM"
+
+
+def test_apply_revisit_weak_seller_extended_window_stays_cold(monkeypatch):
+    conn = connect(":memory:")
+    init_schema(conn)
+    now = "2026-06-29T00:00:00+09:00"
+    _seed_item(conn, "1", now)
+    conn.execute("INSERT INTO sellers (seller_id, order_count) VALUES ('s1', 100)")
+    conn.execute(
+        "INSERT INTO orders (seller_id,item_id,sale_date,collected_at) VALUES ('s1','1','2026/04/15',?)",
+        (now,))
+    monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: dict(_LOW_METRIC_FAKE))
+    apply_revisit(conn, "1", "<html>", now)
+    assert conn.execute("SELECT tier FROM revisit_state WHERE item_id='1'").fetchone()[0] == "COLD"
+
+
 class _FakeResp:
     def __init__(self, text, status=200):
         self.text = text

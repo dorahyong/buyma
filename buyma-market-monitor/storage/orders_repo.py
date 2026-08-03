@@ -86,6 +86,15 @@ def load_run_meta(conn: sqlite3.Connection) -> dict:
     }
 
 
+def count_item_sales_since(conn: sqlite3.Connection, item_id: str, since: str) -> int:
+    """상품의 sale_date >= since('YYYY/MM/DD') 인 주문 건수. idx_orders_item 사용."""
+    row = conn.execute(
+        "SELECT COUNT(*) FROM orders WHERE item_id = ? AND sale_date >= ?",
+        (item_id, since),
+    ).fetchone()
+    return row[0] if row is not None else 0
+
+
 def insert_orders(conn: sqlite3.Connection, orders: list[dict]) -> None:
     """Append order rows. No dedup — the caller's watermark prevents re-collection."""
     if not orders:
