@@ -124,6 +124,7 @@ def apply_enrich(conn: sqlite3.Connection, item_id: str, html: str, now: str) ->
             tags=json.dumps(tags, ensure_ascii=False) if tags else None,
             themes=meta["themes"],
             size_chart_json=json.dumps(size_chart, ensure_ascii=False) if size_chart else None,
+            listed_at=meta["listed_at"],
             fetched_at=now,
         )
         replace_item_images(conn, item_id, meta["image_urls"])

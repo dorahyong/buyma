@@ -154,6 +154,17 @@ def test_parse_item_detail_theme_none_when_absent():
     assert meta["themes"] is None
 
 
+def test_parse_item_detail_listed_at_fixture():
+    html = FIXTURE.read_text(encoding="utf-8")
+    meta = parse_item_detail(html)
+    assert meta["listed_at"] == "2026-06-09T15:20:53+09:00"
+
+
+def test_parse_item_detail_listed_at_none_when_absent():
+    meta = parse_item_detail("<html><body></body></html>")
+    assert meta["listed_at"] is None
+
+
 def test_parse_item_detail_variants_shape():
     html = FIXTURE.read_text(encoding="utf-8")
     meta = parse_item_detail(html)

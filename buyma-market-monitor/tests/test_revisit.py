@@ -21,7 +21,8 @@ def test_apply_revisit_records_observation_and_state(monkeypatch):
         "name": "n", "brand": None, "category_path": None, "origin_country": None,
         "image_url": None, "description": None, "size_guide_text": None,
         "view_count": 100, "fav_count": 10, "inquiry_count": 1,
-        "brand_model_number": None, "tags": None, "themes": None, "size_chart": None,
+        "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
+        "size_chart": None,
         "image_urls": [], "variants": [],
     }
     monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: fake)
@@ -77,7 +78,7 @@ def test_run_revisit_seeds_then_fetches(tmp_path, monkeypatch):
         conn, item_id="enriched", brand=None, category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None,
         view_count=600, fav_count=0, inquiry_count=0, brand_model_number=None,
-        tags=None, themes=None, size_chart_json=None, fetched_at=now0)
+        tags=None, themes=None, size_chart_json=None, listed_at=None, fetched_at=now0)
     conn.execute("INSERT INTO stats_history VALUES ('enriched', ?, 600, 0, 0)", (now0,))
     upsert_scanned_item(conn, item_id="stranded", seller_id="s1", name="n", price=1, now=now0)
     conn.close()
@@ -86,7 +87,8 @@ def test_run_revisit_seeds_then_fetches(tmp_path, monkeypatch):
         "name": "n", "brand": None, "category_path": None, "origin_country": None,
         "image_url": None, "description": None, "size_guide_text": None,
         "view_count": 700, "fav_count": 1, "inquiry_count": 0,
-        "brand_model_number": None, "tags": None, "themes": None, "size_chart": None,
+        "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
+        "size_chart": None,
         "image_urls": [], "variants": [],
     }
     monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: fake)
@@ -121,7 +123,8 @@ def test_run_revisit_respects_deadline(tmp_path, monkeypatch):
         "name": "n", "brand": None, "category_path": None, "origin_country": None,
         "image_url": None, "description": None, "size_guide_text": None,
         "view_count": 1, "fav_count": 0, "inquiry_count": 0,
-        "brand_model_number": None, "tags": None, "themes": None, "size_chart": None,
+        "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
+        "size_chart": None,
         "image_urls": [], "variants": [],
     }
     monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: fake)
@@ -153,7 +156,7 @@ def test_run_revisit_counts_unexpected_status_as_error(tmp_path, monkeypatch):
         conn, item_id="weird", brand=None, category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None,
         view_count=600, fav_count=0, inquiry_count=0, brand_model_number=None,
-        tags=None, themes=None, size_chart_json=None, fetched_at=now0)
+        tags=None, themes=None, size_chart_json=None, listed_at=None, fetched_at=now0)
     conn.execute("INSERT INTO stats_history VALUES ('weird', ?, 600, 0, 0)", (now0,))
     conn.close()
     errs = []
@@ -187,7 +190,7 @@ def test_run_revisit_marks_deleted_on_404(tmp_path, monkeypatch):
         conn, item_id="gone", brand=None, category_path=None, origin_country=None,
         image_url=None, description=None, size_guide_text=None,
         view_count=600, fav_count=0, inquiry_count=0, brand_model_number=None,
-        tags=None, themes=None, size_chart_json=None, fetched_at=now0)
+        tags=None, themes=None, size_chart_json=None, listed_at=None, fetched_at=now0)
     conn.execute("INSERT INTO stats_history VALUES ('gone', ?, 600, 0, 0)", (now0,))
     conn.close()
 
