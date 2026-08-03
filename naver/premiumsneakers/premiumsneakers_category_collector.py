@@ -82,10 +82,18 @@ STORE_ALL_PRODUCT_URLS = {
     'shinsegae':  'https://smartstore.naver.com/ssg01/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'bobu':       'https://smartstore.naver.com/contemforest/category/a528ebf76c33464ebd3e5b2f48d309f5?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
     'luvgrande':  'https://smartstore.naver.com/fsrs/category/2sWDwiTbo5sxFgR2EEnww_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
-    'reasonershop':  'https://smartstore.naver.com/reasonershop/category/9e4d920d708943489393d2ca83467562?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'reasonershop': 'https://smartstore.naver.com/reasonershop/category/9e4d920d708943489393d2ca83467562?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
     'artemoa':    'https://smartstore.naver.com/artemoa/category/2z0OiK5VWFHnLnBfOxrLe_ALL_PRODUCT?st=RECENT&dt=IMAGE&page=1&size=80&filters=oa',
     'adonis':     'https://smartstore.naver.com/luxadonis/category/659579b33d114115bcd29901a7252c77?st=REVIEW&dt=IMAGE&page=1&size=80&filters=oa',
-    'milanobridge':  'https://smartstore.naver.com/milanobridge/category/2ufZdqjTfnEbdqvSlquqA_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'milanobridge': 'https://smartstore.naver.com/milanobridge/category/2ufZdqjTfnEbdqvSlquqA_ALL_PRODUCT?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'wardrobe':   'https://smartstore.naver.com/wdrobe/category/4c80f0950eaa4875a268df53478e8db0?st=RECENT&dt=BIG_IMAGE&page=1&size=80&filters=oa',
+    'milanosangin': 'https://smartstore.naver.com/milanosangin/category/5a2989dace2b4a7f8ce645ca54c9fe40?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'stockcontrol': 'https://smartstore.naver.com/stockcontrol/category/dea36c397bef469389651ad361c4701c?st=RECENT&dt=BIG_IMAGE&page=1&size=80&filters=oa',
+    'luxduck':    'https://smartstore.naver.com/luxori/category/82d9a55ac8b24b9b91ff21f6c18945bb?st=RECENT&dt=IMAGE&page=1&size=80&filters=oa',
+    'tesoro':     'https://smartstore.naver.com/_tesoro_/category/2zdEEJaDVs0HXTcT0r78C_ALL_PRODUCT?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
+    'thesogno':   'https://smartstore.naver.com/sogno0114/category/5b2ef3fca04d4bc98137a096f66cd669?st=RECENT&dt=IMAGE&page=1&size=80&filters=oa',
+    'hanaintstore': 'https://smartstore.naver.com/hanaintstore/category/1a618b9eba514a98b8c395eb9d1105ad?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    'gimpooutlet':  'https://smartstore.naver.com/londonwitch/category/ALL?st=POPULAR&dt=BIG_IMAGE&page=1&size=80&filters=oa',
 
     # brand.naver.com 도메인 (fetch는 /n/v2/ 사용)
     'trendmecca': 'https://brand.naver.com/trendmecca/category/af9ae952a4054de0bc4762485e779b02?st=RECENT&dt=IMAGE&page=1&size=80',
@@ -119,6 +127,12 @@ NAME_CLEANUP_PATTERNS = {
     # 2026-07-27 199건 중 42건(괄호 14/민 28) 전부 맨 앞 → 괄호 옵셔널 + ^ 앵커.
     'luvgrande':  [r'^\s*[\[(]?\s*실시간유럽\s*[\])]?\s*'],
     'pano':       [r'\[국내신상\]\s*'],
+    'wardrobe':   [r'\[워드로브\]\s*'],                         # 스토어 태그 '[워드로브]' 제거.
+    'milanosangin': [r'[\[(]\s*당일\s*[\])]\s*'],              # 당일배송 표시 '(당일)' 제거. (미세하자 당일)'은 STORE_EXCLUDE_KEYWORDS 의 '하자'로 걸러짐
+    'thesogno':   [r'(?i)\b1[0-9](?:SS|FW|SU|AW|WT|SP)\b\s*'],     # 2010년대 시즌코드(19FW 등). 전역 SEASON_PATTERN은 2X 연도만 잡아 1X를 못 걸러냄.
+    # 상품명 맨 앞 소괄호 토큰 전부 제거 — (국내아울렛) (수량한정) (국배내송) 등 종류가 다양해 내용을 열거하지 않고 '맨 앞 괄호'라는 위치로 지운다. 연속으로 붙은 것도 모두.
+    #   ★단 '스크래치'가 든 괄호는 남긴다 — 지워버리면 아래 제외 규칙이 못 걸린다.
+    'gimpooutlet': [r'^(?:\s*\((?![^)]*스크래치)(?![^)]*스크레치)[^)]{1,30}\)\s*)+'],
     # 시즌코드 6F/6S/5F/5S (=26FW/26SS/25FW/25SS). 전역 SEASON_PATTERN은 26FW 형태만 잡아 못 걸러냄.
     # "[CP컴퍼니]6F 품번…" · "프라다/5S 품번…" 둘 다 처리.
     'artemoa':    [(r'\s*/?\s*\b\d[FSW]\b\s*', ' ')],
@@ -148,6 +162,15 @@ STORE_EXCLUDE_KEYWORDS = {
     # 스크래치(하자) 상품 제외.
     # 상품명이 '스크래치'로 시작하며 품번 앞에 'S'가 붙는다.
     'adonis':     {'category': [], 'name': ['스크래치', '스크레치']},
+    # 중고/하자 상품 제외. 상품명 맨 앞 대괄호 태그로만 구분된다(카테고리는 일반 카테고리를 그대로 씀).
+    #   실제 표기: [중고] [오염] [구성품불량] [오염,구성품불량] [미세하자] [미세하자2]
+    #   → 부분일치라 아래 4개로 전부 걸린다. '불량'은 '구성품불량' 외 다른 조합도 흡수.
+    'wardrobe':   {'category': [], 'name': ['중고', '오염', '하자', '불량']},
+    # 미세하자 상품 제외 — '(미세하자)' / '(미세하자 당일)' 두 형태. 부분일치라 '하자' 하나면 충분.
+    'milanosangin': {'category': [], 'name': ['하자']},
+    'luxduck':    {'category': [], 'name': ['하자']},   # 미세하자 등
+    'thesogno':   {'category': [], 'name': ['스크래치', '스크레치']},
+    'gimpooutlet': {'category': [], 'name': ['스크래치', '스크레치']},
 }
 
 

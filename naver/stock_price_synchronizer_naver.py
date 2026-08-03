@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-재고 및 가격 동기화 스크립트 (네이버 mall 공용, 29개 = smartstore 26 + brandstore 3)
+재고 및 가격 동기화 스크립트 (네이버 mall 공용, 37개 = smartstore 34 + brandstore 3)
 
 대상 mall 목록은 아래 NAVER_MALLS / SMARTSTORE_MALLS / BRANDSTORE_MALLS 참조.
 
@@ -124,6 +124,7 @@ NAVER_MALLS = [
     'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'shinsegae',
     'luvgrande', 'bobu',
     'reasonershop', 'artemoa', 'adonis', 'milanobridge', 'stellastore',
+    'wardrobe', 'milanosangin', 'stockcontrol', 'luxduck', 'tesoro', 'thesogno', 'hanaintstore', 'gimpooutlet',
 ]
 SMARTSTORE_MALLS = {
     'premiumsneakers', 'fabstyle', 'loutique', 't1global', 'vvano', 'veroshopmall',
@@ -132,6 +133,7 @@ SMARTSTORE_MALLS = {
     'larlashoes', 'thegrande', 'upset', 'luxlimit', 'pano', 'shinsegae',
     'luvgrande', 'bobu',
     'reasonershop', 'artemoa', 'adonis', 'milanobridge',
+    'wardrobe', 'milanosangin', 'stockcontrol', 'luxduck', 'tesoro', 'thesogno', 'hanaintstore', 'gimpooutlet',
 }
 BRANDSTORE_MALLS = {'carpi', 'joharistore', 'stellastore'}
 
