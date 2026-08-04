@@ -11,7 +11,7 @@ MERGE 4단계 — RESOLVE (winner 선정 + 출품 옵션 합집합)
      (옵션마다 그걸 가진 마진O 멤버 중 매입가 최저를 소싱 포인터로)
 
 경쟁자 최저가는 새로 크롤하지 않고 기존 저장값 재사용(7단계 reconcile에서 신선도 갱신).
-마진O 멤버가 없으면 그 listing은 출품 불가(control='draft' 유지 + winner NULL).
+마진O 멤버가 없으면 그 listing은 출품 불가(winner NULL 로 표시).
 (suspend 플래그는 BUYMA가 거부하므로 절대 사용 안 함)
 
 Usage:
@@ -241,7 +241,7 @@ def run(conn, dry_run=True):
     }
 
     off_updates = []   # (margin_rate, margin_amount, is_ok, offering_id)
-    lst_updates = []   # (price, buyma_low, is_lowest, winner_id, shop, control, listing_id)
+    lst_updates = []   # (price, buyma_low, is_lowest, winner_id, shop, listing_id)
     opt_rows = []      # listing_options insert dicts
     BATCH = 1000
 
@@ -256,7 +256,7 @@ def run(conn, dry_run=True):
         if lst_updates:
             cur.executemany("""UPDATE buyma_listings
                 SET price=%s, buyma_lowest_price=%s, is_lowest_price=%s,
-                    winner_offering_id=%s, buying_shop_name=%s, control=%s, updated_at=CURRENT_TIMESTAMP
+                    winner_offering_id=%s, buying_shop_name=%s, updated_at=CURRENT_TIMESTAMP
                 WHERE id=%s""", lst_updates)
             lst_updates.clear()
         if opt_rows:
@@ -293,7 +293,7 @@ def run(conn, dry_run=True):
                 rate, amount, is_ok = r['margins'][off['id']]
                 off_updates.append((rate, amount, 1 if is_ok else 0, off['id']))
             lst_updates.append((r['selling'], r['competitor'], 1,
-                                r['winner']['id'], r['winner_shop'], 'draft', lid))
+                                r['winner']['id'], r['winner_shop'], lid))
             for o in r['listing_options']:
                 opt_rows.append({'listing_id': lid, **o})
         elif r['status'] == 'no_margin':
@@ -301,9 +301,8 @@ def run(conn, dry_run=True):
             for off in offerings:
                 rate, amount, is_ok = r['margins'][off['id']]
                 off_updates.append((rate, amount, 0, off['id']))
-            # 출품불가: suspend는 BUYMA가 거부하므로 사용 금지.
-            # control='draft' 유지 + winner_offering_id=NULL 로 표시 (register가 winner 없는 건 제외)
-            lst_updates.append((r['selling'], r['competitor'], 0, None, None, 'draft', lid))
+            # 출품불가: winner_offering_id=NULL 로 표시 (register가 winner 없는 건 제외)
+            lst_updates.append((r['selling'], r['competitor'], 0, None, None, lid))
         else:  # no_price
             stats['no_price'] += 1
 

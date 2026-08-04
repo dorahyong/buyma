@@ -910,7 +910,7 @@ class RawToAceConverter:
 
         ace_product = {
             'raw_data_id': raw_data['id'], 'source_site': raw_data['source_site'],
-            'reference_number': generate_reference_number(), 'control': 'publish', 'name': buyma_name,
+            'reference_number': generate_reference_number(), 'name': buyma_name,
             'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
             'category_id': category_info.get('buyma_category_id', 0), 
             'expected_shipping_fee': expected_shipping_fee,
@@ -1173,7 +1173,7 @@ class RawToAceConverter:
             product = ace_data['product']
             result = conn.execute(text("""
                 INSERT INTO ace_products (
-                    raw_data_id, source_site, reference_number, control, name,
+                    raw_data_id, source_site, reference_number, name,
                     brand_id, brand_name, category_id, expected_shipping_fee,
                     original_price_krw, purchase_price_krw, original_price_jpy, purchase_price_jpy,
                     price, regular_price, reference_price, reference_price_verify_count,
@@ -1182,7 +1182,7 @@ class RawToAceConverter:
                     model_no, theme_id, season_id, colorsize_comments, colorsize_comments_jp,
                     source_model_id, duty, source_product_url, source_original_price, source_sales_price
                 ) VALUES (
-                    :raw_data_id, :source_site, :reference_number, :control, :name,
+                    :raw_data_id, :source_site, :reference_number, :name,
                     :brand_id, :brand_name, :category_id, :expected_shipping_fee,
                     :original_price_krw, :purchase_price_krw, :original_price_jpy, :purchase_price_jpy,
                     :price, :regular_price, :reference_price, :reference_price_verify_count,

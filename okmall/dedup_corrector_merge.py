@@ -307,8 +307,8 @@ def load_groups_into_tables(conn, groups, ace_index, dry_run=True):
         if not dry_run:
             cur.execute("""
                 INSERT INTO buyma_listings
-                    (group_key, name, brand_id, brand_name, category_id, model_no, control, is_active)
-                VALUES (%s, %s, %s, %s, %s, %s, 'draft', 1)
+                    (group_key, name, brand_id, brand_name, category_id, model_no, is_active)
+                VALUES (%s, %s, %s, %s, %s, %s, 1)
                 ON DUPLICATE KEY UPDATE
                     name = VALUES(name),
                     brand_id = VALUES(brand_id),

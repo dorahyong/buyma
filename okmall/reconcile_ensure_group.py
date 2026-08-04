@@ -246,8 +246,8 @@ def _upsert_listing(conn, group_key, seed, existing_id):
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO buyma_listings
-                (group_key, name, brand_id, brand_name, category_id, model_no, control, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, 'draft', 1)
+                (group_key, name, brand_id, brand_name, category_id, model_no, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, 1)
             ON DUPLICATE KEY UPDATE
                 name=VALUES(name), brand_id=VALUES(brand_id), brand_name=VALUES(brand_name),
                 category_id=VALUES(category_id), model_no=VALUES(model_no), updated_at=CURRENT_TIMESTAMP
@@ -286,7 +286,7 @@ def _write_resolve(conn, listing_id, offerings, r):
                                is_margin_ok=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
                             (rate, amount, 1 if is_ok else 0, off['id']))
             cur.execute("""UPDATE buyma_listings SET price=%s, buyma_lowest_price=%s, is_lowest_price=%s,
-                           winner_offering_id=%s, buying_shop_name=%s, control='draft', updated_at=CURRENT_TIMESTAMP
+                           winner_offering_id=%s, buying_shop_name=%s, updated_at=CURRENT_TIMESTAMP
                            WHERE id=%s""",
                         (r['selling'], r['competitor'], 1, r['winner']['id'], r['winner_shop'], listing_id))
             # listing_options 재적재 (기존 비우고 union 다시)
@@ -307,7 +307,7 @@ def _write_resolve(conn, listing_id, offerings, r):
                                is_margin_ok=0, updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
                             (rate, amount, off['id']))
             cur.execute("""UPDATE buyma_listings SET price=%s, winner_offering_id=NULL,
-                           control='draft', updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
+                           updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
                         (r['selling'], listing_id))
 
 
