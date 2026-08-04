@@ -14,9 +14,11 @@ register/stock(reconcile)이 상품 처리 시 그 그룹만 묶어 merge 테이
 """
 
 import argparse
+import re
 from collections import defaultdict
 
 import reconcile_buyma_push as push
+import buyma_new_product_register as reg   # truncate_buying_shop_name (30자 축약 규칙 공유)
 from dedup_corrector_merge import canonicalize, SOURCE_PRIORITY
 from offering_options_loader_merge import load_options, INSERT_SQL as OPT_INSERT_SQL
 from resolve_merge import resolve_listing, DEFAULT_SHIPPING_FEE
@@ -184,7 +186,7 @@ def _resolve_inputs(conn, listing_id, listing_row, offerings):
                 options_by_offering[r['offering_id']].append(r)
         if ace_ids:
             fmt = ','.join(['%s'] * len(ace_ids))
-            cur.execute(f"""SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at, buying_shop_name
+            cur.execute(f"""SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at
                             FROM ace_products WHERE id IN ({fmt})""", ace_ids)
             ace_info = {r['id']: r for r in cur.fetchall()}
     return options_by_offering, ace_info
@@ -240,19 +242,38 @@ def _group_key(seed_canon, members, existing_id):
     return min(canons, key=len)
 
 
+def make_buying_shop_name(brand_name):
+    """매입처 이름 = 브랜드명(일본어 괄호 제거) + 正規販売店. 길이 축약까지 끝낸 '보낼 값'.
+
+    ★ 이 값은 BUYMA 가 게시 후 변경을 허용하지 않는다("変更できません").
+      그래서 목록(buyma_listings)에 한 번 정해두면 이후 절대 덮어쓰지 않는다.
+      등록 전에만 채우고, 등록된 뒤에는 그 값이 곧 BUYMA 가 아는 값이다.
+
+    ★ 30자(반각) 축약을 여기서 함께 한다. 예전에는 저장은 원본, 전송 직전에만 축약해서
+      긴 브랜드는 DB 값과 BUYMA 값이 서로 달랐다(2026-08-04 실측 180건).
+      정체성 값이 실제로 보낸 값과 달라지면 안 되므로, 저장 전에 축약해 둘을 일치시킨다.
+    """
+    if not brand_name:
+        return None
+    base = re.split(r'[\(（]', brand_name)[0].strip()
+    if not base:
+        return None
+    return reg.truncate_buying_shop_name(f"{base}正規販売店")
+
+
 def _upsert_listing(conn, group_key, seed, existing_id):
     if existing_id:
         return existing_id
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO buyma_listings
-                (group_key, name, brand_id, brand_name, category_id, model_no, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, 1)
+                (group_key, name, brand_id, brand_name, category_id, model_no, buying_shop_name, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, 1)
             ON DUPLICATE KEY UPDATE
                 name=VALUES(name), brand_id=VALUES(brand_id), brand_name=VALUES(brand_name),
                 category_id=VALUES(category_id), model_no=VALUES(model_no), updated_at=CURRENT_TIMESTAMP
         """, (group_key, seed['name'], seed['brand_id'], seed['brand_name'],
-              seed['category_id'], seed['model_no']))
+              seed['category_id'], seed['model_no'], make_buying_shop_name(seed['brand_name'])))
         cur.execute("SELECT id FROM buyma_listings WHERE group_key=%s", (group_key,))
         return cur.fetchone()['id']
 
@@ -285,10 +306,23 @@ def _write_resolve(conn, listing_id, offerings, r):
                 cur.execute("""UPDATE source_offerings SET margin_rate=%s, margin_amount_krw=%s,
                                is_margin_ok=%s, updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
                             (rate, amount, 1 if is_ok else 0, off['id']))
+            # ★ buying_shop_name 은 여기서 갱신하지 않는다 — 게시 후 못 바꾸는 값이라
+            #   목록에 처음 정해진 값이 곧 BUYMA 가 아는 값이다(소싱 몰이 바뀌어도 그대로).
             cur.execute("""UPDATE buyma_listings SET price=%s, buyma_lowest_price=%s, is_lowest_price=%s,
-                           winner_offering_id=%s, buying_shop_name=%s, updated_at=CURRENT_TIMESTAMP
+                           winner_offering_id=%s, updated_at=CURRENT_TIMESTAMP
                            WHERE id=%s""",
-                        (r['selling'], r['competitor'], 1, r['winner']['id'], r['winner_shop'], listing_id))
+                        (r['selling'], r['competitor'], 1, r['winner']['id'], listing_id))
+            # 비어 있을 때만 채운다. 규칙은 make_buying_shop_name 과 동일(브랜드명 + 正規販売店).
+            #   ★ 아직 등록 안 된 목록만. 이미 등록된 행은 BUYMA 가 아는 값을 우리가 알 수 없으므로
+            #     비어 있어도 채우지 않는다(수정 요청에 이 항목을 안 보내므로 문제 없음).
+            cur.execute("""UPDATE buyma_listings
+                              SET buying_shop_name = CONCAT(
+                                    TRIM(SUBSTRING_INDEX(SUBSTRING_INDEX(brand_name, '(', 1), '（', 1)),
+                                    '正規販売店')
+                            WHERE id=%s
+                              AND buyma_product_id IS NULL
+                              AND (buying_shop_name IS NULL OR buying_shop_name='')
+                              AND brand_name IS NOT NULL AND brand_name<>''""", (listing_id,))
             # listing_options 재적재 (기존 비우고 union 다시)
             cur.execute("UPDATE listing_options SET is_active=0 WHERE listing_id=%s", (listing_id,))
             for o in r['listing_options']:

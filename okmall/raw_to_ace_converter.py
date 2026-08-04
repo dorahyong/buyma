@@ -847,7 +847,6 @@ class RawToAceConverter:
 
         available_until = (datetime.now() + timedelta(days=DEFAULT_AVAILABLE_DAYS)).strftime("%Y-%m-%d")
         brand_name_for_shop = strip_brand_jp(brand_info.get('buyma_brand_name', ''))
-        buying_shop_name = BUYING_SHOP_NAME_TEMPLATE.format(brand_name=brand_name_for_shop)
 
         season_type = json_data.get('season')
         season_id = convert_season_to_id(season_type)
@@ -916,7 +915,7 @@ class RawToAceConverter:
             'reference_price_verify_count': 0, 'margin_amount_krw': None, 'margin_rate': None,
             'buyma_lowest_price': None, 'is_lowest_price': 0, 'available_until': available_until,
             'buying_area_id': BUYMA_FIXED_VALUES['buying_area_id'], 'shipping_area_id': BUYMA_FIXED_VALUES['shipping_area_id'],
-            'buying_shop_name': buying_shop_name, 'model_no': raw_data.get('model_id'), 'theme_id': BUYMA_FIXED_VALUES['theme_id'],
+            'model_no': raw_data.get('model_id'), 'theme_id': BUYMA_FIXED_VALUES['theme_id'],
             'season_id': season_id, 'colorsize_comments': colorsize_comments, 
             'colorsize_comments_jp': colorsize_comments_jp,
             'duty': BUYMA_FIXED_VALUES['duty'],
@@ -1171,7 +1170,7 @@ class RawToAceConverter:
                     original_price_krw, purchase_price_krw, original_price_jpy, purchase_price_jpy,
                     price, regular_price, reference_price, reference_price_verify_count,
                     margin_amount_krw, margin_rate, buyma_lowest_price, is_lowest_price,
-                    available_until, buying_area_id, shipping_area_id, buying_shop_name,
+                    available_until, buying_area_id, shipping_area_id,
                     model_no, theme_id, season_id, colorsize_comments, colorsize_comments_jp,
                     source_model_id, duty, source_product_url, source_original_price, source_sales_price
                 ) VALUES (
@@ -1180,7 +1179,7 @@ class RawToAceConverter:
                     :original_price_krw, :purchase_price_krw, :original_price_jpy, :purchase_price_jpy,
                     :price, :regular_price, :reference_price, :reference_price_verify_count,
                     :margin_amount_krw, :margin_rate, :buyma_lowest_price, :is_lowest_price,
-                    :available_until, :buying_area_id, :shipping_area_id, :buying_shop_name,
+                    :available_until, :buying_area_id, :shipping_area_id,
                     :model_no, :theme_id, :season_id, :colorsize_comments, :colorsize_comments_jp,
                     :source_model_id, :duty, :source_product_url, :source_original_price, :source_sales_price
                 )

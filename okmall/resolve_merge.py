@@ -124,9 +124,9 @@ def load_all(conn):
         options_by_offering[r['offering_id']].append(r)
     logger.info(f"options 로드: {sum(len(v) for v in options_by_offering.values())}")
 
-    # ace 가격/정보: buyma_lowest_price(경쟁자), 신선도, buying_shop_name
+    # ace 가격/정보: buyma_lowest_price(경쟁자), 신선도
     cur.execute("""
-        SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at, buying_shop_name
+        SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at
         FROM ace_products WHERE is_active=1
     """)
     ace_info = {r['id']: r for r in cur.fetchall()}
@@ -225,7 +225,6 @@ def resolve_listing(listing, offerings, options_by_offering, ace_info, fee_map):
         'selling': selling,
         'margins': margins,
         'winner': winner,
-        'winner_shop': (ace_info.get(winner['ace_product_id']) or {}).get('buying_shop_name'),
         'listing_options': listing_options,
     }
 
@@ -241,7 +240,7 @@ def run(conn, dry_run=True):
     }
 
     off_updates = []   # (margin_rate, margin_amount, is_ok, offering_id)
-    lst_updates = []   # (price, buyma_low, is_lowest, winner_id, shop, listing_id)
+    lst_updates = []   # (price, buyma_low, is_lowest, winner_id, listing_id)
     opt_rows = []      # listing_options insert dicts
     BATCH = 1000
 
@@ -254,9 +253,10 @@ def run(conn, dry_run=True):
                 WHERE id=%s""", off_updates)
             off_updates.clear()
         if lst_updates:
+            # ★ buying_shop_name 은 갱신하지 않는다 — 게시 후 못 바꾸는 값이라 목록에 정해진 값이 곧 진실.
             cur.executemany("""UPDATE buyma_listings
                 SET price=%s, buyma_lowest_price=%s, is_lowest_price=%s,
-                    winner_offering_id=%s, buying_shop_name=%s, updated_at=CURRENT_TIMESTAMP
+                    winner_offering_id=%s, updated_at=CURRENT_TIMESTAMP
                 WHERE id=%s""", lst_updates)
             lst_updates.clear()
         if opt_rows:
@@ -293,7 +293,7 @@ def run(conn, dry_run=True):
                 rate, amount, is_ok = r['margins'][off['id']]
                 off_updates.append((rate, amount, 1 if is_ok else 0, off['id']))
             lst_updates.append((r['selling'], r['competitor'], 1,
-                                r['winner']['id'], r['winner_shop'], lid))
+                                r['winner']['id'], lid))
             for o in r['listing_options']:
                 opt_rows.append({'listing_id': lid, **o})
         elif r['status'] == 'no_margin':
@@ -302,7 +302,7 @@ def run(conn, dry_run=True):
                 rate, amount, is_ok = r['margins'][off['id']]
                 off_updates.append((rate, amount, 0, off['id']))
             # 출품불가: winner_offering_id=NULL 로 표시 (register가 winner 없는 건 제외)
-            lst_updates.append((r['selling'], r['competitor'], 0, None, None, lid))
+            lst_updates.append((r['selling'], r['competitor'], 0, None, lid))
         else:  # no_price
             stats['no_price'] += 1
 

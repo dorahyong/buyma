@@ -14,31 +14,49 @@
 > - 재고동기화의 공용 부분(마진 계산·최저가 조회·DB 반영 등)은 `okmall\stock_common.py` 한 곳에 있다.
 >   몰별 파일에 남은 것은 사이트 긁기·옵션 대조·요청 간격처럼 **몰마다 달라야 하는 것**뿐이다.
 
+> ## ★ 게시 후 편집 불가 (명세)
+> 아래 7개는 **한 번 게시되면 바꿀 수 없다.** 수정 요청에 넣어도 반영되지 않는다.
+> 등록 시점에 틀리면 그 상품은 끝까지 틀린 값으로 남는다 — 새로 올리는 수밖에 없다.
+>
+> `name` · `brand_id` · `brand_name` · `category_id` · `buying_area_id` · `buying_shop_name` · `shipping_area_id`
+>
+> **★ 실제로 쏴서 확인한 규칙 (2026-08-04)** — 수정 요청에서 이 값들은
+> **빼거나, 바이마가 가진 값과 똑같이** 보내야 한다. **다른 값을 넣으면 요청 전체가 거부된다.**
+>
+> | 수정 요청에 넣은 방식 | 결과 |
+> |---|---|
+> | 아예 안 보냄 | ✅ 성공 (가격 변경 반영) |
+> | 바이마와 같은 값 | ✅ 성공 |
+> | 바이마와 다른 값 | ❌ **거부** `買付先ショップ名は変更できません` — **같이 보낸 가격 변경까지 무산** |
+>
+> 그래서 우리는 등록 성공 시 이 값들을 `locked_*` 로 굳혀두고, 수정 때는 굳힌 값을 그대로 다시 보낸다.
+> (`buying_shop_name` 만은 아예 보내지 않는다 — 굳혀둘 자리가 없어 목록 값을 그대로 쓴다)
+>
+> ⚠️ 뒤집어 말하면, **굳힌 값이 바이마와 어긋난 상품은 수정이 영구히 실패**한다. 재고·가격도 못 나간다.
+
 ---
 
 # 진행 현황 (명세 페이지에 나오는 순서 그대로)
 
 | # | 파라미터 | 상태 | # | 파라미터 | 상태 |
 |---|---|---|---|---|---|
-| 1 | control | ✅ | 18 | buying_area_id | |
-| 2 | reference_number | ✅ | 19 | buying_shop_name | |
-| 3 | name | ⬜ 다음 | 20 | shipping_area_id | |
-| 4 | id | ✅ | 21 | buyer_notes | |
-| 5 | status | ✅ (남은 문제 있음) | 22 | duty | |
-| 6 | comments | ✅ | 23 | tags | |
+| 1 | control | ✅ | 18 | buying_area_id | ✅ |
+| 2 | reference_number | ✅ | 19 | buying_shop_name | ✅ |
+| 3 | name | ⬜ 다음 | 20 | shipping_area_id | ✅ |
+| 4 | id | ✅ | 21 | buyer_notes | ✅ |
+| 5 | status | ✅ (남은 문제 있음) | 22 | duty | ✅ |
+| 6 | comments | ✅ | 23 | tags | ✅ |
 | 7 | brand_id | | 24 | images | |
-| 8 | brand_name | | 25 | shipping_methods | |
+| 8 | brand_name | | 25 | shipping_methods | ✅ |
 | 9 | model_id | | 26 | style_numbers | |
 | 10 | category_id | | 27 | options | |
-| 11 | theme_id | | 28 | size_unit | |
-| 12 | season_id | | 29 | colorsize_comments | |
+| 11 | theme_id | ✅ | 28 | size_unit | |
+| 12 | season_id | ✅ | 29 | colorsize_comments | |
 | 13 | price | | 30 | variants | |
 | 14 | list_price | | 31 | order_quantity | |
-| 15 | regular_price | | 32 | shop_urls | |
-| 16 | reference_price | | 33 | updated_at | |
-| 17 | available_until | | 34 | created_at | |
-
----
+| 15 | regular_price | | 32 | shop_urls | ✅ |
+| 16 | reference_price | | 33 | updated_at | ✅ |
+| 17 | available_until | | 34 | created_at | ✅ |
 
 # 요약
 
@@ -53,6 +71,7 @@
 | **단계** | REGISTER(신규등록·정지분 부활), STOCK(재고·가격 반영 수정) |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 값. 몰별 차이 없음 |
+| **게시 후 편집** | 가능 (편집 불가 7개 목록에 없음) |
 | **바꾸려면 어디를** | `okmall\buyma_new_product_register.py` → `build_request_json()` 의 `"control"` 한 줄. **파일 1개** (몰 수와 무관) |
 | **안 쓰는 값** | `draft`·`suspend` 안 씀 / `delete` 영구 폐기. 하차는 재고 API(출품정지)로 하고 그 요청엔 이 파라미터가 없음 |
 | **남은 처리** | 없음 — `ace_products.control`·`buyma_listings.control` **DROP 완료(2026-08-04)** |
@@ -69,6 +88,7 @@
 | **단계** | REGISTER(발급·등록), STOCK(수정·출품정지). 수집·가격·번역·이미지·썸네일 단계는 이 값을 만지지 않는다 |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 규칙(UUID 1개). 몰별 차이 없음 |
+| **게시 후 편집** | 가능. 단 `id` 가 함께 나가면 이 값은 무시된다 |
 | **바꾸려면 어디를** | 발급 규칙: `okmall\reconcile_buyma_push.py` → `issue_reference_number()`<br>요청서에 넣는 방식: 같은 파일 `build_create_request()` · `build_edit_request()` · `execute_retire()`. **파일 1개** |
 | **되돌아오는 값** | 바이마가 웹훅으로 이 번호를 돌려주고, 그걸로 우리 행을 찾아 상품번호·게시상태를 기록한다 |
 | **남은 처리** | 없음 — `ace_products.reference_number` **DROP 완료(2026-08-04)**. 번호는 `buyma_listings` 에만 존재 |
@@ -77,6 +97,8 @@
 ## 3. name (필수)
 
 *(작성 예정 — 몰마다 처리가 갈리는 첫 파라미터)*
+
+> ⚠️ **게시 후 편집 불가.** 등록 시점에 틀리면 그 상품은 끝까지 틀린 이름으로 남는다.
 
 ## 4. id (읽기 전용, reference_number 없으면 필수)
 
@@ -89,6 +111,7 @@
 | **단계** | REGISTER(등록 후 회수·판정), STOCK(수정 시 사용) |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 동일 |
+| **게시 후 편집** | — (읽기 전용, 바이마가 발급) |
 | **바꾸려면 어디를** | 요청서에 넣는 곳: `okmall\reconcile_buyma_push.py` → `build_edit_request()` 의 마지막 줄(`req['product']['id']`)<br>판정 기준: `okmall\authority_flag.py` → `registered_sql()`. **각각 파일 1개** |
 | **또 다른 쓰임** | 전송 말고 **판정**에 쓰인다: 이 값이 있으면 "이미 바이마에 있음" → 신규등록 차단(중복 방지), 수정 갈래로 보냄 |
 | **남은 처리** | 없음 — `ace_products.buyma_product_id` **DROP 완료(2026-08-04)**.<br>⚠️ unified 밖(청소도구·fast_price·buyma_stats)은 이 컬럼을 읽고 있어 실행 시 깨진다 — 별도 정리 필요 |
@@ -105,6 +128,7 @@
 | **단계** | 되돌아오는 값이므로 단계가 아니라 **웹훅**에서 기록. 그 뒤 REGISTER·STOCK 이 읽어서 갈래를 가름 |
 | **실행 파일** | 기록: 웹훅 서버(`okmall_reference\server.py`) — unified 밖<br>읽기: `okmall\reconcile_runner.py` |
 | **공용 / 몰별** | **공용** |
+| **게시 후 편집** | — (읽기 전용, 바이마가 정함) |
 | **바꾸려면 어디를** | 바이마 값 → 우리 값 번역: 웹훅 서버 한 곳<br>그 값으로 무엇을 할지: `okmall\reconcile_runner.py` |
 | **무엇을 가르나** | `deleted` → 재등록 안 함 / `soldout` → 같은 번호로 되살림 / `pending`·`fail`·`success` → 신규등록 대상에서 제외 |
 | **남은 처리** | ① 바이마 9값 중 **4개를 안 본다**(`admin_suspended`·`not_approved`·`in_review`·`admin_deleted`) → 정지·비승인 상품이 `success`·게시중으로 기록될 수 있음<br>② `fail` 30,425건이 방치돼 있다(아래 상세) |
@@ -121,11 +145,196 @@
 | **단계** | REGISTER(신규등록·부활), STOCK(재고·가격 반영 수정) — 둘 다 reconcile 을 거쳐 같은 함수로 모임 |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py` / STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 안내문 |
+| **게시 후 편집** | **가능** — 안내문을 고치면 다음 수정부터 전 상품에 반영된다 |
 | **바꾸려면 어디를** | `okmall\buyma_new_product_register.py` → `build_request_json()` 안의 `fixed_comments` 상수. **파일 1개**<br>⚠️ `fast_price_updater.py` 에 같은 조립식이 한 벌 더 있다(지금 미가동) — 고칠 때 함께 |
 | **한도** | 3,000자. **실측 1,217~1,281자로 여유 충분** |
 | **커밋** | (문서만) |
 
+## 11. theme_id (선택)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 코드에 박힌 **고정값 `98`** |
+| **어디에 저장되나** | 요청서용으로는 저장 안 함. `ace_products.theme_id` 컬럼이 있으나 **752,175행 전부 `98`** 이고 요청서는 이 컬럼을 안 읽는다 |
+| **어떻게 가공되나** | 가공 없음 |
+| **언제 나가나** | 신규등록·수정 요청마다 항상 `98` |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall
+econcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | **공용** — 40개 몰 동일 |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | `okmalluyma_new_product_register.py` → `BUYMA_FIXED_VALUES` 한 곳. **파일 1개** |
+| **남은 처리** | `ace_products.theme_id` 는 전 행 `98` 이고 읽는 코드 없음 → **DROP 후보** |
+
+## 12. season_id (선택)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 변환기가 수집 데이터의 시즌 표기를 숫자로 바꿔 `ace_products.season_id` 에 넣도록 돼 있다 |
+| **어디에 저장되나** | `ace_products.season_id` — 그런데 **752,175행 전부 NULL** (실제로 채워진 적 없음) |
+| **어떻게 가공되나** | `convert_season_to_id()` 로 변환하게 돼 있으나 결과가 남지 않음 |
+| **언제 나가나** | **나가지 않는다.** 요청서에 이 항목이 없다 |
+| **단계** | CONVERT 에서 계산만 하고 버려짐 |
+| **실행 파일** | `okmall
+aw_to_ace_converter.py` · `kasina
+aw_to_converter_kasina.py` |
+| **공용 / 몰별** | 공용 |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | 보내려면 `build_request_json()` 에 항목 추가 필요 |
+| **남은 처리** | 전 행 NULL + 미전송 → **DROP 후보** |
+
+## 18. buying_area_id (필수)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 코드에 박힌 **고정값 `2002003000`**(한국) |
+| **어디에 저장되나** | 저장 안 함 |
+| **어떻게 가공되나** | 가공 없음 |
+| **언제 나가나** | 신규등록·수정 요청마다 항상 같은 값 |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall
+econcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | **공용** — 40개 몰 전부 한국 |
+| **게시 후 편집** | **불가** — 게시 후 바꿀 수 없음 |
+| **바꾸려면 어디를** | `okmalluyma_new_product_register.py` → `BUYMA_FIXED_VALUES` 한 곳. **파일 1개** |
+
+## 19. buying_shop_name (선택, 매입처 이름)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 목록을 만들 때 브랜드명으로 만든다 — `<브랜드>正規販売店` (일본어 괄호 부분 제거) |
+| **어디에 저장되나** | **`buyma_listings.buying_shop_name` 한 곳.**<br>(`ace_products.buying_shop_name` 은 2026-08-04 **DROP 완료** — 원본이 두 곳이던 것을 정리) |
+| **어떻게 가공되나** | 반각 30자 초과 시 `正規販売店`→`正規店`, 그래도 넘으면 `BRAND 正規販売店` 으로 축약 |
+| **언제 나가나** | **신규등록에만.** 수정 요청에는 **넣지 않는다**(게시 후 못 바꾸는 값) |
+| **단계** | REGISTER |
+| **실행 파일** | `okmall
+econcile_runner.py --mode auto --scope new --source <몰>` |
+| **공용 / 몰별** | 공용 규칙, 값은 브랜드마다 다름 |
+| **게시 후 편집** | **불가.** 소싱 몰이 더 싼 곳으로 바뀌어도 바이마에 보이는 매입처 이름은 등록 당시 그대로 |
+| **바꾸려면 어디를** | 생성 규칙: `okmall
+econcile_ensure_group.py` → `make_buying_shop_name()`<br>축약 규칙: `okmalluyma_new_product_register.py` → `truncate_buying_shop_name()` |
+| **정체성 취급** | 목록에 값이 있으면 **절대 덮어쓰지 않는다.** 비어 있고 아직 등록 전인 목록만 채운다.<br>생성 시 **30자 축약까지 끝내서 저장**하므로 저장값 = 보낼 값 |
+| **남은 처리** | ① 게시중인데 값이 비어 있는 76건 ② 저장값이 30자를 넘는 등록분 142건<br>둘 다 **수정 요청에 이 값을 안 보내므로 지금은 영향 없음**. 다만 나중에 수정 요청에 넣기 시작하면 그 상품들은 전부 거부된다 |
+| **커밋** | (작성 시점 미커밋) |
+
+## 20. shipping_area_id (필수)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 코드에 박힌 **고정값 `2002003000`**(한국) |
+| **어디에 저장되나** | 저장 안 함 |
+| **어떻게 가공되나** | 가공 없음 |
+| **언제 나가나** | 신규등록·수정 요청마다 항상 같은 값 |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall
+econcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | **공용** |
+| **게시 후 편집** | **불가** |
+| **바꾸려면 어디를** | `okmalluyma_new_product_register.py` → `BUYMA_FIXED_VALUES` 한 곳. **파일 1개** |
+
+## 21. buyer_notes (선택)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | **만들지 않는다** |
+| **어디에 저장되나** | 해당 컬럼 없음 |
+| **어떻게 가공되나** | — |
+| **언제 나가나** | **나가지 않는다.** 코드에 등장 0회 |
+| **단계** | 해당 없음 |
+| **실행 파일** | — |
+| **공용 / 몰별** | — |
+| **게시 후 편집** | 가능 (우리만 보는 출품자 메모, 3,000자) |
+| **바꾸려면 어디를** | 쓰려면 `build_request_json()` 에 항목 추가 |
+
+## 22. duty (선택)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 코드에 박힌 **고정값 `included`**(관세 포함) |
+| **어디에 저장되나** | 저장 안 함 |
+| **어떻게 가공되나** | 가공 없음 |
+| **언제 나가나** | 신규등록·수정 요청마다 항상 `included` |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall
+econcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | **공용** — 40개 몰 동일 |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | `okmalluyma_new_product_register.py` → `BUYMA_FIXED_VALUES` 한 곳. **파일 1개** (`none`/`included`/`refundable` 중) |
+
+## 23. tags (선택)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | **만들지 않는다** |
+| **어디에 저장되나** | 해당 컬럼 없음 |
+| **어떻게 가공되나** | — |
+| **언제 나가나** | **나가지 않는다.** 코드에 등장 0회 |
+| **단계** | 해당 없음 |
+| **실행 파일** | — |
+| **공용 / 몰별** | — |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | 쓰려면 `build_request_json()` 에 항목 추가 |
+
+## 25. shipping_methods (필수)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 코드에 박힌 **고정값 `[1063035]`** — 배송방법 1개 |
+| **어디에 저장되나** | 저장 안 함 |
+| **어떻게 가공되나** | `[{"shipping_method_id": 1063035}]` 형태로 감싸서 보냄 |
+| **언제 나가나** | 신규등록·수정 요청마다 항상 같은 값 |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall
+econcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | **공용** |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | `okmalluyma_new_product_register.py` → `BUYMA_FIXED_VALUES` 한 곳. **파일 1개** |
+
+## 32. shop_urls (선택, 매입처)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 그 목록에 딸린 **소싱처 전부**(`source_offerings`)에서 매번 만든다 |
+| **어디에 저장되나** | 저장 안 함 (소싱처 정보는 `source_offerings` 에 있고, 그걸로 조립) |
+| **어떻게 가공되나** | winner 맨 앞 + 나머지는 매입가 싼 순.<br>label=`몰 ₩매입가`, description=재고 있는 옵션(`사이즈/색상`) |
+| **언제 나가나** | 신규등록·수정 요청마다 새로 조립해 보냄 |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall
+econcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | 공용 규칙, 내용은 목록마다 다름 |
+| **게시 후 편집** | **가능** — 소싱이 바뀌면 여기로 갱신한다(매입처 이름은 못 바꾸므로 이 값이 실질 정보) |
+| **한도** | **15칸.** 초과 시 422 거부 `買付先は15件以内で入力してください` → 비싼 몰부터 잘라 맞춤 |
+| **바꾸려면 어디를** | `okmall
+econcile_buyma_push.py` → `_shop_urls()` / 상한은 `reg.MAX_SHOP_URLS` |
+
+## 33. updated_at (읽기 전용)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | **바이마가 기록한다** |
+| **어디에 저장되나** | 따로 저장 안 함 (웹훅 응답 JSON 안에 들어옴) |
+| **어떻게 가공되나** | — |
+| **언제 나가나** | **나가지 않는다** |
+| **단계** | — |
+| **실행 파일** | — |
+| **공용 / 몰별** | — |
+| **게시 후 편집** | — (읽기 전용) |
+
+## 34. created_at (읽기 전용)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | **바이마가 기록한다** (그 상품이 처음 만들어진 시각) |
+| **어디에 저장되나** | 따로 저장 안 함. 우리 게시일수는 별도로 `buyma_listing_days` 에서 관리 |
+| **어떻게 가공되나** | — |
+| **언제 나가나** | **나가지 않는다** |
+| **단계** | — |
+| **실행 파일** | — |
+| **공용 / 몰별** | — |
+| **게시 후 편집** | — (읽기 전용) |
+
 ---
+
 
 # 상세
 
@@ -482,3 +691,83 @@ STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
 
 **주의**: unified 밖 도구(`buyma_cleaners/*`, `fast_price_updater.py`, `buyma_stats/*`,
 `thumbnail_buyma_apply.py`)는 아직 `ace_products.buyma_product_id` 를 읽는다. 실행하면 깨진다.
+
+---
+
+## 19. buying_shop_name
+
+### 명세
+매입처(買付先ショップ名). 반각 30자. **게시 후 변경 불가.**
+
+### 우리 처리 — 목록이 단독 보관, 등록 후엔 손대지 않는다
+
+```
+목록 생성   make_buying_shop_name(브랜드명)  →  buyma_listings.buying_shop_name
+등록(CREATE) 그 값을 요청서에 넣어 보냄 (30자 초과 시 축약)
+수정(EDIT)  ★ 넣지 않는다 — 편집 불가 값이라 다르면 요청 전체가 거부되므로
+```
+
+- 값이 이미 있으면 **절대 덮어쓰지 않는다.** 비어 있고 아직 등록 전인 목록만 채운다.
+- 2026-08-04 이전에는 매 사이클 winner(가장 싼 소싱몰)의 ace 값으로 목록을 덮어썼다.
+  바이마 값은 등록 당시 그대로인데 우리 값만 바뀌어 장부가 어긋났다. 그 동작을 멈췄다.
+
+### 왜 재생성하지 않고 저장된 값을 쓰나 (실측)
+
+게시중 82,080건을 지금 규칙으로 다시 만들어보니 **12,769건(15%)이 저장값과 달랐다.**
+
+```
+listing=1  brand='A.P.C.(アーペーセー)'  저장='A.P.C正規販売店'   재생성='A.P.C.正規販売店'
+listing=2  같은 브랜드                    저장='A.P.C.正規販売店'  ← 같은 브랜드인데 저장값이 서로 다름
+```
+
+과거 규칙으로 만들어진 값이 섞여 있다. 재생성하면 바이마와 어긋난 값으로 덮어쓰게 되므로,
+**저장된 값을 진실로 삼는다.**
+
+### 바이마 값과 대조 (2026-08-04)
+
+웹훅이 돌려준 상품 JSON(`buyma_listing_api_logs.api_response_json`)에 이 값이 들어 있어 직접 대조했다.
+
+| 결과 | 건수 |
+|---|---|
+| 일치 | 33,992 |
+| **어긋남** | **690** → 바이마 값으로 정정(689건, 삭제분 1건 제외) |
+| 웹훅에 값이 없어 판정 불가 | 14,373 |
+
+어긋난 유형: 대소문자(`Nike` vs `NIKE`), 점 유무(`A.P.C.` vs `A.P.C`), 그리고 **브랜드 자체가 다른 것**.
+브랜드가 다른 1건(listing#2, A.P.C. 상품인데 매입처가 `HERNO正規販売店`)은 매입처를 고칠 수 없으므로 **삭제**했다.
+
+- 정정 스크립트: `migrations/fix_buying_shop_name_from_webhook.py`
+- ace 컬럼 제거·백필: `migrations/move_buying_shop_name_to_listings.py`
+
+### 편집 불가 규칙 실측 (listing#62 / buyma 135117241)
+
+가격을 1엔씩 바꿔가며 세 가지 방식으로 실제 수정 요청을 보냈다.
+
+| 매입처를 | 응답 | 웹훅 결과 |
+|---|---|---|
+| 안 보냄 | 201 | ✅ 가격 반영 (9,040→9,041, 9,041→9,039 두 번 재현) |
+| 바이마와 같은 값 | 201 | ✅ 가격 반영 |
+| **다른 값** | 201 | ❌ `{'buying_shop_name': ['買付先ショップ名は変更できません。']}` — **가격 변경까지 무산** |
+
+**201 은 접수일 뿐이고 성패는 웹훅으로만 알 수 있다**는 것도 다시 확인됐다.
+
+### 길이 축약을 생성 시점으로 옮김 (2026-08-04)
+
+예전에는 **저장은 원본, 전송 직전에만 축약**했다. 그래서 30자를 넘는 브랜드는 DB 값과 BUYMA 값이 달랐다.
+
+```
+DB      'PLEATS PLEASE ISSEY MIYAKE正規販売店'   (36자)
+BUYMA   축약본
+```
+
+정체성으로 삼는 값이 실제로 보낸 값과 다르면 안 되므로, `make_buying_shop_name()` 이 **축약까지 끝낸 값**을 돌려주도록 바꿨다.
+
+실측 180건의 처리:
+
+| 분류 | 건수 | 처리 |
+|---|---|---|
+| 미등록(상품번호 없음) | 38 | 아직 안 보냈으므로 축약값으로 정정 (백업 `fix_shopname_len_backup_*.json`) |
+| 등록됨 + 웹훅에 바이마 값 있음 | 0 | 해당 없음(689건 보정 때 이미 맞춰짐) |
+| **등록됨 + 바이마 값 모름** | **142** | **손대지 않음** — 바이마가 어떤 축약본을 갖고 있는지 알 수 없다. 추측으로 덮으면 또 어긋난다 |
+
+142건은 **수정 요청에 이 값을 안 보내는 한 무해**하다. 넣기 시작하면 그 상품들은 전부 거부된다.
