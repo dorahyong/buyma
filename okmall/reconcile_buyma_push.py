@@ -543,34 +543,17 @@ def _build_ov(conn, listing):
     return options_rows, reg.build_variants_array(variant_rows)
 
 
-def published_member(conn, listing):
-    """그룹에서 BUYMA 등록된 멤버 ace (edit 대상 정체성). edit 모드는 정확히 1개."""
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT a.id AS ace_id, a.buyma_product_id, a.is_buyma_locked,
-                   a.locked_name, a.locked_brand_id, a.locked_category_id, a.locked_reference_number,
-                   a.name, a.brand_id, a.category_id, a.source_site
-            FROM source_offerings so JOIN ace_products a ON a.id = so.ace_product_id
-            WHERE so.listing_id=%s AND a.is_published = 1
-            ORDER BY a.id LIMIT 1
-        """, (listing['id'],))
-        return cur.fetchone()
-
-
 def build_edit_request(conn, listing, pub):
-    """EDIT 요청 JSON. 불변필드는 pub(기존 게시본)의 locked값 유지, id 부착."""
+    """EDIT 요청 JSON. 불변필드는 pub(목록의 locked값) 유지, id 부착."""
     options_rows, formatted_variants = _build_ov(conn, listing)
     winner = _winner_offering(conn, listing)
-    if authority_flag.use_listing_authority():
-        # 새 방식: 목록 자신의 이미지 우선(네이티브 목록), 없으면 게시/winner ace 이미지로 폴백
-        images = _images(conn, listing['id'])
-        if not images and pub.get('ace_id'):
-            images = reg.get_product_images(conn, pub['ace_id'])
-        if not images:
-            # 이미지 0장을 그대로 edit 하면 라이브 페이지 이미지 훼손/거부 위험 → edit 안 함(스킵)
-            return None
-    else:
-        images = reg.get_product_images(conn, pub['ace_id'])  # 기존 게시 멤버 이미지 유지
+    # 목록 자신의 이미지 우선(네이티브 목록), 없으면 winner ace 이미지로 폴백
+    images = _images(conn, listing['id'])
+    if not images and pub.get('ace_id'):
+        images = reg.get_product_images(conn, pub['ace_id'])
+    if not images:
+        # 이미지 0장을 그대로 edit 하면 라이브 페이지 이미지 훼손/거부 위험 → edit 안 함(스킵)
+        return None
     locked = (pub.get('is_buyma_locked') == 1)
 
     def L(lk, fb):
@@ -624,16 +607,11 @@ def _identity_from_listing(conn, listing):
 
 
 def execute_edit(conn, listing, dry_run=True):
-    """한 listing EDIT. dry_run=True면 POST 안 함."""
-    pub = published_member(conn, listing)
-    if authority_flag.use_listing_authority():
-        # 새 방식: 목록 자신이 정체성 권위. 게시 ace 멤버가 없거나(=D 케이스) 목록 번호와
-        # 다르면 목록 기준으로 edit. 게시멤버가 목록 번호와 일치하면 기존과 동일(pub 유지).
-        l_bid = listing.get('buyma_product_id')
-        if l_bid and (not pub or pub.get('buyma_product_id') != l_bid):
-            pub = _identity_from_listing(conn, listing)
-    if not pub:
-        return {'skipped': True, 'reason': '게시된 멤버 없음 (edit 대상 아님)'}
+    """한 listing EDIT. dry_run=True면 POST 안 함.
+    ★ 정체성(상품번호·관리번호·불변필드)은 목록(buyma_listings)에서만 읽는다. ace 는 안 본다."""
+    if not listing.get('buyma_product_id'):
+        return {'skipped': True, 'reason': '목록에 상품번호 없음 (edit 대상 아님)'}
+    pub = _identity_from_listing(conn, listing)
     req = build_edit_request(conn, listing, pub)
     if req is None:
         return {'skipped': True, 'reason': '전체 품절 → stock-out edit 대상(미구현)', 'pub': pub}
@@ -688,6 +666,6 @@ def execute_edit_safe(conn, listing, dry_run=True, lock_timeout=10):
         fresh = fetch_listing(conn, listing['id'])
         if fresh is None:
             return {'skipped': True, 'reason': 'listing 사라짐'}
-        # 게시 멤버(is_published=1) 확인은 execute_edit 내부 published_member 가 함
+        # 상품번호 보유 확인은 execute_edit 내부에서 목록 기준으로 함
         return execute_edit(conn, fresh, dry_run=dry_run)
 

@@ -1087,25 +1087,14 @@ class RawToAceConverter:
                 query += " AND r.id = :raw_id"
                 params['raw_id'] = raw_id
             elif not upsert:
-                if authority_flag.use_listing_authority():
-                    # ON(새): "미등록" = 이 ace 의 listing 이 바이마 미등록 (등록된 건 stock 전담)
-                    _notreg = "NOT " + authority_flag.registered_sql('a')
-                    if include_unpublished:
-                        query += f" AND (a.id IS NULL OR {_notreg})"
-                    else:
-                        query += f" AND (a.id IS NULL OR ({_notreg} AND r.updated_at > a.updated_at))"
-                elif include_unpublished:
+                # "미등록" = 이 ace 의 listing 이 바이마 미등록 (등록된 건 stock 전담)
+                _notreg = "NOT " + authority_flag.registered_sql('a')
+                if include_unpublished:
                     # 미변환 신규 OR 미등록 전부 (raw.updated_at 비교 X) — --skip-collect 용
-                    query += """ AND (
-                        a.id IS NULL
-                        OR a.is_published = 0
-                    )"""
+                    query += f" AND (a.id IS NULL OR {_notreg})"
                 else:
                     # 미변환 신규 OR 미등록인데 raw가 ace보다 최근 갱신된 것 (기본 동작)
-                    query += """ AND (
-                        a.id IS NULL
-                        OR (a.is_published = 0 AND r.updated_at > a.updated_at)
-                    )"""
+                    query += f" AND (a.id IS NULL OR ({_notreg} AND r.updated_at > a.updated_at))"
                 
             if brand:
                 # 컬럼에 UPPER() 씌우면 idx_brand_site 인덱스를 못 써 풀스캔(54만) → 제거.
@@ -1681,10 +1670,8 @@ class RawToAceConverter:
                 existing_product = self.get_existing_ace_product(raw_data['id'])
 
                 if existing_product:
-                    # ON(단일권위): 등록판정을 listing 기준으로 (등록된 건 덮어쓰기 방지 = stock 전담)
-                    _registered = (existing_product.get('listing_published')
-                                   if authority_flag.use_listing_authority()
-                                   else existing_product['is_published'])
+                    # 등록판정은 listing 기준 (등록된 건 덮어쓰기 방지 = stock 전담)
+                    _registered = existing_product.get('listing_published')
                     if upsert or not _registered:
                         ace_data = self.convert_single_raw_to_ace(raw_data)
                         if ace_data is None:

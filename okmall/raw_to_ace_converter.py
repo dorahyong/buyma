@@ -775,15 +775,9 @@ class RawToAceConverter:
                 params['raw_id'] = raw_id
             elif not upsert:
                 # 미변환 신규 OR 미등록인데 가격이 갱신된 상품
-                if authority_flag.use_listing_authority():
-                    # ON(새): "미등록" = 이 ace 의 listing 이 바이마 미등록 (등록된 건 stock 전담)
-                    query += (" AND (a.id IS NULL OR (NOT " + authority_flag.registered_sql('a')
-                              + " AND r.updated_at > a.updated_at))")
-                else:
-                    query += """ AND (
-                        a.id IS NULL
-                        OR (a.is_published = 0 AND r.updated_at > a.updated_at)
-                    )"""
+                #   "미등록" = 이 ace 의 listing 이 바이마 미등록 (등록된 건 stock 전담)
+                query += (" AND (a.id IS NULL OR (NOT " + authority_flag.registered_sql('a')
+                          + " AND r.updated_at > a.updated_at))")
                 
             if brand:
                 # 컬럼에 UPPER() 씌우면 idx_brand_site 인덱스를 못 써 풀스캔(65만) → 제거.
@@ -1223,10 +1217,8 @@ class RawToAceConverter:
                 existing_product = self.get_existing_ace_product(raw_data['id'])
 
                 if existing_product:
-                    # ON(단일권위): 등록판정을 listing 기준으로 (등록된 건 덮어쓰기 방지 = stock 전담)
-                    _registered = (existing_product.get('listing_published')
-                                   if authority_flag.use_listing_authority()
-                                   else existing_product['is_published'])
+                    # 등록판정은 listing 기준 (등록된 건 덮어쓰기 방지 = stock 전담)
+                    _registered = existing_product.get('listing_published')
                     if upsert or not _registered:
                         ace_data = self.convert_single_raw_to_ace(raw_data)
                         if ace_data is None:

@@ -341,7 +341,7 @@ def get_published_product_ids(channel_site: str, brand_name: Optional[str] = Non
     """등록 완료된 상품의 mall_product_id 목록 (신규+미등록만 수집하려고 스킵 대상 조회).
     source_site 는 채널별로 다름(abcmart/grandstage)."""
     with engine.connect() as conn:
-        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        _reg = authority_flag.registered_sql('a')
         query = f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r

@@ -70,9 +70,8 @@ def select_clean_new_listing_ids(conn, limit=3, listing_id=None, shard=None):
         where.append("MOD(CRC32(l.group_key), %s)=%s")
         params += [n, i]
 
-    # 등록판정: OFF=게시멤버 0개(ace 집계) / ON=listing 자신 미등록(위 WHERE l.buyma_product_id IS NULL 로 충분)
-    _having = ("1=1" if authority_flag.use_listing_authority()
-               else "COUNT(DISTINCT CASE WHEN a.is_published=1 THEN a.buyma_product_id END)=0")
+    # 등록판정: listing 자신이 미등록인가 (위 WHERE l.buyma_product_id IS NULL 로 충분)
+    _having = "1=1"
     sql = f"""
         SELECT l.id
         FROM buyma_listings l
@@ -113,11 +112,9 @@ def select_edit_listing_ids(conn, limit=3, listing_id=None, shard=None):
         where.append("MOD(CRC32(l.group_key), %s)=%s")
         params += [n, i]
 
-    # 등록판정: OFF=게시멤버 1개(ace 집계) / ON=listing 자신 등록(번호 보유)
-    if authority_flag.use_listing_authority():
-        where.append("l.buyma_product_id IS NOT NULL")
-    _having = ("1=1" if authority_flag.use_listing_authority()
-               else "COUNT(DISTINCT CASE WHEN a.is_published=1 THEN a.buyma_product_id END)=1")
+    # 등록판정: listing 자신이 등록됨(상품번호 보유)
+    where.append("l.buyma_product_id IS NOT NULL")
+    _having = "1=1"
     sql = f"""
         SELECT l.id
         FROM buyma_listings l
@@ -168,17 +165,13 @@ def select_groups_to_process(conn, limit=3, source=None, model_no=None, shard=No
     ]
     params = []
     # scope 사전필터 (효율용; 최종 판정은 process_one_group 의 게이트)
-    # ── 단일권위 스위치: "이 model_no 가 바이마에 등록됐나" 판단 근거 ──
-    #   OFF(옛): ace.is_published  /  ON(새): 그 model_no 조각들이 속한 listing 의 is_published+번호
+    # ── "이 model_no 가 바이마에 등록됐나" 판단: 그 조각들이 속한 목록의 게시상태+상품번호 ──
     #   listing 엔 model_no 가 없으므로(묶음 단위) source_offerings 다리로 연결.
-    if authority_flag.use_listing_authority():
-        _pub_sql = ("EXISTS (SELECT 1 FROM ace_products p2 FORCE INDEX (idx_model_no) "
-                    "JOIN source_offerings so2 ON so2.ace_product_id=p2.id "
-                    "JOIN buyma_listings bl2 ON bl2.id=so2.listing_id "
-                    "WHERE p2.model_no=a.model_no AND bl2.is_active=1 "
-                    "AND bl2.is_published=1 AND bl2.buyma_product_id IS NOT NULL)")
-    else:
-        _pub_sql = "EXISTS (SELECT 1 FROM ace_products p2 WHERE p2.model_no=a.model_no AND p2.is_published=1)"
+    _pub_sql = ("EXISTS (SELECT 1 FROM ace_products p2 FORCE INDEX (idx_model_no) "
+                "JOIN source_offerings so2 ON so2.ace_product_id=p2.id "
+                "JOIN buyma_listings bl2 ON bl2.id=so2.listing_id "
+                "WHERE p2.model_no=a.model_no AND bl2.is_active=1 "
+                "AND bl2.is_published=1 AND bl2.buyma_product_id IS NOT NULL)")
     if scope == 'new':
         # 같은 model_no 가 바이마에 미등록인 것만 = 신규 등록 후보
         where.append("NOT " + _pub_sql)
@@ -218,16 +211,6 @@ def select_groups_to_process(conn, limit=3, source=None, model_no=None, shard=No
         if len(groups) >= limit:
             break
     return groups
-
-
-def _n_published(conn, listing_id):
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(DISTINCT a.buyma_product_id) n
-            FROM source_offerings so JOIN ace_products a ON a.id=so.ace_product_id AND a.is_published=1
-            WHERE so.listing_id=%s
-        """, (listing_id,))
-        return cur.fetchone()['n']
 
 
 def _has_instock_options(conn, listing_id):
@@ -273,15 +256,9 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
         _bp = listing.get('buyma_product_id')
         print(f"{tag}{model_no!r} 멤버{len(_members)}({_dup}) listing#{listing_id}"
               + (f" buyma#{_bp}" if _bp else ""), flush=True)
-        n_pub = _n_published(conn, listing_id)
-
-        # ── 단일권위 스위치: create/edit/collapse 판단 근거 (authority_flag) ──
-        #   OFF(옛): 게시 ace 멤버 수(n_pub) → 0=create / 1=edit / 2+=collapse
-        #   ON(새) : 목록 자신의 정체성(buyma_product_id) 있으면 edit, 없으면 create (collapse 없음)
-        if authority_flag.use_listing_authority():
-            listing_mode = 'edit' if listing.get('buyma_product_id') else 'create'
-        else:
-            listing_mode = 'create' if n_pub == 0 else ('edit' if n_pub == 1 else 'collapse')
+        # ── create/edit 판단: 목록 자신의 정체성(buyma_product_id) 있으면 edit, 없으면 create ──
+        n_pub = 1 if listing.get('buyma_product_id') else 0
+        listing_mode = 'edit' if listing.get('buyma_product_id') else 'create'
 
         # 출품 가능 여부: winner(마진O) 있고 + 재고 있는 옵션 1개+ (기존 stock 과 동일 기준)
         sellable = bool(listing.get('winner_offering_id')) and _has_instock_options(conn, listing_id)

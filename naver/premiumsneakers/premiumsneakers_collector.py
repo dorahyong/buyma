@@ -122,7 +122,7 @@ def get_brands(brand_filter: Optional[str] = None) -> List[Dict]:
 def get_published_product_ids() -> set:
     """ace_products.is_published=1 인 상품의 mall_product_id 조회 (등록 완료 상품만 스킵 대상)"""
     with engine.connect() as conn:
-        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        _reg = authority_flag.registered_sql('a')
         rows = conn.execute(text(f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r

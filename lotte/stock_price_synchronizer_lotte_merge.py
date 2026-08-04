@@ -679,14 +679,11 @@ class StockPriceSynchronizer:
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
-                # 대상 선정: OFF=게시된 ace(winner) 1개 / ON=이 몰의 offering 중 등록 listing 소속 전부(멤버 포함)
-                _reg = (authority_flag.registered_sql('ap')
-                        if authority_flag.use_listing_authority()
-                        else "ap.is_published = 1 AND ap.buyma_product_id IS NOT NULL")
+                # 대상 선정: 이 몰의 offering 중 등록된 listing 소속 전부(멤버 포함)
+                _reg = authority_flag.registered_sql('ap')
                 sql = f"""
                     SELECT
                         ap.id,
-                        ap.buyma_product_id,
                         ap.name,
                         ap.brand_name,
                         ap.model_no,

@@ -563,7 +563,7 @@ def get_published_product_ids(brand_name: str = None) -> set:
     """등록 완료된 상품의 mall_product_id 목록 조회"""
     with engine.connect() as conn:
         # 등록판정: OFF=ace.is_published / ON=이 ace 의 listing 등록 (단일 정의)
-        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        _reg = authority_flag.registered_sql('a')
         query = f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r

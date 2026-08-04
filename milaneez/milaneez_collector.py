@@ -503,7 +503,7 @@ def convert_to_raw_data(list_item: Dict, detail: Dict, category_path: str = '') 
 def get_published_product_ids() -> set:
     """등록 완료된 상품의 mall_product_id 조회"""
     with engine.connect() as conn:
-        _reg = authority_flag.registered_sql('a') if authority_flag.use_listing_authority() else "a.is_published = 1"
+        _reg = authority_flag.registered_sql('a')
         rows = conn.execute(text(f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r

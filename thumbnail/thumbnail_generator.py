@@ -46,6 +46,10 @@ from dotenv import load_dotenv
 from PIL import Image, ImageFilter
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys as _sys
+_sys.path.insert(0, os.path.join(BASE, 'okmall'))
+import authority_flag  # 등록판정 단일 정의 (buyma_listings 기준)
+
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assets')
 PREVIEW_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'preview')  # --dry-run 저장 위치
 load_dotenv(os.path.join(BASE, '.env'), override=True)
@@ -260,7 +264,8 @@ class ThumbnailGenerator:
             else:
                 base += " AND (t.id IS NULL OR (t.is_generated = 0 AND t.generate_error IS NULL)) "
             if published_only:
-                base += " AND a.is_published = 1 AND a.buyma_product_id IS NOT NULL "
+                # 게시 판정은 목록(buyma_listings) 기준 — 공용 정의 사용
+                base += " AND " + authority_flag.registered_sql('a') + " "
             if brand:
                 base += " AND UPPER(a.brand_name) LIKE :brand "
                 params['brand'] = f"%{brand.upper()}%"
