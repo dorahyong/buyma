@@ -6,9 +6,13 @@
 - **구성**: 위쪽 **요약**만 읽으면 현재 상태를 안다. 아래쪽 **상세**는 근거·실측·판단 이유.
 - 코드에서 확인한 것만 적는다. 줄번호는 적지 않는다(코드가 정답).
 
-> **2026-08-04 기준 공통 사항** — 등록판정("이 상품이 바이마에 올라갔나")은 `authority_flag.registered_sql()`
-> 한 정의로 모여 있고 **항상 목록(buyma_listings) 기준**이다. ace 기준으로 판단하던 옛 갈래와
-> 그것을 켜고 끄던 환경변수(`USE_LISTING_AUTHORITY`)는 전부 제거했다 — 이제 켤 필요가 없다.
+> **2026-08-04 기준 공통 사항**
+> - 등록판정("이 상품이 바이마에 올라갔나")은 `okmall\authority_flag.py` 의 `registered_sql()` 한 정의로
+>   모여 있고 **항상 목록(buyma_listings) 기준**이다. ace 기준 옛 갈래와 환경변수 스위치(`USE_LISTING_AUTHORITY`)는 제거했다.
+> - **바이마로 나가는 요청서는 몰이 40개여도 만드는 곳은 한 곳이다.** 파라미터 값을 바꾸려고
+>   몰별 파일을 돌아다닐 필요가 없다 (아래 각 파라미터의 "바꾸려면 어디를" 참고).
+> - 재고동기화의 공용 부분(마진 계산·최저가 조회·DB 반영 등)은 `okmall\stock_common.py` 한 곳에 있다.
+>   몰별 파일에 남은 것은 사이트 긁기·옵션 대조·요청 간격처럼 **몰마다 달라야 하는 것**뿐이다.
 
 ---
 
@@ -25,6 +29,7 @@
 | **단계** | REGISTER(신규등록·정지분 부활), STOCK(재고·가격 반영 수정) |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 값. 몰별 차이 없음 |
+| **바꾸려면 어디를** | `okmall\buyma_new_product_register.py` → `build_request_json()` 의 `"control"` 한 줄. **파일 1개** (몰 수와 무관) |
 | **안 쓰는 값** | `draft`·`suspend` 안 씀 / `delete` 영구 폐기. 하차는 재고 API(출품정지)로 하고 그 요청엔 이 파라미터가 없음 |
 | **남은 처리** | `ace_products.control`·`buyma_listings.control` DROP (지금 가능) |
 | **커밋** | `611f178` |
@@ -40,6 +45,7 @@
 | **단계** | REGISTER(발급·등록), STOCK(수정·출품정지). 수집·가격·번역·이미지·썸네일 단계는 이 값을 만지지 않는다 |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 규칙(UUID 1개). 몰별 차이 없음 |
+| **바꾸려면 어디를** | 발급 규칙: `okmall\reconcile_buyma_push.py` → `issue_reference_number()`<br>요청서에 넣는 방식: 같은 파일 `build_create_request()` · `build_edit_request()` · `execute_retire()`. **파일 1개** |
 | **되돌아오는 값** | 바이마가 웹훅으로 이 번호를 돌려주고, 그걸로 우리 행을 찾아 상품번호·게시상태를 기록한다 |
 | **남은 처리** | `ace_products.reference_number` DROP — unified 기준 읽는 곳 0, **지금 가능** |
 | **커밋** | `b57df2e` |
@@ -59,6 +65,7 @@
 | **단계** | REGISTER(등록 후 회수·판정), STOCK(수정 시 사용) |
 | **실행 파일** | REGISTER: `okmall\reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py --source <몰>` |
 | **공용 / 몰별** | **공용** — 40개 몰 전부 동일 |
+| **바꾸려면 어디를** | 요청서에 넣는 곳: `okmall\reconcile_buyma_push.py` → `build_edit_request()` 의 마지막 줄(`req['product']['id']`)<br>판정 기준: `okmall\authority_flag.py` → `registered_sql()`. **각각 파일 1개** |
 | **또 다른 쓰임** | 전송 말고 **판정**에 쓰인다: 이 값이 있으면 "이미 바이마에 있음" → 신규등록 차단(중복 방지), 수정 갈래로 보냄 |
 | **남은 처리** | `ace_products.buyma_product_id` DROP — unified 기준 읽는 곳 0, **지금 가능**<br>(unified 밖 청소도구·fast_price 는 그때 깨짐 — 나중 정리) |
 | **커밋** | (작성 시점 미커밋) |
