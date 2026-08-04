@@ -27,11 +27,11 @@ API 호출 기준:
 - 일시적 API 오류(타임아웃/429/5xx)는 삭제하지 않고 스킵(오삭제 방지).
 
 사용법:
-    python stock_price_synchronizer_musinsa.py                    # 전체 실행
-    python stock_price_synchronizer_musinsa.py --brand BURBERRY   # 특정 브랜드만
-    python stock_price_synchronizer_musinsa.py --limit 100        # 최대 100개만
-    python stock_price_synchronizer_musinsa.py --dry-run          # 테스트 (API 호출 안함)
-    python stock_price_synchronizer_musinsa.py --force            # 변경 없어도 강제 API 호출
+    python stock_price_synchronizer_musinsa_merge.py                    # 전체 실행
+    python stock_price_synchronizer_musinsa_merge.py --brand BURBERRY   # 특정 브랜드만
+    python stock_price_synchronizer_musinsa_merge.py --limit 100        # 최대 100개만
+    python stock_price_synchronizer_musinsa_merge.py --dry-run          # 테스트 (API 호출 안함)
+    python stock_price_synchronizer_musinsa_merge.py --force            # 변경 없어도 강제 API 호출
 
 작성일: 2026-06-19
 """

@@ -21,11 +21,11 @@ API 호출 기준:
 - 전체 품절 → 삭제 요청
 
 사용법:
-    python stock_price_synchronizer_labellusso.py                    # 전체 실행
-    python stock_price_synchronizer_labellusso.py --brand BURBERRY   # 특정 브랜드만
-    python stock_price_synchronizer_labellusso.py --limit 100        # 최대 100개만
-    python stock_price_synchronizer_labellusso.py --dry-run          # 테스트 (API 호출 안함)
-    python stock_price_synchronizer_labellusso.py --force            # 변경 없어도 강제 API 호출
+    python stock_price_synchronizer_labellusso_merge.py                    # 전체 실행
+    python stock_price_synchronizer_labellusso_merge.py --brand BURBERRY   # 특정 브랜드만
+    python stock_price_synchronizer_labellusso_merge.py --limit 100        # 최대 100개만
+    python stock_price_synchronizer_labellusso_merge.py --dry-run          # 테스트 (API 호출 안함)
+    python stock_price_synchronizer_labellusso_merge.py --force            # 변경 없어도 강제 API 호출
 
 작성일: 2026-03-30
 """

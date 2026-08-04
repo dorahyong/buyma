@@ -21,11 +21,11 @@ API 호출 기준:
 - 전체 품절 → 삭제 요청
 
 사용법:
-    python stock_price_synchronizer_nextzennpack.py                    # 전체 실행
-    python stock_price_synchronizer_nextzennpack.py --brand BURBERRY   # 특정 브랜드만
-    python stock_price_synchronizer_nextzennpack.py --limit 100        # 최대 100개만
-    python stock_price_synchronizer_nextzennpack.py --dry-run          # 테스트 (API 호출 안함)
-    python stock_price_synchronizer_nextzennpack.py --force            # 변경 없어도 강제 API 호출
+    python stock_price_synchronizer_nextzennpack_merge.py                    # 전체 실행
+    python stock_price_synchronizer_nextzennpack_merge.py --brand BURBERRY   # 특정 브랜드만
+    python stock_price_synchronizer_nextzennpack_merge.py --limit 100        # 최대 100개만
+    python stock_price_synchronizer_nextzennpack_merge.py --dry-run          # 테스트 (API 호출 안함)
+    python stock_price_synchronizer_nextzennpack_merge.py --force            # 변경 없어도 강제 API 호출
 
 ★ 봇 감지 방지 기능:
 - 30개마다 세션 교체 + 메인 페이지 방문

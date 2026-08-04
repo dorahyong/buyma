@@ -14,13 +14,13 @@
   - MAX_WORKERS=1 (Playwright 세션 1개 공유, 직렬 처리)
 
 사용법:
-    python stock_price_synchronizer_naver.py                         # 전체 mall
-    python stock_price_synchronizer_naver.py --source premiumsneakers
-    python stock_price_synchronizer_naver.py --source carpi --dry-run
-    python stock_price_synchronizer_naver.py --brand NIKE
-    python stock_price_synchronizer_naver.py --id 121147
+    python stock_price_synchronizer_naver_merge.py                         # 전체 mall
+    python stock_price_synchronizer_naver_merge.py --source premiumsneakers
+    python stock_price_synchronizer_naver_merge.py --source carpi --dry-run
+    python stock_price_synchronizer_naver_merge.py --brand NIKE
+    python stock_price_synchronizer_naver_merge.py --id 121147
 
-기반: kasina/stock_price_synchronizer_kasina.py (가격/마진/BUYMA API 로직 동일)
+기반: kasina/stock_price_synchronizer_kasina_merge.py (가격/마진/BUYMA API 로직 동일)
 """
 
 import os
