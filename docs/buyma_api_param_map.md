@@ -16,6 +16,30 @@
 
 ---
 
+# 진행 현황 (명세 페이지에 나오는 순서 그대로)
+
+| # | 파라미터 | 상태 | # | 파라미터 | 상태 |
+|---|---|---|---|---|---|
+| 1 | control | ✅ | 18 | buying_area_id | |
+| 2 | reference_number | ✅ | 19 | buying_shop_name | |
+| 3 | name | ⬜ 다음 | 20 | shipping_area_id | |
+| 4 | id | ✅ | 21 | buyer_notes | |
+| 5 | status | ✅ (남은 문제 있음) | 22 | duty | |
+| 6 | comments | ✅ | 23 | tags | |
+| 7 | brand_id | | 24 | images | |
+| 8 | brand_name | | 25 | shipping_methods | |
+| 9 | model_id | | 26 | style_numbers | |
+| 10 | category_id | | 27 | options | |
+| 11 | theme_id | | 28 | size_unit | |
+| 12 | season_id | | 29 | colorsize_comments | |
+| 13 | price | | 30 | variants | |
+| 14 | list_price | | 31 | order_quantity | |
+| 15 | regular_price | | 32 | shop_urls | |
+| 16 | reference_price | | 33 | updated_at | |
+| 17 | available_until | | 34 | created_at | |
+
+---
+
 # 요약
 
 ## 1. control (필수)
@@ -31,7 +55,7 @@
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 값. 몰별 차이 없음 |
 | **바꾸려면 어디를** | `okmall\buyma_new_product_register.py` → `build_request_json()` 의 `"control"` 한 줄. **파일 1개** (몰 수와 무관) |
 | **안 쓰는 값** | `draft`·`suspend` 안 씀 / `delete` 영구 폐기. 하차는 재고 API(출품정지)로 하고 그 요청엔 이 파라미터가 없음 |
-| **남은 처리** | `ace_products.control`·`buyma_listings.control` DROP (지금 가능) |
+| **남은 처리** | 없음 — `ace_products.control`·`buyma_listings.control` **DROP 완료(2026-08-04)** |
 | **커밋** | `611f178` |
 
 ## 2. reference_number (id 없으면 필수)
@@ -47,7 +71,7 @@
 | **공용 / 몰별** | **공용** — 40개 몰 전부 같은 규칙(UUID 1개). 몰별 차이 없음 |
 | **바꾸려면 어디를** | 발급 규칙: `okmall\reconcile_buyma_push.py` → `issue_reference_number()`<br>요청서에 넣는 방식: 같은 파일 `build_create_request()` · `build_edit_request()` · `execute_retire()`. **파일 1개** |
 | **되돌아오는 값** | 바이마가 웹훅으로 이 번호를 돌려주고, 그걸로 우리 행을 찾아 상품번호·게시상태를 기록한다 |
-| **남은 처리** | `ace_products.reference_number` DROP — unified 기준 읽는 곳 0, **지금 가능** |
+| **남은 처리** | 없음 — `ace_products.reference_number` **DROP 완료(2026-08-04)**. 번호는 `buyma_listings` 에만 존재 |
 | **커밋** | `b57df2e` |
 
 ## 3. name (필수)
@@ -67,7 +91,7 @@
 | **공용 / 몰별** | **공용** — 40개 몰 전부 동일 |
 | **바꾸려면 어디를** | 요청서에 넣는 곳: `okmall\reconcile_buyma_push.py` → `build_edit_request()` 의 마지막 줄(`req['product']['id']`)<br>판정 기준: `okmall\authority_flag.py` → `registered_sql()`. **각각 파일 1개** |
 | **또 다른 쓰임** | 전송 말고 **판정**에 쓰인다: 이 값이 있으면 "이미 바이마에 있음" → 신규등록 차단(중복 방지), 수정 갈래로 보냄 |
-| **남은 처리** | `ace_products.buyma_product_id` DROP — unified 기준 읽는 곳 0, **지금 가능**<br>(unified 밖 청소도구·fast_price 는 그때 깨짐 — 나중 정리) |
+| **남은 처리** | 없음 — `ace_products.buyma_product_id` **DROP 완료(2026-08-04)**.<br>⚠️ unified 밖(청소도구·fast_price·buyma_stats)은 이 컬럼을 읽고 있어 실행 시 깨진다 — 별도 정리 필요 |
 | **커밋** | (작성 시점 미커밋) |
 
 ## 5. status (읽기 전용 — 바이마가 알려주는 상품 상태)
@@ -84,6 +108,21 @@
 | **바꾸려면 어디를** | 바이마 값 → 우리 값 번역: 웹훅 서버 한 곳<br>그 값으로 무엇을 할지: `okmall\reconcile_runner.py` |
 | **무엇을 가르나** | `deleted` → 재등록 안 함 / `soldout` → 같은 번호로 되살림 / `pending`·`fail`·`success` → 신규등록 대상에서 제외 |
 | **남은 처리** | ① 바이마 9값 중 **4개를 안 본다**(`admin_suspended`·`not_approved`·`in_review`·`admin_deleted`) → 정지·비승인 상품이 `success`·게시중으로 기록될 수 있음<br>② `fail` 30,425건이 방치돼 있다(아래 상세) |
+| **커밋** | (문서만) |
+
+## 6. comments (필수, 상품 설명문)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | **저장하지 않는다.** 요청서를 만들 때 세 조각을 붙여 즉석에서 만든다 |
+| **어디에 저장되나** | 저장 안 함. `buyma_listings.comments` 컬럼이 있었으나 전 행이 비어 있고 읽는 코드도 없어 **DROP 완료(2026-08-04)** |
+| **어떻게 가공되나** | `상품명(자르지 않은 원본)` + `모델번호 3가지 표기` + `고정 안내문 1,142자` 를 줄바꿈으로 이어붙임 |
+| **언제 나가나** | 신규등록·수정 요청마다 매번 새로 만들어 보냄 |
+| **단계** | REGISTER(신규등록·부활), STOCK(재고·가격 반영 수정) — 둘 다 reconcile 을 거쳐 같은 함수로 모임 |
+| **실행 파일** | REGISTER: `okmall\reconcile_runner.py` / STOCK: `<몰폴더>\stock_price_synchronizer_*_merge.py` |
+| **공용 / 몰별** | **공용** — 40개 몰 전부 같은 안내문 |
+| **바꾸려면 어디를** | `okmall\buyma_new_product_register.py` → `build_request_json()` 안의 `fixed_comments` 상수. **파일 1개**<br>⚠️ `fast_price_updater.py` 에 같은 조립식이 한 벌 더 있다(지금 미가동) — 고칠 때 함께 |
+| **한도** | 3,000자. **실측 1,217~1,281자로 여유 충분** |
 | **커밋** | (문서만) |
 
 ---
@@ -361,3 +400,85 @@ STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
 
 `fail`·`api_error` 는 한 번 찍히면 스스로 풀리지 않는다. 실패 이유(한글 옵션·이미지 없음·계정 제한 등)를 고친 뒤에도
 그 값이 남아 있어 재시도 대상이 되지 않는다. **실패 사유별로 나눠 되살리는 절차가 필요하다.**
+
+---
+
+## 6. comments
+
+### 명세
+**필수**, 최대 **3,000자(UTF-8)**. `商品の詳細について説明文を入力します`
+HTML 서식은 안 되고, 이모지·특수문자는 2~4자로 계산된다. 등록 후에도 수정할 수 있다(이름·브랜드·카테고리와 달리 불변이 아님).
+
+※ 색·사이즈 보충 설명은 별도 파라미터 `colorsize_comments` 다. 이름이 비슷해 섞이기 쉬우니 주의.
+
+### 우리 처리 — 저장하지 않고 매번 조립한다
+
+`comments` 라는 DB 컬럼은 없다. 전송 직전에 세 조각을 이어붙인다.
+
+```
+comments =  상품명(일본어, 자르지 않은 원본)
+            + 모델번호 3가지 표기          예: 5125-MNL / 5125 MNL / 5125MNL
+            + 고정 안내문 (코드 상수, 1,142자 / 42줄)
+```
+
+고정 안내문에는 정품 구매처 안내, 안심플러스 반품 보증, 주문~배송 흐름,
+**배송사(SAGAWA)와 소요일**, 불량 판정 기준 등이 들어 있다.
+
+### 어디를 거쳐 나가나 — 부르는 곳은 두 줄뿐
+
+```
+REGISTER  reconcile_runner --scope new
+            → execute_create → build_create_request → reg.build_request_json   (신규)
+            → execute_edit   → build_edit_request   → reg.build_request_json   (정지분 부활)
+
+STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
+            → reconcile_runner.process_one_group(scope='published')
+              → execute_edit → build_edit_request → reg.build_request_json     (재고·가격 반영)
+```
+
+**재고동기화 파일은 이 함수를 직접 부르지 않는다.** 예전엔 몰별 파일이 각자 요청서를 만들었으나
+(2026-08-04에 호출 0건인 죽은 함수로 확인돼 삭제), 지금은 재고만 갱신하고 전송은 reconcile 이 맡는다.
+따라서 안내문을 고치면 **등록·수정 양쪽에 동시에 반영**되고, 몰별로 달라지지 않는다.
+
+### 실측 (2026-08-04)
+
+게시중 상품 7건의 요청서를 실제로 만들어 길이를 쟀다.
+
+| | 값 |
+|---|---|
+| 고정 안내문 | 1,142자 (42줄) |
+| 실제 나가는 comments | **1,217 ~ 1,281자** |
+| 한도 | 3,000자 → 여유 1,700자 이상 |
+
+### 알아둘 점
+
+1. **상품명이 두 번 나간다** — `name` 필드에도, `comments` 첫 줄에도.
+2. `name` 은 60자로 자르지만 `comments` 안의 상품명은 **자르지 않은 원본**이다. 긴 이름은 상세설명에서만 온전히 보인다.
+3. 안내문에 **배송사·소요일 같은 운영 정보가 하드코딩**돼 있다. 2026-07-22 배송사를 OCS→SAGAWA 로 바꾼 것이 이 상수 수정이었다.
+4. `fast_price_updater.py` 에 같은 조립식이 한 벌 더 있다(현재 미가동). 안내문을 고칠 때 함께 고쳐야 어긋나지 않는다.
+
+---
+
+# 부록: 안 쓰는 컬럼 정리 (2026-08-04)
+
+`run_daily_unified.py` 실행 코드에서 읽는 곳이 0이 된 컬럼 5개를 지웠다.
+
+| 테이블 | 컬럼 | 지운 이유 |
+|---|---|---|
+| `ace_products` | `control` | 항상 코드 상수 `publish` 로 보냄. DB 값은 판단에 안 씀 |
+| `ace_products` | `reference_number` | 등록 직전 `buyma_listings` 에만 발급. ace 값은 93.6%가 헛번호였음 |
+| `ace_products` | `buyma_product_id` | 웹훅이 목록에만 기록. 등록판정도 목록 기준으로 일원화됨 |
+| `buyma_listings` | `control` | 전 행 `draft` 고정, 읽는 코드 0 |
+| `buyma_listings` | `comments` | 전 행 비어 있음, 읽는 코드 0 (요청서는 매번 조립) |
+
+**실행**: `migrations/drop_ace_identity_columns.py --execute`
+
+- 지우기 전 `bak_ace_identity_20260804` 에 748,287행 백업(ace 3컬럼 + 게시상태)
+- 인덱스 먼저 제거 → 컬럼은 `ALGORITHM=INSTANT` 로 삭제. **테이블 잠금 없이 즉시 완료**
+- `idx_published_active` 는 `(is_published, is_active, buyma_product_id)` 였다 → 앞 두 컬럼으로 재생성
+
+**삭제 후 검증**: 재고동기화 dry-run 2/2 성공 · 신규등록 빌드 1/1 · 수정 빌드 1/1 ·
+변환 INSERT 구문 정상(실행 후 롤백) · 가격 대상 조회 정상 · 가동 중인 자동화 로그에 오류 0
+
+**주의**: unified 밖 도구(`buyma_cleaners/*`, `fast_price_updater.py`, `buyma_stats/*`,
+`thumbnail_buyma_apply.py`)는 아직 `ace_products.buyma_product_id` 를 읽는다. 실행하면 깨진다.
