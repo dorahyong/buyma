@@ -1,50 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-바이마 신규 상품 등록 스크립트
+바이마 상품 API 부품 모음 (라이브러리 — 직접 실행하지 않는다)
 
-ace_products 테이블에서 **미등록 신규 상품만** 바이마 API를 통해 등록합니다.
-기존 buyma_product_register.py와 달리 다음 조건을 체크합니다:
-  1. is_published = 0 (미등록 상품만)
-  2. model_no가 있는 상품만
-  3. model_no 중복이 아닌 상품만 (이미 등록된 model_no 제외)
-  4. out_of_stock 포함하여 options/variants 일치
+이 파일은 스스로 등록을 돌리지 않는다. 등록·수정·출품정지는 전부
+reconcile(okmall/reconcile_runner.py → reconcile_buyma_push.py)이 지휘하고,
+여기서는 "요청서를 어떻게 만들고 어떻게 보내는가"만 제공한다.
 
-추가 기능:
-  - --clean-duplicates: 바이마에 등록된 중복 model_no 상품 삭제
-  - --clean-no-model: model_no 없는 등록 상품 삭제
+밖에서 쓰는 것 (import buyma_new_product_register as reg):
+    reg.build_request_json           상품 API 요청서 (CREATE·EDIT 공용, control=publish 상수)
+    reg.build_variants_array         옵션(변이) 배열
+    reg.get_product_images           이미지 목록 (뱃지 썸네일 우선)
+    reg.call_buyma_api               상품 API 전송
+    reg.call_buyma_variants_soldout  재고 API 전송 (전 옵션 품절 → 출품정지중)
+    reg.API_BASE_URL / reg.BUYMA_MODE / reg.MAX_SHOP_URLS
 
-바이마 API는 비동기로 동작하며, 등록 결과는 Webhook을 통해 수신됩니다.
+  ※ 이 모듈을 import 하면 win32 stdout/stderr 을 utf-8 로 감싸는 부수효과가 있다.
+    재고동기화 _merge 들이 이 부수효과에 의존하므로 옮기거나 지우지 말 것.
 
-사용법:
-    python buyma_new_product_register.py [--limit N] [--brand BRAND] [--dry-run] [--product-id ID]
-    python buyma_new_product_register.py --clean-duplicates [--dry-run]
-    python buyma_new_product_register.py --clean-no-model [--dry-run]
+없앤 것 (2026-08-04):
+  - 자기 실행부(main·--clean-duplicates·--clean-no-model·단건 등록 흐름) — reconcile 로 대체됨
+  - 삭제 API(control=delete) 경로 전부 — 하차는 재고 API(출품정지)만 쓰기로 확정
+  - ace_products 를 직접 훑어 등록 대상을 고르던 조회들 — 정체성은 buyma_listings 가 권위
 
-옵션:
-    --limit N: 처리할 최대 상품 수 (기본: 전체)
-    --brand BRAND: 특정 브랜드만 처리
-    --dry-run: 실제 API 호출하지 않고 요청 데이터만 출력
-    --product-id ID: 특정 ace_product ID만 처리 (테스트용)
-    --clean-duplicates: 중복 model_no 상품 삭제 모드
-    --clean-no-model: model_no 없는 상품 삭제 모드
-
-작성일: 2026-02-11
+작성일: 2026-02-11 (2026-08-04 부품만 남기고 정리)
 """
 
 import os
 import sys
 import json
-import time
-import argparse
 import random
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List, Any
-from decimal import Decimal
+from typing import Dict, List
 
 import requests
-import pymysql
 import re
-from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 import unicodedata
@@ -156,13 +145,6 @@ def truncate_buying_shop_name(shop_name: str, max_limit: int = 30) -> str:
     return 'BRAND 正規販売店'
 
 
-def clean_text(text: str) -> str:
-    """한국어 및 허용되지 않는 특수문자 제거 (안전장치)"""
-    if not text: return ""
-    # 한글(가-힣, ㄱ-ㅎ, ㅏ-ㅣ) 제거
-    cleaned = re.sub(r'[가-힣ㄱ-ㅎㅏ-ㅣ]+', '', text)
-    return cleaned
-
 # 표준 출력 인코딩 설정 (윈도우 환경 대응)
 if sys.platform == 'win32':
     import io
@@ -176,17 +158,6 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 # =====================================================
 # 설정값
 # =====================================================
-
-# DB 연결 정보
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST'),
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_NAME'),
-    'charset': 'utf8mb4',
-    'cursorclass': pymysql.cursors.DictCursor
-}
 
 # 바이마 API 설정
 BUYMA_MODE = int(os.getenv('BUYMA_MODE', 1))  # 1: 본환경, 2: 샌드박스
@@ -210,14 +181,6 @@ BUYMA_FIXED_VALUES = {
 #   {"errors":{"shop_urls":["買付先は15件以内で入力してください。"]}}  (2026-07-22 실측)
 MAX_SHOP_URLS = 15
 
-# 마진 계산 상수
-EXCHANGE_RATE = 9.2          # 환율 (원/엔)
-SALES_FEE_RATE = 0.055       # 바이마 판매수수료 5.5%
-DEFAULT_SHIPPING_FEE = 15000 # 기본 예상 배송비 (원)
-
-# API 호출 간격 (초)
-API_CALL_DELAY = 0.5
-
 # =====================================================
 # 유틸리티 함수
 # =====================================================
@@ -228,158 +191,14 @@ def log(message: str, level: str = "INFO") -> None:
     print(f"[{timestamp}] [{level}] {message}")
 
 
-def get_db_connection():
-    """DB 연결 생성"""
-    return pymysql.connect(**DB_CONFIG)
-
-
-def decimal_to_float(obj):
-    """Decimal을 float로 변환 (JSON 직렬화용)"""
-    if isinstance(obj, Decimal):
-        return float(obj)
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-
 # =====================================================
 # 마진 계산 함수
 # =====================================================
-
-def calculate_margin(price_jpy: int, purchase_price_krw: float, shipping_fee_krw: int = DEFAULT_SHIPPING_FEE) -> Dict:
-    """
-    등록 직전 마진 재계산
-    """
-    # 1. 바이마 판매가 (원화)
-    sales_price_krw = price_jpy * EXCHANGE_RATE
-
-    # 2. 판매수수료 (원화)
-    sales_fee_krw = sales_price_krw * SALES_FEE_RATE
-
-    # 3. 실수령액 (원화)
-    net_income_krw = sales_price_krw - sales_fee_krw
-
-    # 4. 총 원가 (원화)
-    total_cost_krw = purchase_price_krw + shipping_fee_krw
-
-    # 5. 마진 (부가세 환급 전)
-    margin_before_vat = net_income_krw - total_cost_krw
-
-    # 6. 부가세 환급액
-    vat_refund = purchase_price_krw / 11
-
-    # 7. 최종 마진 (부가세 환급 포함)
-    final_margin_krw = margin_before_vat + vat_refund
-
-    # 8. 마진율
-    margin_rate = (final_margin_krw / sales_price_krw) * 100 if sales_price_krw > 0 else 0
-
-    return {
-        'is_profitable': final_margin_krw > 0,
-        'margin_krw': round(final_margin_krw, 0),
-        'margin_rate': round(margin_rate, 2),
-        'sales_price_krw': round(sales_price_krw, 0),
-        'net_income_krw': round(net_income_krw, 0),
-        'total_cost_krw': round(total_cost_krw, 0),
-    }
 
 
 # =====================================================
 # 데이터 조회 함수
 # =====================================================
-
-def get_products_to_register(conn, limit: int = None, brand: str = None, product_id: int = None, source: str = None, allow_duplicate_model: bool = False) -> List[Dict]:
-    """
-    ★★★ 신규 등록 대상 상품 조회 ★★★
-    
-    조건:
-    1. is_active = 1 (활성 상품)
-    2. is_published = 0 (미등록 상품만) ← 핵심!
-    3. model_no IS NOT NULL AND model_no != '' (모델번호 있는 것만) ← 핵심!
-    4. model_no 중복 아닌 것 (이미 등록된 model_no 제외) ← 핵심!
-    5. 이미지 업로드 완료된 것
-    """
-    with conn.cursor() as cursor:
-        sql = """
-            SELECT
-                ap.id,
-                ap.raw_data_id,
-                ap.reference_number,
-                ap.name,
-                ap.brand_id,
-                ap.brand_name,
-                ap.category_id,
-                ap.price,
-                ap.original_price_jpy,
-                ap.purchase_price_krw,
-                ap.expected_shipping_fee,
-                ap.available_until,
-                ap.buying_shop_name,
-                ap.model_no,
-                ap.buyma_model_id,
-                ap.colorsize_comments_jp,
-                ap.source_product_url,
-                ap.source_site,
-                ap.is_published,
-                ap.buyma_product_id,
-                -- 불변 필드 보호를 위한 컬럼
-                ap.is_buyma_locked,
-                ap.locked_name,
-                ap.locked_brand_id,
-                ap.locked_category_id,
-                ap.locked_reference_number
-            FROM ace_products ap
-            WHERE ap.is_active = 1
-              -- ★ 미등록 상품만 (신규 등록용)
-              AND ap.is_published = 0
-              -- ★ 삭제된 상품 재등록 금지 (수집처 품절/판매중지로 삭제됨).
-              --   재입고 시 converter가 재수집·재변환하며 status='deleted'를 풀어줌(→ 다시 등록 대상).
-              AND (ap.status IS NULL OR ap.status <> 'deleted')
-              -- ★ model_no 있는 것만
-              AND ap.model_no IS NOT NULL
-              AND ap.model_no != ''
-              -- ★ category_id 매핑된 것만 (바이마는 category_id=0 불허)
-              AND ap.category_id IS NOT NULL
-              AND ap.category_id > 0
-              -- 이미지 업로드 완료된 것
-              AND EXISTS (
-                  SELECT 1 FROM ace_product_images img
-                  WHERE img.ace_product_id = ap.id
-                    AND img.cloudflare_image_url IS NOT NULL
-              )
-        """
-
-        params = []
-
-        if product_id:
-            sql += " AND ap.id = %s"
-            params.append(product_id)
-
-        if brand:
-            sql += " AND ap.brand_name LIKE %s"
-            params.append(f"%{brand}%")
-
-        if source:
-            sql += " AND ap.source_site = %s"
-            params.append(source.lower())
-
-        # ★ 기본: 이미 등록된 model_no 제외 (중복 방지)
-        if not allow_duplicate_model:
-            sql += """
-              AND ap.model_no NOT IN (
-                  SELECT DISTINCT model_no
-                  FROM ace_products
-                  WHERE is_published = 1
-                    AND model_no IS NOT NULL
-                    AND model_no != ''
-              )"""
-
-        sql += " ORDER BY ap.id"
-
-        if limit:
-            sql += " LIMIT %s"
-            params.append(limit)
-
-        cursor.execute(sql, params)
-        return cursor.fetchall()
 
 
 def get_product_images(conn, ace_product_id: int) -> List[Dict]:
@@ -417,36 +236,6 @@ def get_product_images(conn, ace_product_id: int) -> List[Dict]:
             out.append({'position': 0, 'cloudflare_image_url': r['badge_url']})
         out.append({'position': r['position'], 'cloudflare_image_url': r['cloudflare_image_url']})
     return out[:20]  # BUYMA 이미지 상한
-
-
-def get_product_options(conn, ace_product_id: int) -> List[Dict]:
-    """상품 옵션 조회 (color, size) - details_json 포함"""
-    with conn.cursor() as cursor:
-        sql = """
-            SELECT option_type, value, master_id, position, details_json
-            FROM ace_product_options
-            WHERE ace_product_id = %s
-            ORDER BY option_type DESC, position
-        """
-        cursor.execute(sql, (ace_product_id,))
-        return cursor.fetchall()
-
-
-def get_product_variants(conn, ace_product_id: int) -> List[Dict]:
-    """
-    ★★★ 상품 재고(variant) 조회 ★★★
-    
-    ★ out_of_stock도 포함! (options와 variants 일치 필요)
-    """
-    with conn.cursor() as cursor:
-        sql = """
-            SELECT color_value, size_value, stock_type, stocks
-            FROM ace_product_variants
-            WHERE ace_product_id = %s
-        """
-        # ★ out_of_stock 제외 조건 없음! → 모두 조회
-        cursor.execute(sql, (ace_product_id,))
-        return cursor.fetchall()
 
 
 # =====================================================
@@ -855,53 +644,6 @@ def call_buyma_api(request_data: Dict) -> Dict:
         return {"success": False, "error": str(e)}
 
 
-def call_buyma_delete_api(reference_number: str) -> Dict:
-    """
-    바이마 상품 삭제 API 호출
-    """
-    url = f"{API_BASE_URL}api/v1/products"
-
-    headers = {
-        "Content-Type": "application/json",
-        "X-Buyma-Personal-Shopper-Api-Access-Token": BUYMA_ACCESS_TOKEN
-    }
-
-    request_data = {
-        "product": {
-            "control": "delete",
-            "reference_number": reference_number
-        }
-    }
-
-    try:
-        response = requests.post(
-            url,
-            headers=headers,
-            json=request_data,
-            timeout=30
-        )
-
-        log(f"  삭제 API 응답 코드: {response.status_code}")
-
-        if response.status_code in [200, 201, 202]:
-            return {
-                "success": True,
-                "status_code": response.status_code,
-                "response": response.json() if response.text else {},
-            }
-        else:
-            return {
-                "success": False,
-                "status_code": response.status_code,
-                "error": response.text,
-            }
-
-    except requests.exceptions.Timeout:
-        return {"success": False, "error": "Request timeout"}
-    except requests.exceptions.RequestException as e:
-        return {"success": False, "error": str(e)}
-
-
 def call_buyma_variants_soldout(reference_number: str, option_rows: list) -> Dict:
     """재고 API(variants.json)로 전 옵션 품절(out_of_stock) → '출품정지중'(삭제 아님).
     삭제(control=delete) 대신 사용 → buyma_product_id 유지, 재입고 시 같은 상품으로 출품중 복구.
@@ -955,484 +697,13 @@ def call_buyma_variants_soldout(reference_number: str, option_rows: list) -> Dic
 # 중복 model_no 및 model_no 없는 상품 조회/삭제
 # =====================================================
 
-def get_duplicate_model_no_products(conn) -> List[Dict]:
-    """
-    ★★★ 중복 model_no 상품 조회 ★★★
-    
-    바이마에 등록된(is_published=1) 상품 중 model_no가 중복인 것 조회
-    먼저 등록된 것(id가 작은 것)은 유지하고, 나머지는 삭제 대상
-    """
-    with conn.cursor() as cursor:
-        sql = """
-            SELECT 
-                ap.id,
-                ap.raw_data_id,
-                ap.reference_number,
-                ap.buyma_product_id,
-                ap.model_no,
-                ap.name,
-                ap.brand_name,
-                ap.created_at
-            FROM ace_products ap
-            WHERE ap.is_published = 1
-              AND ap.model_no IS NOT NULL
-              AND ap.model_no != ''
-              AND ap.model_no IN (
-                  -- 중복된 model_no 찾기
-                  SELECT model_no
-                  FROM ace_products
-                  WHERE is_published = 1
-                    AND model_no IS NOT NULL
-                    AND model_no != ''
-                  GROUP BY model_no
-                  HAVING COUNT(*) > 1
-              )
-              -- 먼저 등록된 것(id가 가장 작은 것)은 제외
-              AND ap.id NOT IN (
-                  SELECT MIN(id)
-                  FROM ace_products
-                  WHERE is_published = 1
-                    AND model_no IS NOT NULL
-                    AND model_no != ''
-                  GROUP BY model_no
-                  HAVING COUNT(*) > 1
-              )
-            ORDER BY ap.model_no, ap.id
-        """
-        cursor.execute(sql)
-        return cursor.fetchall()
-
-
-def get_no_model_no_products(conn) -> List[Dict]:
-    """
-    ★★★ model_no 없는 등록 상품 조회 ★★★
-    
-    바이마에 등록된(is_published=1) 상품 중 model_no가 없는 것 조회
-    """
-    with conn.cursor() as cursor:
-        sql = """
-            SELECT 
-                ap.id,
-                ap.raw_data_id,
-                ap.reference_number,
-                ap.buyma_product_id,
-                ap.model_no,
-                ap.name,
-                ap.brand_name,
-                ap.created_at
-            FROM ace_products ap
-            WHERE ap.is_published = 1
-              AND (ap.model_no IS NULL OR ap.model_no = '')
-            ORDER BY ap.id
-        """
-        cursor.execute(sql)
-        return cursor.fetchall()
-
-
-def delete_product_from_buyma_and_db(conn, product: Dict, dry_run: bool = False) -> bool:
-    """
-    상품을 바이마에서 삭제하고 DB도 정리
-    
-    1. 바이마 API로 삭제 요청 (control: delete)
-    2. DB에서 is_active = 0, is_published = 0 처리
-    """
-    product_id = product['id']
-    reference_number = product['reference_number']
-    buyma_product_id = product.get('buyma_product_id')
-    model_no = product.get('model_no', '(없음)')
-    
-    log(f"  삭제 대상: ace_id={product_id}, model_no={model_no}, buyma_id={buyma_product_id}")
-    
-    if dry_run:
-        log(f"  [DRY-RUN] 바이마 삭제 API 호출 예정: reference_number={reference_number}")
-        return True
-    
-    try:
-        # 1. 바이마 API로 삭제 요청
-        if reference_number:
-            log(f"  → 바이마 삭제 API 호출 중...")
-            response = call_buyma_delete_api(reference_number)
-            
-            if response.get('success'):
-                log(f"  → 바이마 삭제 요청 성공 (Webhook으로 결과 수신 예정)")
-            else:
-                log(f"  → 바이마 삭제 요청 실패: {response.get('error', 'Unknown')}", "WARN")
-                # 실패해도 DB는 정리 (바이마에 없는 상품일 수 있음)
-        
-        # 2. DB 비활성화 처리
-        with conn.cursor() as cursor:
-            sql = """
-                UPDATE ace_products
-                SET is_active = 0,
-                    is_published = 0,
-                    is_buyma_locked = 0,
-                    status = 'deleted',
-                    updated_at = NOW()
-                WHERE id = %s
-            """
-            cursor.execute(sql, (product_id,))
-            cursor.execute("""
-                INSERT INTO ace_product_api_logs (ace_product_id, api_response_json, last_api_call_at)
-                VALUES (%s, %s, NOW())
-                ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-            """, (
-                product_id,
-                json.dumps({'deleted_reason': 'duplicate_or_no_model_no', 'deleted_at': datetime.now().isoformat()})
-            ))
-            conn.commit()
-        
-        log(f"  → DB 비활성화 완료 (is_active=0, is_published=0)")
-        return True
-        
-    except Exception as e:
-        log(f"  → 삭제 처리 실패: {e}", "ERROR")
-        conn.rollback()
-        return False
-
-
-def clean_duplicate_products(conn, dry_run: bool = False) -> Dict:
-    """
-    ★★★ 중복 model_no 상품 정리 ★★★
-    """
-    log("=" * 60)
-    log("★★★ 중복 model_no 상품 정리 시작 ★★★")
-    log("=" * 60)
-    
-    # 중복 상품 조회
-    duplicates = get_duplicate_model_no_products(conn)
-    log(f"중복 model_no 삭제 대상: {len(duplicates)}개")
-    
-    if not duplicates:
-        log("삭제할 중복 상품이 없습니다.")
-        return {'total': 0, 'success': 0, 'failed': 0}
-    
-    # 중복 현황 출력
-    current_model_no = None
-    for p in duplicates:
-        if p['model_no'] != current_model_no:
-            current_model_no = p['model_no']
-            log(f"\n[중복 model_no: {current_model_no}]")
-        log(f"  - ace_id={p['id']}, buyma_id={p['buyma_product_id']}, name={p['name'][:30]}...")
-    
-    log("\n" + "-" * 40)
-    
-    success_count = 0
-    fail_count = 0
-    
-    for i, product in enumerate(duplicates, 1):
-        log(f"\n[{i}/{len(duplicates)}] 삭제 처리 중...")
-        
-        result = delete_product_from_buyma_and_db(conn, product, dry_run)
-        if result:
-            success_count += 1
-        else:
-            fail_count += 1
-        
-        # API 호출 간격 유지
-        if not dry_run and i < len(duplicates):
-            time.sleep(API_CALL_DELAY)
-    
-    log("\n" + "=" * 60)
-    log("중복 상품 정리 완료")
-    log(f"성공: {success_count}, 실패: {fail_count}")
-    log("=" * 60)
-    
-    return {'total': len(duplicates), 'success': success_count, 'failed': fail_count}
-
-
-def clean_no_model_products(conn, dry_run: bool = False) -> Dict:
-    """
-    ★★★ model_no 없는 상품 정리 ★★★
-    """
-    log("=" * 60)
-    log("★★★ model_no 없는 상품 정리 시작 ★★★")
-    log("=" * 60)
-    
-    # model_no 없는 상품 조회
-    no_model_products = get_no_model_no_products(conn)
-    log(f"model_no 없는 삭제 대상: {len(no_model_products)}개")
-    
-    if not no_model_products:
-        log("삭제할 상품이 없습니다.")
-        return {'total': 0, 'success': 0, 'failed': 0}
-    
-    # 목록 출력
-    for p in no_model_products[:20]:  # 최대 20개만 표시
-        log(f"  - ace_id={p['id']}, buyma_id={p['buyma_product_id']}, brand={p['brand_name']}, name={p['name'][:30]}...")
-    
-    if len(no_model_products) > 20:
-        log(f"  ... 외 {len(no_model_products) - 20}개")
-    
-    log("\n" + "-" * 40)
-    
-    success_count = 0
-    fail_count = 0
-    
-    for i, product in enumerate(no_model_products, 1):
-        log(f"\n[{i}/{len(no_model_products)}] 삭제 처리 중...")
-        
-        result = delete_product_from_buyma_and_db(conn, product, dry_run)
-        if result:
-            success_count += 1
-        else:
-            fail_count += 1
-        
-        # API 호출 간격 유지
-        if not dry_run and i < len(no_model_products):
-            time.sleep(API_CALL_DELAY)
-    
-    log("\n" + "=" * 60)
-    log("model_no 없는 상품 정리 완료")
-    log(f"성공: {success_count}, 실패: {fail_count}")
-    log("=" * 60)
-    
-    return {'total': len(no_model_products), 'success': success_count, 'failed': fail_count}
-
 
 # =====================================================
 # DB 업데이트
 # =====================================================
-
-def update_product_after_request(conn, product_id: int, request_data: Dict, response: Dict) -> None:
-    """
-    API 요청 후 상품 상태 업데이트
-    
-    - 성공 시: pending 상태 + 불변 필드 백업 (locked_* 컬럼)
-    - 실패 시: api_error 상태
-    
-    ※ 실제 is_buyma_locked=1 설정은 Webhook 수신 시 처리
-    """
-    with conn.cursor() as cursor:
-        if response.get('success'):
-            # 요청 성공 - pending 상태 + 불변 필드 백업
-            # locked_* 컬럼에 현재 값 저장 (나중에 수정 시 이 값 사용)
-            # BUYMA에 보낸 available_until(today+90)을 DB에도 반영
-            available_until_str = (datetime.now() + timedelta(days=90)).strftime('%Y-%m-%d')
-            sql = """
-                UPDATE ace_products
-                SET status = 'pending',
-                    available_until = %s,
-                    -- 불변 필드 백업 (Webhook 수신 전 미리 저장)
-                    locked_name = COALESCE(locked_name, name),
-                    locked_brand_id = COALESCE(locked_brand_id, brand_id),
-                    locked_category_id = COALESCE(locked_category_id, category_id),
-                    locked_reference_number = COALESCE(locked_reference_number, reference_number)
-                WHERE id = %s
-            """
-            cursor.execute(sql, (available_until_str, product_id))
-            cursor.execute("""
-                INSERT INTO ace_product_api_logs (ace_product_id, api_request_json, api_response_json, last_api_call_at)
-                VALUES (%s, %s, %s, NOW())
-                ON DUPLICATE KEY UPDATE api_request_json = VALUES(api_request_json), api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-            """, (
-                product_id,
-                json.dumps(request_data, ensure_ascii=False, default=decimal_to_float),
-                json.dumps(response, ensure_ascii=False)
-            ))
-            log(f"  - 불변 필드 백업 완료 (locked_* 컬럼)")
-        else:
-            # 요청 실패 - 에러 로그 저장
-            sql = """
-                UPDATE ace_products
-                SET status = 'api_error'
-                WHERE id = %s
-            """
-            cursor.execute(sql, (product_id,))
-            cursor.execute("""
-                INSERT INTO ace_product_api_logs (ace_product_id, api_request_json, api_response_json, last_api_call_at)
-                VALUES (%s, %s, %s, NOW())
-                ON DUPLICATE KEY UPDATE api_request_json = VALUES(api_request_json), api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-            """, (
-                product_id,
-                json.dumps(request_data, ensure_ascii=False, default=decimal_to_float),
-                json.dumps(response, ensure_ascii=False)
-            ))
-
-        conn.commit()
 
 
 # =====================================================
 # 메인 로직
 # =====================================================
 
-def process_product(conn, product: Dict, dry_run: bool = False) -> bool:
-    """
-    단일 상품 처리
-    """
-    product_id = product['id']
-    model_no = product.get('model_no', '')
-    log(f"상품 처리 시작: ID={product_id}, model_no={model_no}, 이름={product['name'][:30]}...")
-
-    # ★ model_no 없으면 스킵 (이중 체크)
-    if not model_no or not model_no.strip():
-        log(f"  - model_no 없음, 스킵", "WARN")
-        return False
-
-    # ★ model_no에 한글 포함 시 스킵
-    if re.search(r'[가-힣ㄱ-ㅎㅏ-ㅣ]', model_no):
-        log(f"  - model_no에 한글 포함, 스킵: {model_no}", "WARN")
-        return False
-
-    # 1. 마진 재계산 (최종 체크)
-    price_jpy = product['price']
-    purchase_price_krw = float(product['purchase_price_krw'] or 0)
-    shipping_fee = product['expected_shipping_fee'] or DEFAULT_SHIPPING_FEE
-
-    margin_info = calculate_margin(price_jpy, purchase_price_krw, shipping_fee)
-
-    log(f"  - 판매가: ¥{price_jpy:,} (₩{margin_info['sales_price_krw']:,.0f})")
-    log(f"  - 매입가: ₩{purchase_price_krw:,.0f}, 배송비: ₩{shipping_fee:,}")
-    log(f"  - 마진: ₩{margin_info['margin_krw']:,.0f} ({margin_info['margin_rate']:.1f}%)")
-
-    if not margin_info['is_profitable']:
-        log(f"  - 마진 부족 (손해), 스킵", "WARN")
-        return False
-
-    # 2. 관련 데이터 조회
-    images = get_product_images(conn, product_id)
-    options = get_product_options(conn, product_id)
-    variants = get_product_variants(conn, product_id)
-
-    if not images:
-        log(f"  - 이미지 없음, 스킵", "WARN")
-        return False
-
-    if not variants:
-        log(f"  - 재고 없음, 스킵", "WARN")
-        return False
-
-    log(f"  - 이미지: {len(images)}개, 옵션: {len(options)}개, 재고: {len(variants)}개")
-
-    # 3. API 요청 데이터 구성 (재고 데이터를 바이마 규격에 맞게 변환)
-    formatted_variants = build_variants_array(variants)
-    request_data = build_request_json(product, images, options, formatted_variants)
-
-    if request_data is None:
-        log(f"  - 전체 품절 → 등록 스킵")
-        return False
-
-    if dry_run:
-        log(f"  - [DRY-RUN] API 요청 데이터:")
-        print(json.dumps(request_data, indent=2, ensure_ascii=False, default=decimal_to_float))
-        return True
-
-    # 4. 바이마 API 호출
-    log(f"  - API 호출 중...")
-    
-    # 상세 데이터 로그 (Pretty Print) - 사장님이 직접 확인 가능
-    print("\n>>> SENT JSON DATA:")
-    print(json.dumps(request_data, indent=2, ensure_ascii=False, default=decimal_to_float))
-    print("-" * 40)
-    
-    response = call_buyma_api(request_data)
-
-    # 5. DB 업데이트
-    update_product_after_request(conn, product_id, request_data, response)
-
-    if response.get('success'):
-        log(f"  - API 요청 성공 (결과는 Webhook으로 수신 예정)")
-        return True
-    else:
-        log(f"  - API 요청 실패: {response.get('error', 'Unknown error')}", "ERROR")
-        return False
-
-
-def main():
-    """메인 함수"""
-    parser = argparse.ArgumentParser(description='바이마 신규 상품 등록 스크립트')
-    parser.add_argument('--limit', type=int, help='처리할 최대 상품 수 (미지정시 전체)')
-    parser.add_argument('--brand', type=str, help='특정 브랜드만 처리')
-    parser.add_argument('--dry-run', action='store_true', help='실제 API 호출 없이 테스트')
-    parser.add_argument('--product-id', type=int, help='특정 상품 ID만 처리')
-    parser.add_argument('--source', type=str, help='특정 source_site만 처리 (예: kasina, okmall)')
-    parser.add_argument('--allow-duplicate-model', action='store_true', help='이미 등록된 model_no도 중복 허용하여 등록')
-    # ★ 중복/model_no 없는 상품 정리 옵션 추가
-    parser.add_argument('--clean-duplicates', action='store_true', help='중복 model_no 상품 삭제')
-    parser.add_argument('--clean-no-model', action='store_true', help='model_no 없는 상품 삭제')
-    args = parser.parse_args()
-
-    log("=" * 60)
-    
-    if not BUYMA_ACCESS_TOKEN:
-        log("BUYMA_ACCESS_TOKEN이 설정되지 않았습니다.", "ERROR")
-        return
-
-    conn = get_db_connection()
-
-    try:
-        # ★ 중복 model_no 삭제 모드
-        if args.clean_duplicates:
-            log("★★★ 중복 model_no 상품 삭제 모드 ★★★")
-            log(f"환경: {'본환경' if BUYMA_MODE == 1 else '샌드박스'}")
-            log(f"dry_run: {args.dry_run}")
-            log("=" * 60)
-            
-            clean_duplicate_products(conn, dry_run=args.dry_run)
-            return
-        
-        # ★ model_no 없는 상품 삭제 모드
-        if args.clean_no_model:
-            log("★★★ model_no 없는 상품 삭제 모드 ★★★")
-            log(f"환경: {'본환경' if BUYMA_MODE == 1 else '샌드박스'}")
-            log(f"dry_run: {args.dry_run}")
-            log("=" * 60)
-            
-            clean_no_model_products(conn, dry_run=args.dry_run)
-            return
-        
-        # 기본 모드: 신규 상품 등록
-        log("★★★ 바이마 신규 상품 등록 시작 ★★★")
-        log("(미등록 + model_no 있음 + 중복 아님)")
-        log(f"환경: {'본환경' if BUYMA_MODE == 1 else '샌드박스'}")
-        log(f"API URL: {API_BASE_URL}")
-        log(f"옵션: limit={args.limit}, brand={args.brand}, source={args.source}, dry_run={args.dry_run}, allow_duplicate_model={args.allow_duplicate_model}")
-        log("=" * 60)
-
-        # 등록 대상 상품 조회
-        products = get_products_to_register(
-            conn,
-            limit=args.limit,
-            brand=args.brand,
-            product_id=args.product_id,
-            source=args.source,
-            allow_duplicate_model=args.allow_duplicate_model
-        )
-
-        log(f"신규 등록 대상 상품: {len(products)}개")
-
-        if not products:
-            log("등록할 신규 상품이 없습니다.")
-            return
-
-        success_count = 0
-        fail_count = 0
-        skip_count = 0
-
-        for i, product in enumerate(products, 1):
-            log(f"\n[{i}/{len(products)}] 처리 중...")
-
-            try:                
-                result = process_product(conn, product, dry_run=args.dry_run)
-                if result:
-                    success_count += 1
-                else:
-                    skip_count += 1
-            except Exception as e:
-                log(f"상품 처리 중 오류: {e}", "ERROR")
-                fail_count += 1
-
-            # API 호출 간격 유지 (dry-run 제외)
-            if not args.dry_run and i < len(products):
-                time.sleep(API_CALL_DELAY)
-
-        log("\n" + "=" * 60)
-        log("처리 완료")
-        log(f"성공: {success_count}, 스킵: {skip_count}, 실패: {fail_count}")
-        log("=" * 60)
-
-    finally:
-        conn.close()
-
-
-if __name__ == "__main__":
-    main()

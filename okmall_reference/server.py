@@ -33,20 +33,9 @@ def log_webhook(data, event_type=None):
         f.write(f"\n{'='*60}\n")
 
 def _log_api_response(cursor, ref_num, data):
-    """webhook 응답을 api_logs 에 기록.
-    ref 가 ace_products 에 있으면 ace_product_api_logs, 없으면(merge 출품) buyma_listing_api_logs.
-    (ref 는 ace/listings 중 한쪽에만 존재 → 1건만 기록). 옛 코드가 ace 매칭만 해 merge 로그 누락되던 것 보완."""
+    """webhook 응답을 buyma_listing_api_logs 에 기록.
+    관리번호(reference_number)는 buyma_listings 만 갖는다 (2026-08-04: ace_products 쪽 폐지)."""
     payload = json.dumps(data, ensure_ascii=False)
-    cursor.execute("SELECT id FROM ace_products WHERE reference_number = %s", (ref_num,))
-    row = cursor.fetchone()
-    if row:
-        cursor.execute("""
-            INSERT INTO ace_product_api_logs (ace_product_id, api_response_json, last_api_call_at)
-            VALUES (%s, %s, NOW())
-            ON DUPLICATE KEY UPDATE api_response_json = VALUES(api_response_json), last_api_call_at = NOW()
-        """, (row['id'], payload))
-        return
-    # [MERGE] ace 없음 → buyma_listings 기준 로그
     cursor.execute("SELECT id FROM buyma_listings WHERE reference_number = %s", (ref_num,))
     lrow = cursor.fetchone()
     if lrow:
@@ -75,14 +64,6 @@ def update_db_with_webhook(event, data):
                 # delete 성공: status=buyer_deleted → is_published=0
                 if status == 'buyer_deleted':
                     cursor.execute("""
-                        UPDATE ace_products
-                        SET is_published = 0,
-                            status = 'deleted',
-                            updated_at = NOW()
-                        WHERE reference_number = %s
-                    """, (ref_num,))
-                    # [MERGE] buyma_listings 도 동일 반영 (ref 는 ace/listings 중 한쪽에만 존재 → 다른 쪽 0건)
-                    cursor.execute("""
                         UPDATE buyma_listings
                         SET is_published = 0, status = 'deleted', updated_at = NOW()
                         WHERE reference_number = %s
@@ -91,31 +72,12 @@ def update_db_with_webhook(event, data):
                 # 품절 처리(재고 API)로 '출품정지중' → is_published=0 (★삭제 아님, buyma_id 유지)
                 elif status == 'buyer_suspended':
                     cursor.execute("""
-                        UPDATE ace_products
-                        SET is_published = 0,
-                            status = 'soldout',
-                            updated_at = NOW()
-                        WHERE reference_number = %s
-                    """, (ref_num,))
-                    # [MERGE] buyma_listings 도 동일 반영
-                    cursor.execute("""
                         UPDATE buyma_listings
                         SET is_published = 0, status = 'soldout', updated_at = NOW()
                         WHERE reference_number = %s
                     """, (ref_num,))
                     print(f"[WEBHOOK] 품절(출품정지중): {ref_num} → is_published=0")
                 elif buyma_id:
-                    cursor.execute("""
-                        UPDATE ace_products
-                        SET buyma_product_id = %s,
-                            is_published = 1,
-                            status = 'success',
-                            is_buyma_locked = 1,
-                            buyma_registered_at = COALESCE(buyma_registered_at, NOW()),
-                            updated_at = NOW()
-                        WHERE reference_number = %s
-                    """, (buyma_id, ref_num))
-                    # [MERGE] buyma_listings 도 동일 반영 (buyma_registered_at 도 보존)
                     cursor.execute("""
                         UPDATE buyma_listings
                         SET buyma_product_id = %s,
@@ -137,16 +99,6 @@ def update_db_with_webhook(event, data):
 
                 if '商品IDは不正な値です' in error_str or '削除できない商品です' in error_str:
                     cursor.execute("""
-                        UPDATE ace_products
-                        SET status = 'fail',
-                            buyma_product_id = NULL,
-                            is_published = 0,
-                            is_buyma_locked = 0,
-                            updated_at = NOW()
-                        WHERE reference_number = %s
-                    """, (ref_num,))
-                    # [MERGE] buyma_listings 동일 반영
-                    cursor.execute("""
                         UPDATE buyma_listings
                         SET status = 'fail',
                             buyma_product_id = NULL,
@@ -156,13 +108,6 @@ def update_db_with_webhook(event, data):
                         WHERE reference_number = %s
                     """, (ref_num,))
                 else:
-                    cursor.execute("""
-                        UPDATE ace_products
-                        SET status = 'fail',
-                            updated_at = NOW()
-                        WHERE reference_number = %s
-                    """, (ref_num,))
-                    # [MERGE] buyma_listings 동일 반영
                     cursor.execute("""
                         UPDATE buyma_listings
                         SET status = 'fail',
@@ -174,13 +119,6 @@ def update_db_with_webhook(event, data):
 
             elif event == 'product/fail_to_update':
                 # 수정 실패: 바이마에 상품이 존재함 → is_published 유지 (0으로 바꾸면 안됨)
-                cursor.execute("""
-                    UPDATE ace_products
-                    SET status = 'fail',
-                        updated_at = NOW()
-                    WHERE reference_number = %s
-                """, (ref_num,))
-                # [MERGE] buyma_listings 동일 반영 (is_published 유지)
                 cursor.execute("""
                     UPDATE buyma_listings
                     SET status = 'fail',

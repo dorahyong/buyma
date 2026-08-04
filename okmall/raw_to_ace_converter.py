@@ -910,7 +910,7 @@ class RawToAceConverter:
 
         ace_product = {
             'raw_data_id': raw_data['id'], 'source_site': raw_data['source_site'],
-            'reference_number': generate_reference_number(), 'name': buyma_name,
+            'name': buyma_name,
             'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
             'category_id': category_info.get('buyma_category_id', 0), 
             'expected_shipping_fee': expected_shipping_fee,
@@ -1084,7 +1084,7 @@ class RawToAceConverter:
         """raw_data_id로 기존 ace_product 조회"""
         with self.engine.connect() as conn:
             result = conn.execute(text("""
-                SELECT id, reference_number, buyma_product_id, is_published,
+                SELECT id, buyma_product_id, is_published,
                        (SELECT COUNT(*) FROM source_offerings so
                         JOIN buyma_listings bl ON bl.id=so.listing_id AND bl.is_active=1
                         WHERE so.ace_product_id=ace_products.id AND so.is_active=1
@@ -1096,11 +1096,10 @@ class RawToAceConverter:
             if row:
                 return {
                     'id': row[0],
-                    'reference_number': row[1],
-                    'buyma_product_id': row[2],
-                    'is_published': row[3],
+                    'buyma_product_id': row[1],
+                    'is_published': row[2],
                     # ON(단일권위): 이 ace 의 listing 이 바이마 등록됐나 (단일=본인·중복=winner 공유 listing)
-                    'listing_published': bool(row[4])
+                    'listing_published': bool(row[3])
                 }
             return None
 
@@ -1173,7 +1172,7 @@ class RawToAceConverter:
             product = ace_data['product']
             result = conn.execute(text("""
                 INSERT INTO ace_products (
-                    raw_data_id, source_site, reference_number, name,
+                    raw_data_id, source_site, name,
                     brand_id, brand_name, category_id, expected_shipping_fee,
                     original_price_krw, purchase_price_krw, original_price_jpy, purchase_price_jpy,
                     price, regular_price, reference_price, reference_price_verify_count,
@@ -1182,7 +1181,7 @@ class RawToAceConverter:
                     model_no, theme_id, season_id, colorsize_comments, colorsize_comments_jp,
                     source_model_id, duty, source_product_url, source_original_price, source_sales_price
                 ) VALUES (
-                    :raw_data_id, :source_site, :reference_number, :name,
+                    :raw_data_id, :source_site, :name,
                     :brand_id, :brand_name, :category_id, :expected_shipping_fee,
                     :original_price_krw, :purchase_price_krw, :original_price_jpy, :purchase_price_jpy,
                     :price, :regular_price, :reference_price, :reference_price_verify_count,

@@ -224,11 +224,6 @@ def _ace_option_meta(conn, ace_id, option_type, value):
     return (r['master_id'] or 0), r['details_json']
 
 
-def make_reference_number(listing):
-    """merge 전용 reference_number (unique, <=50). 실제 발급·DB 저장은 3단계."""
-    return f"MG{listing['id']}"
-
-
 # ============================================================
 # 옵션 값 표기 통합 (FREE/Free 같은 표기변종 → 대표 1개)
 #   - 원본 데이터는 안 건드림. 출구(빌더)에서만 합침 → 미래 데이터도 자동 처리.
@@ -353,7 +348,8 @@ def build_create_request(conn, listing):
         'category_id': listing['category_id'],
         'model_no': listing.get('model_no') or '',
         'price': listing['price'],
-        'reference_number': listing.get('reference_number') or make_reference_number(listing),
+        # 번호는 바로 앞 execute_create 의 issue_reference_number 가 발급·저장한 목록 번호.
+        'reference_number': listing['reference_number'],
         'buying_shop_name': listing.get('buying_shop_name'),
         # buyma_listings 컬럼명은 colorsize_comments → register 는 *_jp 키로 읽음
         'colorsize_comments_jp': listing.get('colorsize_comments'),
@@ -553,7 +549,7 @@ def published_member(conn, listing):
         cur.execute("""
             SELECT a.id AS ace_id, a.buyma_product_id, a.is_buyma_locked,
                    a.locked_name, a.locked_brand_id, a.locked_category_id, a.locked_reference_number,
-                   a.name, a.brand_id, a.category_id, a.reference_number, a.source_site
+                   a.name, a.brand_id, a.category_id, a.source_site
             FROM source_offerings so JOIN ace_products a ON a.id = so.ace_product_id
             WHERE so.listing_id=%s AND a.is_published = 1
             ORDER BY a.id LIMIT 1
@@ -588,7 +584,8 @@ def build_edit_request(conn, listing, pub):
         'category_id': L('locked_category_id', 'category_id'),
         'model_no': listing.get('model_no') or '',
         'price': listing['price'],
-        'reference_number': pub.get('locked_reference_number') or pub.get('reference_number'),
+        # ★ 관리번호는 목록(buyma_listings)만 본다. ace 는 안 읽는다.
+        'reference_number': listing.get('locked_reference_number') or listing.get('reference_number'),
         # ★ buying_shop_name 은 BUYMA 불변("変更できません") → winner 값으로 바꾸지 않음.
         #   소싱 교정은 내부(merge 테이블)에서만, BUYMA push 안 함. (None → 요청서 생략)
         'buying_shop_name': None,
@@ -655,11 +652,8 @@ def execute_retire(conn, listing, dry_run=True):
     이미 BUYMA에 올라간(reference_number 있는) listing 만 대상.
     미등록 신규는 호출 안 함(=그냥 등록 안 함, 기존 register 와 동일).
     """
+    # ★ 관리번호는 목록(buyma_listings)만 본다. ace 는 안 읽는다.
     ref = listing.get('locked_reference_number') or listing.get('reference_number')
-    if not ref:
-        pub = published_member(conn, listing)
-        if pub:
-            ref = pub.get('locked_reference_number') or pub.get('reference_number')
     if not ref:
         return {'skipped': True, 'reason': '미등록(ref 없음) → 내릴 것 없음'}
     opts = _listing_options(conn, listing['id'])
