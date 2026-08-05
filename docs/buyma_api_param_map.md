@@ -51,7 +51,7 @@
 | 9 | model_id | ⬜ 다음 | 26 | style_numbers | ✅ |
 | 10 | category_id | | 27 | options | |
 | 11 | theme_id | ✅ | 28 | size_unit | ✅ |
-| 12 | season_id | ✅ | 29 | colorsize_comments | |
+| 12 | season_id | ✅ | 29 | colorsize_comments | ✅ |
 | 13 | price | ✅ | 30 | variants | |
 | 14 | list_price | ✅ | 31 | order_quantity | ✅ |
 | 15 | regular_price | ✅ | 32 | shop_urls | ✅ |
@@ -479,6 +479,23 @@ errors: style_numbers[0].number
 실제 하차는 이 값이 아니라 재고 API 의 `0` 이 한다.
 
 **주문이 들어오면 바이마가 1씩 깎고, 우리는 다음 수정 때 새 난수로 되돌린다.**
+
+## 29. colorsize_comments (선택, 색·사이즈 보충설명)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 수집기가 긁은 실측치수·혼용률. `raw_scraped_data.raw_json_data` 의 `measurements`·`composition` |
+| **어디에 저장되나** | 변환기가 한국어 글로 조립 → `ace_products.colorsize_comments`<br>Gemini 배치가 일본어로 → `ace_products.colorsize_comments_jp`<br>reconcile 이 winner 것을 → `buyma_listings.colorsize_comments` |
+| **어떻게 가공되나** | winner 실측정보 + 소스코드에 박아둔 고정 홍보문구 5토막.<br>합쳐서 1000자를 넘으면 **홍보문구를 뒤에서부터** 뺀다 |
+| **언제 나가나** | 신규등록·수정 요청마다 매번 새로 조립해 보냄 |
+| **단계** | COLLECT → CONVERT → TRANSLATE → REGISTER · STOCK |
+| **실행 파일** | CONVERT: `okmall/raw_to_ace_converter.py` · `kasina/raw_to_converter_kasina.py`<br>TRANSLATE: `okmall/convert_to_japanese_gemini.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
+| **공용 / 몰별** | 실측정보는 **몰별**(수집기가 긁은 것) · 홍보문구는 **공용**(40개 몰 동일) |
+| **게시 후 편집** | 가능 — winner 가 바뀌면 따라 바뀐다 |
+| **바꾸려면 어디를** | 담는 규칙: `okmall/reconcile_ensure_group.py` → `make_colorsize_comments()`<br>홍보문구: `okmall/buyma_new_product_register.py` → `colorsize_footer_sections` |
+| **커밋** | `29 colorsize_comments` |
+
+**한도** 1000자. 담을 때 1000자로 자르고, **한글이 섞인 것은 담지 않는다**(요청 전체가 거부되므로).
 
 ## 32. shop_urls (선택, 매입처 주소)
 
@@ -1146,6 +1163,78 @@ listing#30561  {"id":132310662, "status":"public", "order_quantity":89, …}   �
 
 ---
 
+## 29. colorsize_comments
+
+### 명세
+선택, 게시 후 편집 가능. 색·사이즈에 대한 보충 설명.
+
+### 값이 흐르는 길 — 실제 상품 예 (A.P.C 카디건, 바이마 130379586)
+
+```
+① 수집   raw_scraped_data.raw_json_data
+            measurements = {"S": {"어깨 너비":"36.5cm 전후", "가슴 너비":"47cm 전후", …}}
+            composition  = {"outer":"울(100%)"}
+              ※ raw 에는 colorsize_comments 컬럼이 없다. JSON 안에 들어간다.
+② 변환   ace_products.colorsize_comments        「【실측 정보】 ■ S 사이즈: 어깨 너비 36.5cm 전후 …」
+③ 번역   ace_products.colorsize_comments_jp     「【実寸情報】 ■ S サイズ: 肩幅 36.5cm 前後 …」
+④ 목록   buyma_listings.colorsize_comments      winner ace 의 ③ 을 담는다
+⑤ 전송   요청서 = ④ + 고정 홍보문구
+```
+
+### 2026-08-05 복구 — ④ 가 통째로 없었다
+
+읽는 쪽(`reconcile_buyma_push.py:377·599`)은 처음부터 있었는데 **담는 쪽이 없어**
+`buyma_listings.colorsize_comments` 가 전체 145,541건 전부 NULL 이었다.
+그래서 `base_colorsize` 가 늘 빈 문자열이 되고, 소스코드의 고정 홍보문구 623자만 나갔다.
+
+웹훅 응답 70,788건이 전부 `★最安値に挑戦中！★` 로 시작하는 623자였던 것이 그 증거다.
+
+ace→listings 이관 때 만들지 않은 단계로, `reference_price` 와 같은 유형의 누락이다.
+
+| | |
+|---|---|
+| 일본어 실측정보를 가진 ace | 93,974 |
+| 그 값이 붙을 게시중 목록 | 28,972 (게시중 82,011의 35%) |
+
+### 담을 때 거르는 것
+
+`make_colorsize_comments()` 가 두 가지를 막는다. 실리면 **요청 전체가 거부**되기 때문이다.
+
+| 거르는 것 | 규모 | 이유 |
+|---|---|---|
+| 1000자 초과 → 앞 1000자만 | 14건 (최대 43,743자) | 빌더는 홍보문구만 줄이고 본문은 안 줄인다 |
+| 한글 잔존 → 아예 안 담음 | 526건 | 한 글자만 있어도 거부(`不正な文字「아」`). 번역이 끝나면 다음 실행에서 자연히 담긴다 |
+
+### 검증 (목록#1, 바이마 130379586)
+
+**① 요청서 조립**
+```
+담기 전   625자   ★最安値に挑戦中！★ …                          ← 홍보문구만
+담은 뒤   746자   【実寸情報】■ S サイズ: 肩幅 36.5cm 前後 …      ← 실측정보가 앞
+                 …※ 上記参考価格は現地参考価格を10KRW＝1.1円で…   ← 홍보문구는 뒤에 그대로
+```
+
+**② 담기(`_write_resolve`) — 트랜잭션 롤백으로 확인**
+```
+목록#1  winner offering=1  ace=66512   None → 121자
+목록#5  winner offering=13 ace=66514   None → 123자
+목록#14 winner offering=32 ace=66520   None → 121자
+```
+
+**③ 바이마 실전 전송 (2026-08-05 15:04)** — 가격 1엔을 빼 반영 여부를 판별
+```
+웹훅 15:04:59
+   errors = None      status = public      price = 38531 (보낸 값 그대로 반영)
+   colorsize_comments 746자, 実寸 포함
+   【実寸情報】■ S サイズ: 肩幅 36.5cm 前後 / 身幅 47cm 前後 …
+   【素材】表地: ウール(100%)
+   ★最安値に挑戦中！★ … ※ 上記参考価格は…10KRW＝1.1円で換算…
+```
+**바이마가 그대로 받아들였다.** 1000자 이내 ✅ / 실측정보 반영 ✅ / 홍보문구 유지 ✅
+(같은 응답에서 `reference_price=71195` 도 확인 — 참고가 복구분도 정상)
+
+---
+
 ## 19. buying_shop_name
 
 ### 명세
@@ -1237,6 +1326,9 @@ BUYMA   축약본
 | `brand_id` | `fast_price_updater.py:764` 가 `locked_brand_id or brand_id` 로 판정해 **0 을 거짓으로 취급**한다. 바이마엔 0인데 현재값을 보내 요청 전체가 거부된다. `reconcile_buyma_push.py` 는 `v not in (None,'')` 로 맞게 판정 — 두 곳을 같게 맞춰야 한다 |
 | `brand_name` | 브랜드 때문에 등록 못 하는 1,004건. ① 「選択できないブランド」541건 = `THOM BROWNE` 533 + `AJO AJOBYAJO` 8 → 바이마가 그 브랜드를 안 받는다 ② 「使用できない文字」135건 = 브랜드 6종(`C.A_ART PROJECT`·`I.ENOMOTO`·`i.el’d`·`B.EAUTIFUL`·`N.(エヌドット)`·`adidas(アディダス)`) — 어느 글자인지는 바이마가 안 알려줘 미확정 ③ 31건은 브랜드가 아니라 상품 텍스트의 ` `(줄바꿈 없는 공백) 문제로, `comments`·`name`·`buying_shop_name` 도 같이 거부됨. 전부 `status='fail'` 이라 스스로 안 풀린다 |
 | 하차(출품정지) | **재고 API 로는 안 내려간다 — 1,628건 실패**(게시중 647). 재고 API 는 `variants` 만 보내 **옵션 목록을 못 바꾸므로** 바이마에 등록된 옵션을 전부 덮어야 통과한다. 그런데 하차 코드는 정상 수정(`_build_ov`)이 하는 ①표기 통합(`Free`↔`FREE`) ②빠진 색×사이즈 격자 채우기 를 **둘 다 안 한다**. 실측: 격자 모자람 241 / 표기 다름 29 / 나머지 377은 바이마가 우리에게 없는 옵션 보유(읽기 API 없어 확인 불가). **해법: 하차를 상품 API 로 하면 `options` 를 다시 정의하므로 전부 풀린다**(`control:publish` 유지 → 삭제 아님, 상품번호·게시일수 유지) |
+| `colorsize_comments` | **어느 멤버 값을 담을지 재검토** — 지금은 winner 것. winner 가 바뀌면 실측정보도 바뀐다. 후보: 가장 긴 것(사이즈가 많은 소싱일수록 실측 줄이 많다) / 최신 수집분. 병합 목록에서 멤버끼리 실측치가 다를 수 있어 어느 쪽이 맞는지 판단 필요 |
+| `colorsize_comments` | **실측정보가 377자를 넘으면 홍보문구가 뒤에서부터 잘린다 — 5,055건 해당.** 맨 뒤 토막이 `※ 上記参考価格は…10KRW＝1.1円で換算…`(참고가 설명)이라 제일 먼저 사라진다. 참고가를 복구해 내보내는 중이므로 설명 없이 정가만 뜨게 된다. 토막 순서를 바꿀지 판단 필요 |
+| `colorsize_comments` | 한국어 원문은 있는데 일본어 번역이 없는 ace 152건 — 번역 배치가 못 채운 것. 담기지 않으므로 무해하나 실측정보가 안 나간다 |
 | 웹훅 | 2026-08-04 16:51~18:21 수신분 유실(서버가 옛 코드로 돌다 멈춤). 그 사이 등록·수정 결과가 DB에 반영되지 않았다 |
 | 병합 | 26 조사 중 발견 — 한 목록에 **모델번호가 아예 다른 멤버**가 섞인 경우 2,079건(브랜드 있는 게시중 75,688건의 2.7%). 예: `699296 92TCG 8563` 목록에 `699296-UKMBG-2572` 멤버. 앞 번호만 같고 뒤 코드가 다르면 다른 상품이라 과병합 의심. style_numbers 와는 무관하며 실제 오병합 규모는 미확인 |
 

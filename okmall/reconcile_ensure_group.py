@@ -262,6 +262,31 @@ def make_buying_shop_name(brand_name):
     return reg.truncate_buying_shop_name(f"{base}正規販売店")
 
 
+COLORSIZE_LIMIT = 1000       # BUYMA colorsize_comments 한도(빌더의 상수와 동일)
+_HANGUL = re.compile(r'[가-힣]')
+
+
+def make_colorsize_comments(conn, ace_product_id):
+    """색·사이즈 보충설명 = winner ace 의 일본어 실측정보. 그대로 '보낼 값'.
+
+    ★ 편집 가능한 값이라 winner 가 바뀌면 따라 바뀐다(정체성 값이 아니다).
+
+    ★ 두 가지를 여기서 걸러 둔다 — 요청서에 실리면 BUYMA 가 요청 전체를 거부하기 때문:
+      - 1000자 초과: 빌더는 홍보문구만 줄이고 본문은 안 줄인다(최대 43,743자 실측).
+      - 한글 잔존: 번역이 덜 됐거나 오염된 것(실측 526건). 한 글자만 있어도 거부된다.
+        이 경우 값을 안 담는다 → 번역이 끝나면 다음 실행에서 자연히 담긴다.
+    """
+    if not ace_product_id:
+        return None
+    with conn.cursor() as cur:
+        cur.execute("SELECT colorsize_comments_jp FROM ace_products WHERE id=%s", (ace_product_id,))
+        row = cur.fetchone()
+    text = (row or {}).get('colorsize_comments_jp') or ''
+    if not text or _HANGUL.search(text):
+        return None
+    return text[:COLORSIZE_LIMIT]
+
+
 def _upsert_listing(conn, group_key, seed, existing_id):
     if existing_id:
         return existing_id
@@ -334,6 +359,12 @@ def _write_resolve(conn, listing_id, offerings, r):
                            winner_offering_id=%s, updated_at=CURRENT_TIMESTAMP
                            WHERE id=%s""",
                         (r['selling'], r['competitor'], 1, r['winner']['id'], listing_id))
+            # 색·사이즈 보충설명 = winner ace 의 실측정보. 편집 가능한 값이라 winner 를 따라 갱신한다.
+            #   ★ 읽는 쪽(reconcile_buyma_push → build_request_json)은 이미 있었는데
+            #     담는 쪽이 없어 늘 빈 값이 나갔다(2026-08-05 복구).
+            cur.execute("""UPDATE buyma_listings SET colorsize_comments=%s,
+                           updated_at=CURRENT_TIMESTAMP WHERE id=%s""",
+                        (make_colorsize_comments(conn, r['winner']['ace_product_id']), listing_id))
             # 비어 있을 때만 채운다. 규칙은 make_buying_shop_name 과 동일(브랜드명 + 正規販売店).
             #   ★ 아직 등록 안 된 목록만. 이미 등록된 행은 BUYMA 가 아는 값을 우리가 알 수 없으므로
             #     비어 있어도 채우지 않는다(수정 요청에 이 항목을 안 보내므로 문제 없음).
