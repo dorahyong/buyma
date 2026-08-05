@@ -215,6 +215,7 @@ def ensure_group(conn, model_no, brand_id, dry_run=True):
 
     # ---- EXECUTE ----
     listing_id = _upsert_listing(conn, _group_key(seed_canon, members, existing_id), seed, existing_id)
+    _refresh_pending_name(conn, listing_id, seed)
     _upsert_offerings(conn, listing_id, members)
     conn.commit()
     offerings = _load_offerings(conn, listing_id)
@@ -276,6 +277,27 @@ def _upsert_listing(conn, group_key, seed, existing_id):
               seed['category_id'], seed['model_no'], make_buying_shop_name(seed['brand_name'])))
         cur.execute("SELECT id FROM buyma_listings WHERE group_key=%s", (group_key,))
         return cur.fetchone()['id']
+
+
+def _refresh_pending_name(conn, listing_id, seed):
+    """아직 등록 안 된 목록의 이름을 대표(seed) ace 의 현재 이름으로 맞춘다.
+
+    왜: 목록 이름은 그룹을 처음 만들 때 한 번 복사된다. 그런데 번역 배치는 ace_products 만
+        갱신하므로, 그룹이 번역보다 먼저 만들어지면 목록에 한국어 이름이 굳어버린다.
+        등록 대상 선정은 '이름에 한글 있으면 제외' 이므로 그 목록은 영원히 등록되지 않는다.
+        (2026-08-04 실측: ace 는 번역됐는데 목록만 한글로 남은 것 3,739건)
+
+    ★ 등록된 목록(buyma_product_id 있음)은 건드리지 않는다 — name 은 게시 후 편집 불가라
+      우리 값이 BUYMA 가 아는 값이어야 한다.
+    """
+    if not seed.get('name'):
+        return
+    with conn.cursor() as cur:
+        cur.execute("""UPDATE buyma_listings
+                          SET name=%s, updated_at=CURRENT_TIMESTAMP
+                        WHERE id=%s
+                          AND buyma_product_id IS NULL
+                          AND name <> %s""", (seed['name'], listing_id, seed['name']))
 
 
 def _upsert_offerings(conn, listing_id, members):

@@ -65,8 +65,11 @@ def truncate_buyma_name(text, max_limit=60):
             
         result += char
         current_length += char_width
-        
-    return result
+
+    # 자른 자리가 공백이면 BUYMA 가 저장할 때 지운다 → 우리가 보낸 값과 BUYMA 값이 달라진다.
+    #   name 은 게시 후 편집 불가라 값이 다르면 이후 수정 요청이 거부될 수 있으므로 여기서 다듬는다.
+    #   (2026-08-04 실측: 끝 공백 때문에 4,217건이 어긋나 있었다)
+    return result.rstrip()
 
 def truncate_option_value(text, max_limit=26):
     """
