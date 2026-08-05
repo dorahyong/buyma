@@ -16,7 +16,7 @@ def test_init_schema_creates_tables(tmp_path: Path):
         }
         assert {"items", "price_history", "orders",
                 "exposure_snapshot", "exposure_history", "exposure_state",
-                "stylehaus_history"}.issubset(names)
+                "stylehaus_history", "variant_history"}.issubset(names)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         assert version == SCHEMA_VERSION
     finally:
@@ -127,6 +127,17 @@ def test_item_variants_pk_and_index(tmp_path: Path):
         assert "idx_item_images_item" in idx
         assert "idx_stats_history_item" in idx
         assert "idx_item_variants_item" in idx
+        assert "idx_variant_history_observed" in idx
+    finally:
+        conn.close()
+
+
+def test_variant_history_schema(tmp_path: Path):
+    conn = connect(tmp_path / "t.db")
+    try:
+        init_schema(conn)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(variant_history)")}
+        assert cols == {"item_id", "variant_sku", "observed_at", "availability"}
     finally:
         conn.close()
 

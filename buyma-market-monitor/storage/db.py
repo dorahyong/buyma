@@ -15,7 +15,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 
 # ---- .env (buyma DB 자격증명) 로드: buyma-market-monitor 의 상위 buyma 폴더 .env ----
 _ENV_PATH = os.path.join(
@@ -208,6 +208,15 @@ CREATE TABLE IF NOT EXISTS stylehaus_history (
   PRIMARY KEY (item_id, observed_at)
 );
 CREATE INDEX IF NOT EXISTS idx_stylehaus_history_item ON stylehaus_history(item_id);
+
+CREATE TABLE IF NOT EXISTS variant_history (
+  item_id      TEXT NOT NULL,
+  variant_sku  TEXT NOT NULL,
+  observed_at  TEXT NOT NULL,
+  availability INTEGER NOT NULL,
+  PRIMARY KEY (item_id, variant_sku, observed_at)
+);
+CREATE INDEX IF NOT EXISTS idx_variant_history_observed ON variant_history(observed_at);
 """
 
 
@@ -223,7 +232,7 @@ _TABLES = sorted(
      "sellers", "item_images", "stats_history", "item_variants",
      "revisit_state", "seller_scan_state",
      "exposure_snapshot", "exposure_history", "exposure_state",
-     "stylehaus_history"],
+     "stylehaus_history", "variant_history"],
     key=len, reverse=True,
 )
 _TBL_RE = re.compile(r"\b(FROM|INTO|UPDATE|JOIN)(\s+)(" + "|".join(_TABLES) + r")\b", re.I)

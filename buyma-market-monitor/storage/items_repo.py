@@ -237,6 +237,71 @@ def replace_item_variants(
     )
 
 
+# variant_history.availability: 0=OutOfStock, 1=InStock, 2=변형삭제
+_AVAIL_OUT = 0
+_AVAIL_IN = 1
+_AVAIL_GONE = 2
+
+
+def _availability_to_int(availability: str | None) -> int:
+    return _AVAIL_IN if availability == "InStock" else _AVAIL_OUT
+
+
+def record_variant_history_delta(
+    conn: sqlite3.Connection,
+    item_id: str,
+    variants: list[dict],
+    observed_at: str,
+) -> int:
+    """Compare parsed variants to current item_variants; insert history only on change.
+
+    Must be called BEFORE replace_item_variants so the SELECT still sees the
+    previous state. Records:
+      - new sku → availability (0/1)
+      - availability change (either direction) → new availability (0/1)
+      - sku disappeared from parse → 2 (변형삭제)
+    Unchanged skus produce no row. First observation (empty current) writes a
+    baseline for every parsed variant. Returns the number of history rows inserted.
+    """
+    current_rows = conn.execute(
+        "SELECT variant_sku, availability FROM item_variants WHERE item_id = ?",
+        (item_id,),
+    ).fetchall()
+    current = {
+        (r["variant_sku"] if isinstance(r, sqlite3.Row) else r[0]): (
+            r["availability"] if isinstance(r, sqlite3.Row) else r[1]
+        )
+        for r in current_rows
+    }
+
+    parsed: dict[str, str | None] = {}
+    for v in variants:
+        sku = v.get("variant_sku")
+        if sku is None:
+            continue
+        parsed[str(sku)] = v.get("availability")
+
+    rows: list[tuple] = []
+    for sku, avail in parsed.items():
+        if sku not in current:
+            rows.append((item_id, sku, observed_at, _availability_to_int(avail)))
+        elif current[sku] != avail:
+            rows.append((item_id, sku, observed_at, _availability_to_int(avail)))
+
+    for sku in current:
+        if sku not in parsed:
+            rows.append((item_id, sku, observed_at, _AVAIL_GONE))
+
+    if not rows:
+        return 0
+    conn.executemany(
+        "INSERT OR IGNORE INTO variant_history "
+        "(item_id, variant_sku, observed_at, availability) VALUES (?, ?, ?, ?)",
+        rows,
+    )
+    return len(rows)
+
+
 def record_stats_observation(
     conn: sqlite3.Connection,
     item_id: str,

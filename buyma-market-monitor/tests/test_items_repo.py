@@ -9,7 +9,7 @@ from storage.items_repo import (
     get_item,
     update_detail_fields,
     replace_item_images, replace_item_variants, record_stats_observation,
-    record_stylehaus_observation,
+    record_stylehaus_observation, record_variant_history_delta,
     get_unenriched_active_item_ids_for_seller,
     get_seller_ids_with_pending_enrich,
 )
@@ -259,6 +259,78 @@ def test_record_stylehaus_observation_writes_first_then_delta_only(tmp_path: Pat
     assert len(rows) == 2
     assert rows[0]["has_style_haus"] == 0 and rows[0]["stylehaus_video_count"] == 0
     assert rows[1]["has_style_haus"] == 1 and rows[1]["stylehaus_video_count"] == 3
+
+
+def _v(sku, availability, color="RED", size="S"):
+    return {
+        "variant_sku": sku, "color": color, "size": size, "price": 1000,
+        "availability": availability, "stock_min": None, "stock_max": None,
+    }
+
+
+def test_variant_history_baseline_on_first_observation(tmp_path: Path):
+    conn = make_conn(tmp_path)
+    variants = [_v("v1", "InStock"), _v("v2", "OutOfStock")]
+    n = record_variant_history_delta(conn, "100", variants, "2026-08-06T10:00:00+09:00")
+    assert n == 2
+    replace_item_variants(conn, "100", variants)
+    rows = list(conn.execute(
+        "SELECT variant_sku, availability FROM variant_history "
+        "WHERE item_id='100' ORDER BY variant_sku"
+    ))
+    assert [(r["variant_sku"], r["availability"]) for r in rows] == [("v1", 1), ("v2", 0)]
+
+
+def test_variant_history_skips_unchanged(tmp_path: Path):
+    conn = make_conn(tmp_path)
+    variants = [_v("v1", "InStock"), _v("v2", "OutOfStock")]
+    record_variant_history_delta(conn, "100", variants, "2026-08-06T10:00:00+09:00")
+    replace_item_variants(conn, "100", variants)
+    n = record_variant_history_delta(conn, "100", variants, "2026-08-06T11:00:00+09:00")
+    assert n == 0
+    assert conn.execute("SELECT COUNT(*) FROM variant_history WHERE item_id='100'").fetchone()[0] == 2
+
+
+def test_variant_history_records_instock_to_outofstock_and_restock(tmp_path: Path):
+    conn = make_conn(tmp_path)
+    v1 = [_v("v1", "InStock")]
+    record_variant_history_delta(conn, "100", v1, "2026-08-06T10:00:00+09:00")
+    replace_item_variants(conn, "100", v1)
+
+    v2 = [_v("v1", "OutOfStock")]
+    assert record_variant_history_delta(conn, "100", v2, "2026-08-06T11:00:00+09:00") == 1
+    replace_item_variants(conn, "100", v2)
+
+    v3 = [_v("v1", "InStock")]
+    assert record_variant_history_delta(conn, "100", v3, "2026-08-06T12:00:00+09:00") == 1
+    replace_item_variants(conn, "100", v3)
+
+    rows = list(conn.execute(
+        "SELECT observed_at, availability FROM variant_history "
+        "WHERE item_id='100' AND variant_sku='v1' ORDER BY observed_at"
+    ))
+    assert [r["availability"] for r in rows] == [1, 0, 1]
+
+
+def test_variant_history_records_new_and_deleted_sku(tmp_path: Path):
+    conn = make_conn(tmp_path)
+    first = [_v("v1", "InStock"), _v("v2", "InStock")]
+    record_variant_history_delta(conn, "100", first, "2026-08-06T10:00:00+09:00")
+    replace_item_variants(conn, "100", first)
+
+    second = [_v("v2", "InStock"), _v("v3", "OutOfStock")]  # v1 gone, v3 new, v2 unchanged
+    n = record_variant_history_delta(conn, "100", second, "2026-08-06T11:00:00+09:00")
+    assert n == 2
+    replace_item_variants(conn, "100", second)
+
+    rows = {
+        r["variant_sku"]: r["availability"]
+        for r in conn.execute(
+            "SELECT variant_sku, availability FROM variant_history "
+            "WHERE item_id='100' AND observed_at='2026-08-06T11:00:00+09:00'"
+        )
+    }
+    assert rows == {"v1": 2, "v3": 0}
 
 
 def test_get_unenriched_active_item_ids_for_seller(tmp_path: Path):

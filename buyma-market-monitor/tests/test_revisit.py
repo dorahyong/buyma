@@ -24,6 +24,7 @@ def test_apply_revisit_records_observation_and_state(monkeypatch):
         "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
         "size_chart": None,
         "image_urls": [], "variants": [],
+        "has_style_haus": False, "stylehaus_video_count": 0,
     }
     monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: fake)
 
@@ -53,6 +54,7 @@ _LOW_METRIC_FAKE = {
     "view_count": 1, "fav_count": 0, "inquiry_count": 0,
     "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
     "size_chart": None, "image_urls": [], "variants": [],
+    "has_style_haus": False, "stylehaus_video_count": 0,
 }
 
 
@@ -143,6 +145,7 @@ def test_run_revisit_seeds_then_fetches(tmp_path, monkeypatch):
         "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
         "size_chart": None,
         "image_urls": [], "variants": [],
+        "has_style_haus": False, "stylehaus_video_count": 0,
     }
     monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: fake)
 
@@ -179,6 +182,7 @@ def test_run_revisit_respects_deadline(tmp_path, monkeypatch):
         "brand_model_number": None, "tags": None, "themes": None, "listed_at": None,
         "size_chart": None,
         "image_urls": [], "variants": [],
+        "has_style_haus": False, "stylehaus_video_count": 0,
     }
     monkeypatch.setattr(monitor_mod, "parse_item_detail", lambda html: fake)
     summary = run_revisit(
