@@ -103,7 +103,7 @@
 | **공용 / 몰별** | **공용** — 규칙은 `okmall/name_rules.py` 한 파일에 모여 있고, 몰 이름으로 갈라 쓴다. 조립 형식·축약도 공용 |
 | **게시 후 편집** | **불가** — 등록 시점에 정해지면 끝. 틀리면 새로 올리는 수밖에 없다 |
 | **바꾸려면 어디를** | 정리 규칙(몰별·공통 전부): `okmall/name_rules.py` → `MALL_PATTERNS` · `GLOBAL_PATTERNS`<br>조립 형식: 변환기의 `format_buyma_product_name()`<br>축약: `okmall/buyma_new_product_register.py` → `truncate_buyma_name()`<br>등록 전 목록 이름 갱신: `okmall/reconcile_ensure_group.py` → `_refresh_pending_name()` |
-| **커밋** | (작성 시점 미커밋) |
+| **커밋** | `6093dcb` 축약 끝공백·목록 이름 갱신 · `fddd440` 정리 규칙 공용화 |
 
 **등록 전에는 대표 ace 이름을 계속 따라간다.** 등록된 뒤에는 어떤 경로로도 바꾸지 않는다.
 
