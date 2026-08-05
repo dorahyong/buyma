@@ -49,7 +49,7 @@
 | 7 | brand_id | ✅ | 24 | images | ✅ |
 | 8 | brand_name | ✅ | 25 | shipping_methods | ✅ |
 | 9 | model_id | ✅ | 26 | style_numbers | ✅ |
-| 10 | category_id | ⬜ 다음 | 27 | options | |
+| 10 | category_id | ✅ | 27 | options | ⬜ 다음 |
 | 11 | theme_id | ✅ | 28 | size_unit | ✅ |
 | 12 | season_id | ✅ | 29 | colorsize_comments | ✅ |
 | 13 | price | ✅ | 30 | variants | |
@@ -199,7 +199,7 @@
 | 항목 | 내용 |
 |---|---|
 | **어디서 생기나** | 만들지 않는다 |
-| **어디에 저장되나** | **저장할 칸이 없다** — `ace_products.buyma_model_id` 가 있었으나 전 행(752,106건) 비어 있어 DROP (2026-08-05). `buyma_listings` 에는 만들지 않았다 |
+| **어디에 저장되나** | 없음 |
 | **어떻게 가공되나** | 없음 |
 | **언제 나가나** | **나가지 않는다** |
 | **단계** | 해당 없음 |
@@ -225,6 +225,47 @@
 `model_id` 에 값이 든 것은 8건뿐이다(우리가 보낸 것이 아님).
 
 채우려면 브랜드 250개 × 모델 6,023개를 손으로 매핑해야 한다. 카테고리·브랜드와 같은 수동 매핑 작업이다.
+
+## 10. category_id (필수, 카테고리 번호)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | `mall_categories` 매핑표 — 몰의 카테고리 경로를 바이마 카테고리에 **사람이 손으로** 연결한다 |
+| **어디에 저장되나** | `mall_categories.buyma_category_id` → `ace_products.category_id` → `buyma_listings.category_id`<br>→ 등록 접수 성공 시 `buyma_listings.locked_category_id` 로 굳는다 |
+| **어떻게 가공되나** | 그대로 정수로 보낸다. **매핑이 없으면 상품을 아예 안 만든다** — 그 경로를 `mall_categories` 에 `buyma_category_id=NULL` 로 넣어두고(검수 대기) 그 상품은 건너뛴다. 자동 추론은 하지 않는다 |
+| **언제 나가나** | 신규등록·수정 요청마다. 수정 때는 굳힌 값(`locked_category_id`) |
+| **단계** | CONVERT(매핑 조회) · REGISTER · STOCK |
+| **실행 파일** | CONVERT: `okmall/raw_to_ace_converter.py` · `kasina/raw_to_converter_kasina.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
+| **공용 / 몰별** | **몰별** — 매핑표가 몰마다 한 줄씩. 보내는 방식은 공용 |
+| **게시 후 편집** | **불가** — 다르게 보내면 요청 전체가 거부된다. **0 도 거부**된다 |
+| **바꾸려면 어디를** | 매핑: `mall_categories.buyma_category_id`<br>미매핑 확인: `SELECT full_path FROM mall_categories WHERE buyma_category_id IS NULL`<br>굳힌 값 읽기: `okmall/reconcile_buyma_push.py` → `build_edit_request()` 의 `L('locked_category_id','category_id')` |
+| **커밋** | (데이터 보정만, 코드 변경 없음) |
+
+**이 값은 세 군데에 쓰인다** — 바이마로 보내는 것 외에,
+① 사이즈 상세치수 필터(`size_details.csv` 에서 그 카테고리에 허용된 키만 남김),
+② 배송비(`buyma_master_categories_data.expected_shipping_fee` 조회 → 마진·판매가 계산).
+배송비는 굳힌 값이 아니라 **현재값**으로 찾는다(`okmall/resolve_merge.py:155`, 못 찾으면 15,000원).
+
+**0 은 절대 못 보낸다 (2026-08-05 실측)**: 굳힌 값이 0인 채로 수정 요청이 나가던 게시중 300건이 있었고,
+바이마는 이렇게 거부했다.
+
+```
+category_id: ["カテゴリIDは変更できません。", "カテゴリIDは存在しないカテゴリIDです。"]
+```
+
+카테고리가 0이면 ①의 허용 키 필터도 아무것도 못 걸러내(0번 카테고리가 표에 없음) `肩幅`·`胸囲` 같은 키가
+그대로 나가 **옵션까지 같이 거부**됐다(300건 중 150건). 이 상태로는 가격·재고가 바이마에 전혀 반영되지 않는다.
+
+**보정 (2026-08-05)**: 웹훅 응답(= 바이마가 실제로 들고 있는 값)을 기준으로 맞췄다.
+실패 웹훅에는 카테고리가 들어 있지 않아(0건 확인), 카테고리가 든 응답은 전부 성공 응답이다.
+
+| 대상 | 처리 | 백업 |
+|---|---|---|
+| 웹훅과 다른 1,383건 | `category_id`·`locked_category_id` 둘 다 웹훅 값으로 | `bak_listing_category_20260805` |
+| 굳힌 값이 0인 300건 | 현재값으로 채운 뒤 수정 요청 재전송 → 271건 성공 | `bak_listing_locked_cat0_20260805` |
+
+재전송 실패 24건은 카테고리와 무관하다 — 편집불가 21건(`編集できない商品です`), FREE·다른사이즈 혼재 2건,
+카테고리 불일치 1건(`130361013`). 스킵 5건은 전체 품절이라 빌드가 안 된 것으로, 재고 API 로 출품정지 처리했다.
 
 ## 11. theme_id (선택)
 
@@ -1489,6 +1530,10 @@ BUYMA   축약본
 | `images` | **`SOURCE_PRIORITY` 가 파이썬 딕셔너리로 3벌 복사돼 있다** (`image_union_loader_merge.py`·`dedup_corrector.py`·`dedup_corrector_merge.py`, 셋 다 내용 동일. `reconcile_ensure_group.py` 는 `dedup_corrector_merge` 에서 import). **28개 몰만 있고 16개 몰(lotte·shinsegae·abcmart·grandstage·bobu·stellastore·artemoa·adonis·milanobridge·wardrobe·milanosangin·brickmansion·maisonparco·loromoda·milaneez·musinsa)이 빠져 전부 99(맨 뒤)** 로 취급된다. DB 에 `mall_sites.order_no` 칸이 이미 있는데 63개 중 62개가 0 이라 안 쓰이고 있다. ⚠️이 값은 이미지 순서만이 아니라 **`_seed_ace()` 의 정체성 대표 선정에도 쓰이므로**(reconcile_ensure_group:131) 값을 채우면 미등록 목록의 이름·브랜드·카테고리 출처가 바뀔 수 있다 — 규모 확인 후 진행할 것 |
 | `images` | **`listing_images` 를 참조 구조로 바꾸는 안 — 지금은 보류.** 현재는 주소를 통째로 복사해 둬 중복이고(190MB), 뱃지 대조를 주소 글자로 해야 한다(`listing_images` 에 `image_id` 가 없어서. `ace_product_thumbnails` 는 이미 `uk_image_id` 로 묶여 있다. 코드 주석이 스스로 "인덱스가 없어 ace_product_id 로 먼저 좁힌다"고 적어둠). `listing_images` 의 주소 3칸을 `image_id` 하나로 바꾸면 중복·대조·용량이 한꺼번에 해결된다. **그런데 순수 구조 변경이 아니다** — 지금의 복사가 방어막 역할을 하고 있다: 변환기가 자리별로 사진을 갈아끼우고(`raw_to_converter_kasina.py:1502~1552`) 재고 동기화가 ace 이미지를 통째로 지운다(`stock_common.py:433`). 참조로 바꾸면 **라이브 상품의 대표사진이 바뀌거나 사라질 수 있다.** 하려면 이미지 수명 규칙(자리 교체 대신 새 행 추가 / 목록이 가리키는 이미지 삭제 금지 / ace 삭제 시 이미지 보존)을 먼저 만들어야 한다. 이미지 쪽을 크게 손볼 때 같이 할 것 |
 | 웹훅 | 2026-08-04 16:51~18:21 수신분 유실(서버가 옛 코드로 돌다 멈춤). 그 사이 등록·수정 결과가 DB에 반영되지 않았다 |
+| `category_id` | 굳힌 값이 `0` 이어도 그대로 나간다 — `build_edit_request()` 의 `L()` 이 `0` 을 `None`·`''` 이 아니라는 이유로 유효한 값으로 통과시킨다. 2026-08-05 에 데이터로는 막았으나 또 0 이 굳으면 같은 일이 반복된다. `brand_id` 는 0 이 정상이므로 카테고리에만 적용해야 한다 |
+| `category_id` | 배송비를 굳힌 값이 아니라 현재값(`buyma_listings.category_id`)으로 찾는다(`okmall/resolve_merge.py:155`). 지금은 둘이 같아졌지만 어긋나면 다른 카테고리의 배송비로 마진·판매가를 계산하게 된다 |
+| 확인 필요 | 바이마 화면에서 봐야 하는 것 — 편집불가 21건(`編集できない商品です`, 상품번호 `128599205`~`128599464` 연속), 카테고리 불일치 1건(`130361013`, 우리 값 3004) |
+| 정체성 보호 | `buyma_listings.locked_*` 를 지키는 장치가 없다. ace 에는 2026-02-09부터 트리거(`trg_protect_immutable_fields`)가 있어 스크립트가 불변필드를 덮으면 DB가 되돌렸는데, listings 로 옮긴 뒤 같은 사고가 반복됐다(7/22 정체성 불일치 191건 바이마 수동삭제 · 관리번호 96건 · 8/05 매입처 690건·카테고리 1,383건). 같은 보호를 listings 에 새로 달아야 한다. **단 ace 방식(조용히 되돌리기)은 금지** — 7/21 이름정리 "744건 완료"가 전부 오보였던 원인. 막되 알리고, 웹훅 기준 보정은 뚫을 길을 둘 것 |
 | 병합 | 26 조사 중 발견 — 한 목록에 **모델번호가 아예 다른 멤버**가 섞인 경우 2,079건(브랜드 있는 게시중 75,688건의 2.7%). 예: `699296 92TCG 8563` 목록에 `699296-UKMBG-2572` 멤버. 앞 번호만 같고 뒤 코드가 다르면 다른 상품이라 과병합 의심. style_numbers 와는 무관하며 실제 오병합 규모는 미확인 |
 
 ---
