@@ -48,8 +48,8 @@
 | 6 | comments | ✅ | 23 | tags | ✅ |
 | 7 | brand_id | ✅ | 24 | images | ✅ |
 | 8 | brand_name | ✅ | 25 | shipping_methods | ✅ |
-| 9 | model_id | ⬜ 다음 | 26 | style_numbers | ✅ |
-| 10 | category_id | | 27 | options | |
+| 9 | model_id | ✅ | 26 | style_numbers | ✅ |
+| 10 | category_id | ⬜ 다음 | 27 | options | |
 | 11 | theme_id | ✅ | 28 | size_unit | ✅ |
 | 12 | season_id | ✅ | 29 | colorsize_comments | ✅ |
 | 13 | price | ✅ | 30 | variants | |
@@ -193,6 +193,38 @@
 | **커밋** | (조사만 함, 코드 변경 없음) |
 
 **굳히지 않는데도 지금은 안 터진다** — 값이 바뀌면 수정이 거부될 수 있지만, 바이마 값과 대조에서 불일치 0건이었다.
+
+## 9. model_id (선택, 바이마 모델 라인)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 만들지 않는다 |
+| **어디에 저장되나** | **저장할 칸이 없다** — `ace_products.buyma_model_id` 가 있었으나 전 행(752,106건) 비어 있어 DROP (2026-08-05). `buyma_listings` 에는 만들지 않았다 |
+| **어떻게 가공되나** | 없음 |
+| **언제 나가나** | **나가지 않는다** |
+| **단계** | 해당 없음 |
+| **실행 파일** | — |
+| **공용 / 몰별** | — |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | 쓰려면 `buyma_listings` 에 칸을 만들고 `okmall/reconcile_buyma_push.py` 가 읽어 넘기도록 해야 한다 |
+| **커밋** | — |
+
+**이름이 같은 다른 값 세 개를 구분할 것**:
+
+| 무엇 | 정체 | 어디로 |
+|---|---|---|
+| 바이마 `model_id` | 브랜드별 **모델 라인** 이름 (Coach → BASEBALL·BLEECKER…). `models.csv` 6,023개 / 브랜드 250개 | 안 보냄 |
+| 우리 `raw_scraped_data.model_id` | 몰에서 긁어온 **품번**(VCS-5245 등) | `ace_products.model_no` → `buyma_listings.model_no` → **26 style_numbers** 로 나감 |
+| `ace_products.source_model_id` | 몰의 원본 품번 보관용 | 안 보냄 |
+
+즉 우리가 다루는 "모델번호"는 바이마의 `model_id` 가 아니라 **품번(`style_numbers`)** 이다.
+
+요청서를 만드는 자리에는 붙이는 코드가 남아 있으나(`okmall/buyma_new_product_register.py` 의
+`if product.get('buyma_model_id')`), 값을 담는 칸이 없어 항상 거짓이다. 수정 요청을 만드는
+`reconcile_buyma_push.py` 는 이 값을 아예 읽지 않는다. 바이마 쪽 기록으로도 웹훅 71,041건 중
+`model_id` 에 값이 든 것은 8건뿐이다(우리가 보낸 것이 아님).
+
+채우려면 브랜드 250개 × 모델 6,023개를 손으로 매핑해야 한다. 카테고리·브랜드와 같은 수동 매핑 작업이다.
 
 ## 11. theme_id (선택)
 
@@ -1009,6 +1041,7 @@ STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
 | `ace_products` | `buyma_product_id` | 웹훅이 목록에만 기록. 등록판정도 목록 기준으로 일원화됨 |
 | `buyma_listings` | `control` | 전 행 `draft` 고정, 읽는 코드 0 |
 | `buyma_listings` | `comments` | 전 행 비어 있음, 읽는 코드 0 (요청서는 매번 조립) |
+| `ace_products` | `buyma_model_id` | 전 행 비어 있음(752,106건), 읽는 코드 0. 바이마 모델 라인 번호는 안 쓴다. listings 로 옮기지 않음 (2026-08-05) |
 | `ace_products` | `size_unit` | 전 행 비어 있음(752,106건 전부 NULL), 읽는 코드 0. 단위는 `buyma_listings` 쪽 컬럼만 남긴다 (2026-08-05) |
 | `ace_product_api_logs` | 테이블 통째 | 웹훅 응답 53,040건을 목록당 최신 1건씩 `buyma_listing_api_logs` 로 옮기고 DROP. 소속 없어 못 옮긴 1,579건은 버림. 읽는 코드 0, unified·웹훅 미사용 (2026-08-05) |
 
