@@ -15,7 +15,8 @@ def test_init_schema_creates_tables(tmp_path: Path):
             )
         }
         assert {"items", "price_history", "orders",
-                "exposure_snapshot", "exposure_history", "exposure_state"}.issubset(names)
+                "exposure_snapshot", "exposure_history", "exposure_state",
+                "stylehaus_history"}.issubset(names)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         assert version == SCHEMA_VERSION
     finally:

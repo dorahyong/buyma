@@ -31,6 +31,8 @@ def parse_item_detail(html: str) -> dict[str, Any]:
     ``tags`` is the list of BUYMA 「タグ」 keywords (multiple). ``themes`` is the
     single BUYMA 「テーマ」 (feature/campaign) name, or None. ``listed_at`` is the
     出品(公開)日 (kokaidate) ISO string from the tracking meta, or None.
+    ``has_style_haus`` / ``stylehaus_video_count``: STYLE HAUS 관련 동영상
+    연동 여부 및 개수 (関連記事·푸터 링크는 제외).
 
     NOTE on ``name``: this key is returned for completeness and forensics.
     The listing-page name was already stored via ``upsert_scanned_item``, so
@@ -68,6 +70,7 @@ def parse_item_detail(html: str) -> dict[str, Any]:
         "variants": _extract_variants(product_group),
         "size_guide_text": _extract_size_guide_text(soup),
         "size_chart": _extract_size_chart(soup),
+        **_extract_stylehaus(soup),
     }
 
 
@@ -329,6 +332,31 @@ def _extract_listed_at(soup) -> str | None:
     if isinstance(v, str) and v.strip():
         return v.strip()
     return None
+
+
+def _extract_stylehaus(soup) -> dict[str, Any]:
+    """STYLE HAUS related videos on the item detail page (``#recent_youtube``).
+
+    True only when the block is STYLEHAUS-branded. Related articles
+    (``js-stylehaus-post-img``) and footer STYLE HAUS links do not count.
+    ``stylehaus_video_count`` = number of youtube buttons in that block.
+    """
+    yt = soup.select_one("#recent_youtube")
+    if yt is None:
+        return {"has_style_haus": False, "stylehaus_video_count": 0}
+
+    branded = False
+    for img in yt.find_all("img"):
+        alt = (img.get("alt") or "").upper().replace(" ", "")
+        src = (img.get("data-src") or img.get("src") or "").lower()
+        if "STYLEHAUS" in alt or "stylehaus" in src:
+            branded = True
+            break
+    if not branded:
+        return {"has_style_haus": False, "stylehaus_video_count": 0}
+
+    count = len(yt.select("button.js-recent-youtube-button"))
+    return {"has_style_haus": True, "stylehaus_video_count": count}
 
 
 def _extract_int_from_selector(soup, selector: str) -> int | None:

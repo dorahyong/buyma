@@ -25,6 +25,7 @@ from storage.items_repo import (
     replace_item_images,
     replace_item_variants,
     record_stats_observation,
+    record_stylehaus_observation,
 )
 
 
@@ -102,8 +103,8 @@ def apply_seller_scan_to_db(
 
 def apply_enrich(conn: sqlite3.Connection, item_id: str, html: str, now: str) -> None:
     """DB write only — caller holds the db_lock. Writes items detail columns
-    plus item_images, item_variants, and a stats_history observation, all in
-    one transaction so a crash cannot leave a half-enriched item."""
+    plus item_images, item_variants, stats_history, and stylehaus_history
+    (delta), all in one transaction so a crash cannot leave a half-enriched item."""
     meta = parse_item_detail(html)
     tags = meta["tags"]
     size_chart = meta["size_chart"]
@@ -130,6 +131,9 @@ def apply_enrich(conn: sqlite3.Connection, item_id: str, html: str, now: str) ->
         replace_item_images(conn, item_id, meta["image_urls"])
         replace_item_variants(conn, item_id, meta["variants"])
         record_stats_observation(conn, item_id, meta["view_count"], meta["fav_count"], meta["inquiry_count"], now)
+        record_stylehaus_observation(
+            conn, item_id, meta["has_style_haus"], meta["stylehaus_video_count"], now,
+        )
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")

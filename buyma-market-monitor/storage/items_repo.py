@@ -255,6 +255,36 @@ def record_stats_observation(
     )
 
 
+def record_stylehaus_observation(
+    conn: sqlite3.Connection,
+    item_id: str,
+    has_style_haus: bool,
+    stylehaus_video_count: int | None,
+    observed_at: str,
+) -> bool:
+    """Append STYLE HAUS presence only when it differs from the latest row
+    (first observation always written). Returns True if a row was inserted."""
+    has_i = 1 if has_style_haus else 0
+    count_i = int(stylehaus_video_count or 0)
+    last = conn.execute(
+        "SELECT has_style_haus, stylehaus_video_count FROM stylehaus_history "
+        "WHERE item_id = ? ORDER BY observed_at DESC LIMIT 1",
+        (item_id,),
+    ).fetchone()
+    if last is not None:
+        last_has = int(last["has_style_haus"] if isinstance(last, sqlite3.Row) else last[0])
+        last_count = last["stylehaus_video_count"] if isinstance(last, sqlite3.Row) else last[1]
+        last_count_i = int(last_count or 0)
+        if last_has == has_i and last_count_i == count_i:
+            return False
+    conn.execute(
+        "INSERT OR IGNORE INTO stylehaus_history "
+        "(item_id, observed_at, has_style_haus, stylehaus_video_count) VALUES (?, ?, ?, ?)",
+        (item_id, observed_at, has_i, count_i),
+    )
+    return True
+
+
 def get_unenriched_active_item_ids_for_seller(
     conn: sqlite3.Connection, seller_id: str
 ) -> set[str]:

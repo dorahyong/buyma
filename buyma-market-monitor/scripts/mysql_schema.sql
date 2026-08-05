@@ -1,5 +1,5 @@
 -- buyma-market-monitor → buyma MySQL DB (market_ 접두어). InnoDB / utf8mb4.
--- 원본: storage/db.py 의 SQLite 스키마(schema_version=10) 1:1 변환.
+-- 원본: storage/db.py 의 SQLite 스키마(schema_version=11) 1:1 변환.
 -- tags = BUYMA 「タグ」 JSON 배열(옛 themes 컬럼 rename), themes = 단일 「テーマ」 이름.
 -- listed_at = 出品(公開)日 kokaidate. write-once(NULL일 때만 기록, 재출품시에도 불변).
 -- 타임스탬프(*_at)는 코드가 ISO 문자열로 넣으므로 VARCHAR(32) 유지(무손실). 나중에 DATETIME 최적화 가능.
@@ -175,4 +175,14 @@ CREATE TABLE IF NOT EXISTS market_exposure_state (
   last_collected_at VARCHAR(32),
   last_status       VARCHAR(16),
   PRIMARY KEY (model_query)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- STYLE HAUS 관련 동영상 연동 유무 (상세 enrich 시 delta 기록).
+CREATE TABLE IF NOT EXISTS market_stylehaus_history (
+  item_id               VARCHAR(64) NOT NULL,
+  observed_at           VARCHAR(32) NOT NULL,
+  has_style_haus        TINYINT     NOT NULL,
+  stylehaus_video_count INT,
+  PRIMARY KEY (item_id, observed_at),
+  KEY idx_market_stylehaus_history_item (item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -9,6 +9,7 @@ from storage.items_repo import (
     get_item,
     update_detail_fields,
     replace_item_images, replace_item_variants, record_stats_observation,
+    record_stylehaus_observation,
     get_unenriched_active_item_ids_for_seller,
     get_seller_ids_with_pending_enrich,
 )
@@ -243,6 +244,21 @@ def test_record_stats_observation_ignores_duplicate_timestamp(tmp_path: Path):
     assert len(rows) == 1
     assert rows[0]["view_count"] == 10  # first wins (INSERT OR IGNORE)
     assert rows[0]["inquiry_count"] == 5  # first wins (INSERT OR IGNORE)
+
+
+def test_record_stylehaus_observation_writes_first_then_delta_only(tmp_path: Path):
+    conn = make_conn(tmp_path)
+    assert record_stylehaus_observation(conn, "100", False, 0, "2026-06-09T10:00:00+09:00")
+    assert not record_stylehaus_observation(conn, "100", False, 0, "2026-06-10T10:00:00+09:00")
+    assert record_stylehaus_observation(conn, "100", True, 3, "2026-06-11T10:00:00+09:00")
+    assert not record_stylehaus_observation(conn, "100", True, 3, "2026-06-12T10:00:00+09:00")
+    rows = list(conn.execute(
+        "SELECT observed_at, has_style_haus, stylehaus_video_count FROM stylehaus_history "
+        "WHERE item_id='100' ORDER BY observed_at"
+    ))
+    assert len(rows) == 2
+    assert rows[0]["has_style_haus"] == 0 and rows[0]["stylehaus_video_count"] == 0
+    assert rows[1]["has_style_haus"] == 1 and rows[1]["stylehaus_video_count"] == 3
 
 
 def test_get_unenriched_active_item_ids_for_seller(tmp_path: Path):
