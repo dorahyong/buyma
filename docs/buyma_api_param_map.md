@@ -53,7 +53,7 @@
 | 11 | theme_id | ✅ | 28 | size_unit | ✅ |
 | 12 | season_id | ✅ | 29 | colorsize_comments | |
 | 13 | price | ✅ | 30 | variants | |
-| 14 | list_price | ✅ | 31 | order_quantity | |
+| 14 | list_price | ✅ | 31 | order_quantity | ✅ |
 | 15 | regular_price | ✅ | 32 | shop_urls | ✅ |
 | 16 | reference_price | ✅ | 33 | updated_at | ✅ |
 | 17 | available_until | ✅ | 34 | created_at | ✅ |
@@ -458,6 +458,27 @@ errors: style_numbers[0].number
 
 명세: 설정 가능한 단위는 카테고리마다 다르고 `units.csv` 에 있다. `cm` · `inch` · `号` 는 전 카테고리 공통,
 `g` · `mg` · `ml` · `%` 는 화장품·와인·전자담배 등 일부 카테고리 전용.
+
+## 31. order_quantity (조건부 필수, 주문 가능 수량)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 요청서를 만들 때 즉석에서 만든다. `random.randint(90, 100)` |
+| **어디에 저장되나** | **저장하지 않는다** — DB 컬럼이 없다 |
+| **어떻게 가공되나** | 가공 없음. 정상 등록·수정은 90~100 난수, 하차는 `0` |
+| **언제 나가나** | 신규등록·수정 요청마다 새 난수. 하차(재고 API)는 `0` |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall/reconcile_runner.py`<br>STOCK: `<몰폴더>/stock_price_synchronizer_*_merge.py` |
+| **공용 / 몰별** | **공용** — 33몰 같은 방식 |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | `okmall/buyma_new_product_register.py` → `build_request_json()` 의 `random.randint(90, 100)`<br>하차값: 같은 파일 `call_buyma_variants_soldout()` 의 `order_quantity: 0`<br>⚠️ `fast_price_updater.py` 에 같은 조립식이 한 벌 더 있다(789·868행) - fast_price |
+| **커밋** | (조사만 함, 코드 변경 없음) |
+
+**"팔 물건이 있다"는 표시일 뿐이다.** 우리는 전 옵션을 `purchase_for_order`(주문 후 매입)로 올려
+개별 재고수를 안 보내므로, 상품 전체의 주문 가능 수량을 이 값으로 준다.
+실제 하차는 이 값이 아니라 재고 API 의 `0` 이 한다.
+
+**주문이 들어오면 바이마가 1씩 깎고, 우리는 다음 수정 때 새 난수로 되돌린다.**
 
 ## 32. shop_urls (선택, 매입처 주소)
 
@@ -1072,6 +1093,56 @@ api_brand_id = product.get('locked_brand_id') or product['brand_id']
 
 지우기 전에 재고 API 로 출품정지를 시도했으나 **12건 전부 거부**됐다.
 사유는 브랜드가 아니라 옵션 문제였고, 같은 사유로 1,628건이 하차에 실패하고 있다 → 할 일 참조.
+
+---
+
+## 31. order_quantity
+
+### 명세
+`purchase_for_order`(주문 후 매입)를 쓰면 **필수**. 상품 전체의 주문 가능 수량.
+
+### 왜 필요한가
+
+우리는 재고가 있으면 무조건 `purchase_for_order` 로 올린다(`raw_to_ace_converter.py:1035`).
+이 방식은 옵션별 재고수(`stocks`)를 보내면 거부되므로, 대신 상품 단위 수량을 이 값으로 준다.
+
+### 값은 두 가지뿐
+
+| 상황 | 값 | 보내는 곳 |
+|---|---|---|
+| 정상 등록·수정 | `random.randint(90, 100)` | `build_request_json()` (register 540행) |
+| 하차(출품정지) | `0` | `call_buyma_variants_soldout()` (register 675행) |
+
+하차 때 **0 이 필수**다. 전 변이가 `out_of_stock` 이면 팔 수 있는 변이가 0개인데
+기존 수량이 남아 있으면 충돌해 요청이 거부된다.
+
+### 실측 (2026-08-05, 웹훅 응답 표본 25,000건 중 값이 있는 15,495건)
+
+```
+  0 :     10건   ← 전부 하차된 상품 (바이마 status='soldout')
+ 89 :      2건   ← 아래 참조
+ 90 :  1,407     95 :  1,477
+ 91 :  1,359     96 :  1,377
+ 92 :  1,367     97 :  1,417
+ 93 :  1,418     98 :  1,397
+ 94 :  1,460     99 :  1,390      100 : 1,414
+```
+
+90~100 이 고르게 나온다 — 난수 그대로다.
+
+### 바이마가 이 값을 깎는다
+
+주문이 들어오면 바이마가 1씩 깎는다. 우리 코드는 90~100 만 만드는데 웹훅에 **89** 가 돌아온 것으로 확인했다.
+
+```
+listing#3027   {"id":133936219, "status":"public", "order_quantity":89, …}   주문 1건(7/19 판매완료)
+listing#30561  {"id":132310662, "status":"public", "order_quantity":89, …}   주문 1건(8/1 취소)
+```
+
+우리는 재고 동기화가 돌 때마다 새 난수(90~100)를 보내 되돌린다. 90개나 팔릴 상품이 없어 실질 영향은 없다.
+
+**우리 DB 에는 이 값이 없지만** 웹훅 응답 원문이 `buyma_listing_api_logs.api_response_json` 에
+통째로 저장돼 있어, 바이마 쪽 현재값을 그 안에서 볼 수 있다.
 
 ---
 
