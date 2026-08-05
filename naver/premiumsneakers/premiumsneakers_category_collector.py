@@ -113,7 +113,7 @@ API_LIST_STORES = {'shinsegae'}
 # =====================================================
 # 규칙은 okmall/name_rules.py 한 곳에 모아 두었다 (몰별 규칙 + 전 몰 공통 규칙).
 # 여기서는 그 함수를 그대로 가져다 쓴다. 규칙을 고칠 일이 있으면 name_rules.py 를 본다.
-from name_rules import clean_product_name
+from name_rules import clean_product_name, STORE_EXCLUDE_KEYWORDS
 
 
 # =====================================================
@@ -315,12 +315,15 @@ async def collect_product_list_all(page, all_products_url: str,
             clicked = False
             btn = await page.query_selector(num_sel)
             if btn:
-                await btn.click()
+                await btn.click(timeout=5000)
                 clicked = True
             else:
                 next_btn = await page.query_selector('a[role="button"]:has-text("다음")')
-                if next_btn:
-                    await next_btn.click()
+                # ★ 마지막 페이지에서도 '다음' 버튼은 DOM 에 남아 있고 '보이지만' 않는다.
+                #   그대로 누르면 30초를 기다렸다 실패하고(2026-08-06 pano), 그 뒤로 이 탭은
+                #   상세 페이지를 열지 못한다(Phase 2 전건 '매핑 실패'). 보이는지 먼저 확인한다.
+                if next_btn and await next_btn.is_visible():
+                    await next_btn.click(timeout=5000)
                     clicked = True
             if not clicked:
                 logger.warning(f"  p{next_num} 버튼 없음 → 종료")
@@ -885,6 +888,15 @@ async def run(limit: Optional[int], skip_existing: bool, dry_run: bool,
             return
 
         logger.info("\n== Phase 2: 상세 수집 ==")
+        # ★ 목록을 읽던 탭은 버리고 새 탭에서 상세를 받는다.
+        #   목록 쪽에서 클릭이 실패해 탭이 망가지면 상세가 전건 실패하기 때문(2026-08-06 pano).
+        #   쿠키·세션은 context 에 있으므로 새 탭도 그대로 로그인 상태다.
+        try:
+            await page.close()
+        except Exception:
+            pass
+        page = await context.new_page()
+
         rows = []
         first_row = None      # dump용 (batch save로 rows 비워져도 보존)
         total_collected = 0   # 누적 수집 카운트
