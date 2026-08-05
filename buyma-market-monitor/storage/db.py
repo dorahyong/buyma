@@ -15,7 +15,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 
 # ---- .env (buyma DB 자격증명) 로드: buyma-market-monitor 의 상위 buyma 폴더 .env ----
 _ENV_PATH = os.path.join(
@@ -166,6 +166,39 @@ CREATE TABLE IF NOT EXISTS seller_scan_state (
   next_scan_at    TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_seller_scan_next ON seller_scan_state(next_scan_at);
+
+CREATE TABLE IF NOT EXISTS exposure_snapshot (
+  snapshot_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  model_query      TEXT NOT NULL,
+  observed_at      TEXT NOT NULL,
+  n_results_page1  INTEGER,
+  total_results    INTEGER,
+  floor_price_yen  INTEGER,
+  status           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_exposure_snapshot_model ON exposure_snapshot(model_query);
+CREATE INDEX IF NOT EXISTS idx_exposure_snapshot_obs ON exposure_snapshot(observed_at);
+
+CREATE TABLE IF NOT EXISTS exposure_history (
+  snapshot_id  INTEGER NOT NULL,
+  rank         INTEGER NOT NULL,
+  model_query  TEXT NOT NULL,
+  item_id      TEXT NOT NULL,
+  price_yen    INTEGER,
+  seller_name  TEXT,
+  seller_id    TEXT,
+  observed_at  TEXT NOT NULL,
+  PRIMARY KEY (snapshot_id, rank)
+);
+CREATE INDEX IF NOT EXISTS idx_exposure_history_item ON exposure_history(item_id);
+CREATE INDEX IF NOT EXISTS idx_exposure_history_model ON exposure_history(model_query);
+CREATE INDEX IF NOT EXISTS idx_exposure_history_obs ON exposure_history(observed_at);
+
+CREATE TABLE IF NOT EXISTS exposure_state (
+  model_query       TEXT PRIMARY KEY,
+  last_collected_at TEXT,
+  last_status       TEXT
+);
 """
 
 
@@ -179,7 +212,8 @@ from pymysql.cursors import DictCursor
 _TABLES = sorted(
     ["items", "price_history", "orders", "order_watermarks", "order_run_meta",
      "sellers", "item_images", "stats_history", "item_variants",
-     "revisit_state", "seller_scan_state"],
+     "revisit_state", "seller_scan_state",
+     "exposure_snapshot", "exposure_history", "exposure_state"],
     key=len, reverse=True,
 )
 _TBL_RE = re.compile(r"\b(FROM|INTO|UPDATE|JOIN)(\s+)(" + "|".join(_TABLES) + r")\b", re.I)

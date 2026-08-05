@@ -1,5 +1,6 @@
-"""Single-process supervisor: daily batch (sellers→orders→scan) with per-stage
-time caps, remaining time to the revisit loop, cooldown-and-resume on IP block."""
+"""Single-process supervisor: daily batch (sellers→orders→exposure→scan)
+with per-stage time caps, remaining time to the revisit loop, cooldown-and-resume
+on IP block."""
 import argparse
 import json
 import logging
@@ -15,11 +16,9 @@ from typing import Callable
 import httpx
 from crawler.circuit_breaker import CircuitBreaker
 from crawler.client import HttpClient
-from crawler.page_scan import run_page_scan
+from crawler.exposure import run_exposure_sweep
 from crawler.revisit import run_revisit
 from crawler.value_scan import run_value_scan
-from storage.db import connect, init_schema
-from storage import sellers_repo
 from storage.store import now_iso, KST
 
 
@@ -108,6 +107,15 @@ def run_forever(args, stop_event) -> None:
 
     _SCAN_TIMEOUT = httpx.Timeout(connect=10.0, read=15.0, write=10.0, pool=10.0)
 
+    def stage_exposure(deadline, cb, se):
+        max_hours = None if deadline is None else max(0.0, (deadline - time.monotonic()) / 3600.0)
+        run_exposure_sweep(
+            db_path=DB_PATH,
+            client_factory=lambda: HttpClient(sleep_seconds=args.sleep, circuit_breaker=cb,
+                                              timeout=_SCAN_TIMEOUT, max_retries=1),
+            num_workers=args.workers, now=now_iso(), on_error=_append_error,
+            max_hours=max_hours, circuit_breaker=cb, stop_event=se)
+
     def stage_scan(deadline, cb, se):
         max_hours = None if deadline is None else max(0.0, (deadline - time.monotonic()) / 3600.0)
         run_value_scan(
@@ -130,6 +138,7 @@ def run_forever(args, stop_event) -> None:
     stages = [
         Stage("sellers", stage_sellers, cap_seconds=args.sellers_cap_hours * 3600.0),
         Stage("orders", stage_orders, cap_seconds=args.orders_cap_hours * 3600.0),
+        Stage("exposure", stage_exposure, cap_seconds=args.exposure_cap_hours * 3600.0),
         Stage("scan", stage_scan, cap_seconds=args.scan_cap_hours * 3600.0),
     ]
 
@@ -151,6 +160,7 @@ def main() -> int:
     p.add_argument("--cycle-hours", type=float, default=24.0)
     p.add_argument("--sellers-cap-hours", type=float, default=1.0)
     p.add_argument("--orders-cap-hours", type=float, default=3.0)
+    p.add_argument("--exposure-cap-hours", type=float, default=4.0)
     p.add_argument("--scan-cap-hours", type=float, default=6.0)
     p.add_argument("--cooldown-minutes", type=float, default=45.0)
     p.add_argument("--idle-minutes", type=float, default=10.0)
@@ -162,10 +172,15 @@ def main() -> int:
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
 
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+        format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S",
+        handlers=[logging.StreamHandler(),
+                  logging.FileHandler(DATA_DIR / "orchestrator.log", encoding="utf-8")])
+    # httpx가 요청마다 INFO 로그를 찍어 단계/진행 로그를 덮음 → 요청로그는 WARNING 이상만.
+    for _noisy in ("httpx", "httpcore"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
 
     stop_event = threading.Event()
 

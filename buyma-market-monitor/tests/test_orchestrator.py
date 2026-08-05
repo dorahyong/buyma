@@ -32,6 +32,7 @@ def test_run_cycle_runs_stages_in_order_then_revisit():
     stages = [
         Stage("sellers", mk("sellers", 100), cap_seconds=3600),
         Stage("orders", mk("orders", 200), cap_seconds=3600),
+        Stage("exposure", mk("exposure", 150), cap_seconds=3600),
         Stage("scan", mk("scan", 300), cap_seconds=3600),
     ]
     revisit_seen = {}
@@ -41,8 +42,9 @@ def test_run_cycle_runs_stages_in_order_then_revisit():
     run_cycle(stages=stages, revisit_fn=revisit_fn, cycle_seconds=86400,
               cooldown_seconds=1, clock=clock, sleep_fn=lambda s: None,
               make_cb=lambda: _FakeCB(), stop_event=threading.Event())
-    assert calls == ["sellers", "orders", "scan"]
-    assert revisit_seen["remaining"] == 85800
+    assert calls == ["sellers", "orders", "exposure", "scan"]
+    # 86400 - (100+200+150+300) = 85650
+    assert revisit_seen["remaining"] == 85650
 
 
 def test_run_cycle_cooldown_and_retry_on_block():

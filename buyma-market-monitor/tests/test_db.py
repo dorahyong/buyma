@@ -14,7 +14,8 @@ def test_init_schema_creates_tables(tmp_path: Path):
                 "SELECT name FROM sqlite_master WHERE type='table'"
             )
         }
-        assert {"items", "price_history", "orders"}.issubset(names)
+        assert {"items", "price_history", "orders",
+                "exposure_snapshot", "exposure_history", "exposure_state"}.issubset(names)
         version = conn.execute("PRAGMA user_version").fetchone()[0]
         assert version == SCHEMA_VERSION
     finally:
@@ -106,11 +107,11 @@ def test_schema_v2_new_tables_exist(tmp_path: Path):
         conn.close()
 
 
-def test_schema_version_is_9(tmp_path: Path):
+def test_schema_version_matches_constant(tmp_path: Path):
     conn = connect(tmp_path / "t.db")
     try:
         init_schema(conn)
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     finally:
         conn.close()
 

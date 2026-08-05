@@ -1,5 +1,5 @@
 -- buyma-market-monitor → buyma MySQL DB (market_ 접두어). InnoDB / utf8mb4.
--- 원본: storage/db.py 의 SQLite 스키마(11 tables, schema_version=9) 1:1 변환.
+-- 원본: storage/db.py 의 SQLite 스키마(schema_version=10) 1:1 변환.
 -- tags = BUYMA 「タグ」 JSON 배열(옛 themes 컬럼 rename), themes = 단일 「テーマ」 이름.
 -- listed_at = 出品(公開)日 kokaidate. write-once(NULL일 때만 기록, 재출품시에도 불변).
 -- 타임스탬프(*_at)는 코드가 ISO 문자열로 넣으므로 VARCHAR(32) 유지(무손실). 나중에 DATETIME 최적화 가능.
@@ -139,4 +139,40 @@ CREATE TABLE IF NOT EXISTS market_seller_scan_state (
   last_scanned_at VARCHAR(32),
   next_scan_at    VARCHAR(32),
   KEY idx_market_seller_scan_next (next_scan_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 품번 노출순위 스냅샷 (검색 /r/-O1/ 1페이지). append-only history + 요약 + 당일 상태.
+CREATE TABLE IF NOT EXISTS market_exposure_snapshot (
+  snapshot_id      BIGINT NOT NULL AUTO_INCREMENT,
+  model_query      VARCHAR(255) NOT NULL,
+  observed_at      VARCHAR(32)  NOT NULL,
+  n_results_page1  INT,
+  total_results    INT,
+  floor_price_yen  INT,
+  status           VARCHAR(16)  NOT NULL,
+  PRIMARY KEY (snapshot_id),
+  KEY idx_market_exposure_snapshot_model (model_query),
+  KEY idx_market_exposure_snapshot_obs (observed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS market_exposure_history (
+  snapshot_id  BIGINT       NOT NULL,
+  rank         INT          NOT NULL,
+  model_query  VARCHAR(255) NOT NULL,
+  item_id      VARCHAR(64)  NOT NULL,
+  price_yen    INT,
+  seller_name  VARCHAR(255),
+  seller_id    VARCHAR(64),
+  observed_at  VARCHAR(32)  NOT NULL,
+  PRIMARY KEY (snapshot_id, rank),
+  KEY idx_market_exposure_history_item (item_id),
+  KEY idx_market_exposure_history_model (model_query),
+  KEY idx_market_exposure_history_obs (observed_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS market_exposure_state (
+  model_query       VARCHAR(255) NOT NULL,
+  last_collected_at VARCHAR(32),
+  last_status       VARCHAR(16),
+  PRIMARY KEY (model_query)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
