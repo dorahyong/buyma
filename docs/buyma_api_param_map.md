@@ -46,11 +46,11 @@
 | 4 | id | ✅ | 21 | buyer_notes | ✅ |
 | 5 | status | ✅ (남은 문제 있음) | 22 | duty | ✅ |
 | 6 | comments | ✅ | 23 | tags | ✅ |
-| 7 | brand_id | ⬜ 다음 | 24 | images | |
-| 8 | brand_name | | 25 | shipping_methods | ✅ |
-| 9 | model_id | | 26 | style_numbers | ✅ |
+| 7 | brand_id | ✅ | 24 | images | |
+| 8 | brand_name | ✅ | 25 | shipping_methods | ✅ |
+| 9 | model_id | ⬜ 다음 | 26 | style_numbers | ✅ |
 | 10 | category_id | | 27 | options | |
-| 11 | theme_id | ✅ | 28 | size_unit | |
+| 11 | theme_id | ✅ | 28 | size_unit | ✅ |
 | 12 | season_id | ✅ | 29 | colorsize_comments | |
 | 13 | price | ✅ | 30 | variants | |
 | 14 | list_price | ✅ | 31 | order_quantity | |
@@ -158,6 +158,41 @@
 | **커밋** | `6435ef4` |
 
 **한도** 3,000자 — 실측 1,217~1,281자
+
+## 7. brand_id (필수, 브랜드 번호)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | `mall_brands` 매핑표 — 몰 브랜드를 바이마 브랜드에 사람이 손으로 연결한다 |
+| **어디에 저장되나** | `mall_brands.buyma_brand_id` → `ace_products.brand_id` → `buyma_listings.brand_id`<br>→ 등록 접수 성공 시 `buyma_listings.locked_brand_id` 로 굳는다 |
+| **어떻게 가공되나** | 그대로 정수로 보낸다. 매핑이 없으면 **0** 을 보내고 대신 `brand_name` 을 같이 보낸다 |
+| **언제 나가나** | 신규등록·수정 요청마다. 수정 때는 굳힌 값(`locked_brand_id`) |
+| **단계** | CONVERT(매핑 조회) · REGISTER · STOCK |
+| **실행 파일** | CONVERT: `okmall/raw_to_ace_converter.py` · `kasina/raw_to_converter_kasina.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
+| **공용 / 몰별** | **몰별** — 매핑표가 몰마다 한 줄씩. 보내는 방식은 공용 |
+| **게시 후 편집** | **불가** — 다르게 보내면 요청 전체가 거부된다 |
+| **바꾸려면 어디를** | 매핑: `mall_brands.buyma_brand_id`<br>보내는 자리: `okmall/buyma_new_product_register.py` → `build_request_json()`<br>굳힌 값 읽기: `okmall/reconcile_buyma_push.py` → `build_edit_request()` 의 `L('locked_brand_id','brand_id')` |
+| **커밋** | (조사만 함, 코드 변경 없음) |
+
+**0 은 "브랜드 없음"이 아니라 "바이마에 그 브랜드가 없음"** 이다. 게시중 82,011건 중 6,329건이 0.
+0 일 때는 `style_numbers`(품번)를 안 보낸다 — 바이마가 "품번은 브랜드를 지정해야 넣을 수 있다"며 거부하기 때문.
+
+## 8. brand_name (선택, 브랜드 이름)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | `mall_brands.buyma_brand_name` — 사람이 매핑할 때 적는 `영문(일본어읽기)` 형식 |
+| **어디에 저장되나** | `ace_products.brand_name` → `buyma_listings.brand_name`. **굳히는 칸이 없다** |
+| **어떻게 가공되나** | 손대지 않고 그대로 보낸다 |
+| **언제 나가나** | **`brand_id` 가 0 일 때만.** 0 이 아니면 아예 안 보낸다 |
+| **단계** | CONVERT · REGISTER · STOCK |
+| **실행 파일** | `brand_id` 와 같다 |
+| **공용 / 몰별** | **몰별** — 매핑표를 따라간다 |
+| **게시 후 편집** | **불가** |
+| **바꾸려면 어디를** | 값: `mall_brands.buyma_brand_name`<br>보내는 조건·자리: `okmall/buyma_new_product_register.py` → `build_request_json()` 의 `if not api_brand_id` 분기 |
+| **커밋** | (조사만 함, 코드 변경 없음) |
+
+**굳히지 않는데도 지금은 안 터진다** — 값이 바뀌면 수정이 거부될 수 있지만, 바이마 값과 대조에서 불일치 0건이었다.
 
 ## 11. theme_id (선택)
 
@@ -400,6 +435,29 @@
 errors: style_numbers[0].number
    "品番はブランドを指定した場合に設定できます。"
 ```
+
+## 28. size_unit (선택, 치수 단위)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 만들지 않는다 |
+| **어디에 저장되나** | `buyma_listings.size_unit` 컬럼은 있으나 **전 행(145,541건) 비어 있다** |
+| **어떻게 가공되나** | 없음 |
+| **언제 나가나** | **나가지 않는다** — 컬럼은 있지만 요청서에 넣지 않는다 |
+| **단계** | 해당 없음 |
+| **실행 파일** | — |
+| **공용 / 몰별** | — |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | 쓰려면 `okmall/buyma_new_product_register.py` → `build_request_json()` 에 항목 추가 |
+| **커밋** | — |
+
+**단위 없이 숫자만 나가고 있다**: 사이즈 옵션의 상세치수(`options[].details`)는 보낸다 —
+`肩幅 40.5 / 胸囲 91.0 / 袖丈 50.5 / 着丈 66.0` 같은 값이 `ace_product_options.details_json` 에
+92,584건 있고, 카테고리 허용 키만 걸러 나간다. 단위를 안 보내므로 바이마도 `size_unit: null` 로
+들고 있다(웹훅 34,695건 전부 null, 그중 상세치수까지 들어간 것 1,376건). 값 자체는 한국 몰에서 온 cm 기준이다.
+
+명세: 설정 가능한 단위는 카테고리마다 다르고 `units.csv` 에 있다. `cm` · `inch` · `号` 는 전 카테고리 공통,
+`g` · `mg` · `ml` · `%` 는 화장품·와인·전자담배 등 일부 카테고리 전용.
 
 ## 32. shop_urls (선택, 매입처 주소)
 
@@ -896,6 +954,8 @@ STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
 | `ace_products` | `buyma_product_id` | 웹훅이 목록에만 기록. 등록판정도 목록 기준으로 일원화됨 |
 | `buyma_listings` | `control` | 전 행 `draft` 고정, 읽는 코드 0 |
 | `buyma_listings` | `comments` | 전 행 비어 있음, 읽는 코드 0 (요청서는 매번 조립) |
+| `ace_products` | `size_unit` | 전 행 비어 있음(752,106건 전부 NULL), 읽는 코드 0. 단위는 `buyma_listings` 쪽 컬럼만 남긴다 (2026-08-05) |
+| `ace_product_api_logs` | 테이블 통째 | 웹훅 응답 53,040건을 목록당 최신 1건씩 `buyma_listing_api_logs` 로 옮기고 DROP. 소속 없어 못 옮긴 1,579건은 버림. 읽는 코드 0, unified·웹훅 미사용 (2026-08-05) |
 
 **실행**: `migrations/drop_ace_identity_columns.py --execute`
 
@@ -908,6 +968,110 @@ STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
 
 **주의**: unified 밖 도구(`buyma_cleaners/*`, `fast_price_updater.py`, `buyma_stats/*`,
 `thumbnail_buyma_apply.py`)는 아직 `ace_products.buyma_product_id` 를 읽는다. 실행하면 깨진다.
+
+---
+
+## 7·8. brand_id · brand_name
+
+### 명세
+`brand_id` **필수**, `brand_name` 선택. **둘 다 게시 후 편집 불가**(`公開後に編集できません` 목록).
+
+### 값이 흐르는 길
+
+```
+mall_brands.buyma_brand_id / buyma_brand_name      ← 사람이 손으로 매핑
+   ↓ 변환기
+ace_products.brand_id / brand_name
+   ↓ 그룹 대표(seed)
+buyma_listings.brand_id / brand_name
+   ↓ 등록 접수 성공 시
+buyma_listings.locked_brand_id                     ← brand_name 은 굳히는 칸이 없다
+```
+
+재고 API(variants.json)에는 브랜드가 **안 들어간다.** 그룹을 묶는 열쇠로만 쓴다.
+
+### 실측 (2026-08-05)
+
+| 항목 | 값 |
+|---|---|
+| 게시중 목록 | 82,011 |
+| `brand_id`=0 (→ `brand_name` 을 같이 보냄) | 6,329 |
+| `locked_brand_id` 없음 | 65 |
+| `locked_brand_id` ≠ 현재 `brand_id` | 2,543 |
+| `mall_brands` 매핑 행 / 그중 미매핑 | 7,424 / 2,080 |
+| `ace_products` 활성 / 그중 `brand_id`=0 | 739,191 / 42,289 |
+
+**바이마 값과 대조** (웹훅 응답의 최상위 `brand_id`·`brand_name`)
+
+| | 일치 | 불일치 | 웹훅에 없음 |
+|---|---|---|---|
+| `brand_id` | 31,245 | **1** | 4,607 |
+| `brand_name` | 2,290 | **0** | 33,563 |
+
+`locked_brand_id`≠현재값이 2,543건이지만 **수정 때 굳힌 값을 보내므로 문제되지 않는다.**
+
+### 0 을 0 으로 안 보내는 곳이 있다
+
+두 곳이 같은 자리를 다르게 판정한다.
+
+```python
+# reconcile_buyma_push.py — 맞음. 0 도 그대로 보낸다
+return v if (locked and v not in (None, '')) else pub.get(fb)
+
+# fast_price_updater.py:764 — 틀림. 0 이 거짓이라 현재값으로 넘어간다
+api_brand_id = product.get('locked_brand_id') or product['brand_id']
+```
+
+`brand_id` 는 편집 불가라, 바이마엔 0인데 다른 값을 보내면 **요청 전체가 거부**된다. → 할 일 참조.
+
+### 브랜드 때문에 등록이 막힌 것 — 1,004건
+
+웹훅 `errors.brand_name` 원문으로 갈랐다.
+
+| 유형 | 건수 | 뜻 |
+|---|---|---|
+| A. 브랜드명만 거부 | 676 | 브랜드명 자체 문제 |
+| B. 다른 항목도 같은 문자로 거부 | 31 | 상품 전체 문자 문제 |
+| C. 브랜드명 + 무관한 다른 에러 | 297 | 브랜드명 문제 + 별개 사유 |
+
+**A-1 「選択できないブランド」 541건 — 브랜드 2종뿐**
+
+```
+533  THOM BROWNE(トムブラウン)
+  8  AJO AJOBYAJO(アジョ バイ アジョ)
+```
+글자 문제가 아니라 **바이마에서 그 브랜드를 고를 수 없다**는 뜻이다.
+
+**A-2 「使用できない文字」 135건 — 브랜드 6종**
+
+```
+50  'C.A_ART PROJECT'    특수문자 . _
+42  'I.ENOMOTO'          특수문자 .
+27  'i.el’d'             특수문자 . ’
+ 8  'B.EAUTIFUL'         특수문자 .
+ 6  'N.(エヌドット)'      특수문자 . ( )
+ 2  'adidas(アディダス)'  특수문자 ( )
+```
+6종 중 5종에 마침표가 있다. 다만 바이마가 어느 글자인지 알려주지 않아 **단정하지 않는다.**
+괄호는 6종 중 2종뿐이고 그중 하나는 2건이라 **괄호를 원인으로 볼 근거는 없다.**
+
+**B 31건** — `comments`(28)·`name`(28)·`buying_shop_name`(19) 이 같이 거부됐고,
+바이마가 지목한 문자는 전부 ` `(줄바꿈 없는 공백) 였다. 브랜드명 탓이 아니다.
+
+### 굳힌 브랜드ID가 바이마와 달라 영구 수정 불가였던 12건 (2026-08-05 정리)
+
+「ブランドIDは変更できません」 로 **가격·재고 포함 모든 수정이 거부**되던 목록 12건.
+바이마 화면에서 직접 삭제하고 DB 는 raw 까지 통째로 지웠다(1,582행).
+
+```
+백업: migrations/delete_brandid_mismatch_12_backup_20260805_132829.json
+```
+
+딸려 있던 미등록 목록 3건(ROA 티셔츠)도 같이 지웠다 — 그 목록의 소싱이 이 ace 하나뿐이라
+안 지우면 빈 껍데기만 남기 때문. 바이마 미등록이라 영향 없음.
+
+지우기 전에 재고 API 로 출품정지를 시도했으나 **12건 전부 거부**됐다.
+사유는 브랜드가 아니라 옵션 문제였고, 같은 사유로 1,628건이 하차에 실패하고 있다 → 할 일 참조.
 
 ---
 
@@ -999,6 +1163,9 @@ BUYMA   축약본
 | `status` | `fail` 30,425건이 스스로 안 풀린다. 그중 11,188건은 신규등록 대상에서 영구 제외 상태 |
 | unified 밖 | 청소도구·`fast_price_updater.py`·`buyma_stats/*` 가 사라진 ace 컬럼을 읽는다 — 실행하면 깨진다 |
 | `buying_shop_name` | 게시중인데 값이 빈 76건 / 저장값이 30자를 넘는 등록분 142건. 수정 요청에 이 값을 안 보내므로 지금은 무해하다 |
+| `brand_id` | `fast_price_updater.py:764` 가 `locked_brand_id or brand_id` 로 판정해 **0 을 거짓으로 취급**한다. 바이마엔 0인데 현재값을 보내 요청 전체가 거부된다. `reconcile_buyma_push.py` 는 `v not in (None,'')` 로 맞게 판정 — 두 곳을 같게 맞춰야 한다 |
+| `brand_name` | 브랜드 때문에 등록 못 하는 1,004건. ① 「選択できないブランド」541건 = `THOM BROWNE` 533 + `AJO AJOBYAJO` 8 → 바이마가 그 브랜드를 안 받는다 ② 「使用できない文字」135건 = 브랜드 6종(`C.A_ART PROJECT`·`I.ENOMOTO`·`i.el’d`·`B.EAUTIFUL`·`N.(エヌドット)`·`adidas(アディダス)`) — 어느 글자인지는 바이마가 안 알려줘 미확정 ③ 31건은 브랜드가 아니라 상품 텍스트의 ` `(줄바꿈 없는 공백) 문제로, `comments`·`name`·`buying_shop_name` 도 같이 거부됨. 전부 `status='fail'` 이라 스스로 안 풀린다 |
+| 하차(출품정지) | **재고 API 로는 안 내려간다 — 1,628건 실패**(게시중 647). 재고 API 는 `variants` 만 보내 **옵션 목록을 못 바꾸므로** 바이마에 등록된 옵션을 전부 덮어야 통과한다. 그런데 하차 코드는 정상 수정(`_build_ov`)이 하는 ①표기 통합(`Free`↔`FREE`) ②빠진 색×사이즈 격자 채우기 를 **둘 다 안 한다**. 실측: 격자 모자람 241 / 표기 다름 29 / 나머지 377은 바이마가 우리에게 없는 옵션 보유(읽기 API 없어 확인 불가). **해법: 하차를 상품 API 로 하면 `options` 를 다시 정의하므로 전부 풀린다**(`control:publish` 유지 → 삭제 아님, 상품번호·게시일수 유지) |
 | 웹훅 | 2026-08-04 16:51~18:21 수신분 유실(서버가 옛 코드로 돌다 멈춤). 그 사이 등록·수정 결과가 DB에 반영되지 않았다 |
 | 병합 | 26 조사 중 발견 — 한 목록에 **모델번호가 아예 다른 멤버**가 섞인 경우 2,079건(브랜드 있는 게시중 75,688건의 2.7%). 예: `699296 92TCG 8563` 목록에 `699296-UKMBG-2572` 멤버. 앞 번호만 같고 뒤 코드가 다르면 다른 상품이라 과병합 의심. style_numbers 와는 무관하며 실제 오병합 규모는 미확인 |
 
