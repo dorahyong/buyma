@@ -48,7 +48,7 @@
 | 6 | comments | ✅ | 23 | tags | ✅ |
 | 7 | brand_id | ⬜ 다음 | 24 | images | |
 | 8 | brand_name | | 25 | shipping_methods | ✅ |
-| 9 | model_id | | 26 | style_numbers | |
+| 9 | model_id | | 26 | style_numbers | ✅ |
 | 10 | category_id | | 27 | options | |
 | 11 | theme_id | ✅ | 28 | size_unit | |
 | 12 | season_id | ✅ | 29 | colorsize_comments | |
@@ -378,6 +378,28 @@
 | **게시 후 편집** | 가능 |
 | **바꾸려면 어디를** | `okmall/buyma_new_product_register.py` → `BUYMA_FIXED_VALUES` |
 | **커밋** | — |
+
+## 26. style_numbers (선택, 품번)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 목록의 모델번호(`buyma_listings.model_no`)에서 매번 만든다 |
+| **어디에 저장되나** | 저장하지 않는다 (모델번호에서 파생) |
+| **어떻게 가공되나** | 모델번호 하나를 **3가지 표기**로 늘린다 — 원본 / 기호를 공백으로 / 영문숫자만.<br>같은 값은 하나로 합치고 `[{"number": ..., "memo": ""}]` 형태로 감싼다 |
+| **언제 나가나** | 신규등록·수정 요청마다 새로 조립해 보냄. **단 브랜드 미등록(`brand_id=0`)이면 아예 안 보낸다** |
+| **단계** | REGISTER, STOCK |
+| **실행 파일** | REGISTER: `okmall/reconcile_runner.py --mode auto --scope new --source <몰>`<br>STOCK: `<몰폴더>/stock_price_synchronizer_*_merge.py --source <몰>` |
+| **공용 / 몰별** | **공용** — 변형 규칙 한 곳 |
+| **게시 후 편집** | 가능 |
+| **바꾸려면 어디를** | 변형 규칙: `okmall/buyma_new_product_register.py` → `generate_model_no_variants()`<br>브랜드 없을 때 제외: 같은 파일 `build_request_json()` |
+| **커밋** | — |
+
+**브랜드 없으면 못 보낸다 (2026-08-05 실측)**: `brand_id=0` 인 게시중 상품에 품번을 붙여 수정 요청을 보냈더니 바이마가 거부했다.
+
+```
+errors: style_numbers[0].number
+   "品番はブランドを指定した場合に設定できます。"
+```
 
 ## 32. shop_urls (선택, 매입처 주소)
 
@@ -978,6 +1000,7 @@ BUYMA   축약본
 | unified 밖 | 청소도구·`fast_price_updater.py`·`buyma_stats/*` 가 사라진 ace 컬럼을 읽는다 — 실행하면 깨진다 |
 | `buying_shop_name` | 게시중인데 값이 빈 76건 / 저장값이 30자를 넘는 등록분 142건. 수정 요청에 이 값을 안 보내므로 지금은 무해하다 |
 | 웹훅 | 2026-08-04 16:51~18:21 수신분 유실(서버가 옛 코드로 돌다 멈춤). 그 사이 등록·수정 결과가 DB에 반영되지 않았다 |
+| 병합 | 26 조사 중 발견 — 한 목록에 **모델번호가 아예 다른 멤버**가 섞인 경우 2,079건(브랜드 있는 게시중 75,688건의 2.7%). 예: `699296 92TCG 8563` 목록에 `699296-UKMBG-2572` 멤버. 앞 번호만 같고 뒤 코드가 다르면 다른 상품이라 과병합 의심. style_numbers 와는 무관하며 실제 오병합 규모는 미확인 |
 
 ---
 
