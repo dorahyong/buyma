@@ -55,6 +55,26 @@ def fetch_listing(conn, listing_id):
         return cur.fetchone()
 
 
+def _reference_price_jpy(conn, listing_id):
+    """참고가(정가, 엔) — 이 목록에 묶인 멤버들의 정가 중 **최댓값**.
+
+    참고가는 BUYMA 화면의 '정가' 자리다. 같은 상품이면 정가도 하나여야 맞지만,
+    실측하면 멤버가 2개 이상인 목록 36,945건 중 85%가 몰마다 정가를 다르게 적어놨다
+    (세일가를 정가로 올린 몰이 섞여 있음). winner 값을 쓰면 소싱이 바뀔 때마다
+    화면의 정가가 오르내리므로, 멤버 중 최댓값으로 고정한다.
+
+    ※ 판매가보다 작으면 BUYMA 가 거부한다 → 그 판단은 register.build_request_json 이 한다.
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT MAX(a.original_price_jpy) v
+            FROM source_offerings so JOIN ace_products a ON a.id = so.ace_product_id
+            WHERE so.listing_id = %s AND so.is_active = 1
+        """, (listing_id,))
+        row = cur.fetchone()
+    return row['v'] if row and row['v'] else None
+
+
 def _winner_offering(conn, listing):
     if not listing.get('winner_offering_id'):
         return None
@@ -348,6 +368,8 @@ def build_create_request(conn, listing):
         'category_id': listing['category_id'],
         'model_no': listing.get('model_no') or '',
         'price': listing['price'],
+        # 참고가(정가) — 멤버 정가 중 최댓값. 판매가보다 클 때만 요청서에 붙는다(빌더가 판단).
+        'original_price_jpy': _reference_price_jpy(conn, listing['id']),
         # 번호는 바로 앞 execute_create 의 issue_reference_number 가 발급·저장한 목록 번호.
         'reference_number': listing['reference_number'],
         'buying_shop_name': listing.get('buying_shop_name'),
@@ -567,6 +589,8 @@ def build_edit_request(conn, listing, pub):
         'category_id': L('locked_category_id', 'category_id'),
         'model_no': listing.get('model_no') or '',
         'price': listing['price'],
+        # 참고가(정가) — 멤버 정가 중 최댓값. 편집 가능한 값이라 수정 때도 함께 보낸다.
+        'original_price_jpy': _reference_price_jpy(conn, listing['id']),
         # ★ 관리번호는 목록(buyma_listings)만 본다. ace 는 안 읽는다.
         'reference_number': listing.get('locked_reference_number') or listing.get('reference_number'),
         # ★ buying_shop_name 은 BUYMA 불변("変更できません") → winner 값으로 바꾸지 않음.
