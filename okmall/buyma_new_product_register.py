@@ -313,16 +313,20 @@ def build_options_array(option_rows: List[Dict], valid_sizes: set = None, valid_
     options = []
     for row in option_rows:
         # ★ variants에 있는 것만 포함 (필터링)
+        #   variants 쪽 값은 이미 26반각으로 잘린 상태다. 여기서 원본으로 대조하면 26반각을
+        #   넘는 옵션이 "변이에 없는 값"으로 오인돼 options 에서만 빠지고, BUYMA 가
+        #   "변이가 가리키는 선택지가 없다"며 요청 전체를 거부한다. → 같은 기준(자른 값)으로 대조.
+        _val = truncate_option_value(row['value'])
         if valid_sizes is not None and row['option_type'] == 'size':
-            if row['value'] not in valid_sizes:
+            if _val not in valid_sizes:
                 continue
         if valid_colors is not None and row['option_type'] == 'color':
-            if row['value'] not in valid_colors:
+            if _val not in valid_colors:
                 continue
 
         option = {
             "type": row['option_type'],
-            "value": truncate_option_value(row['value']),
+            "value": _val,
             "position": row['position'],
             "master_id": row['master_id'] or 0
         }

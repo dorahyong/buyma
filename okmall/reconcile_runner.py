@@ -297,6 +297,22 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
             r = push.execute_retire(conn, listing, dry_run=False)
             return {'mode': 'retire', 'listing_id': listing_id, 'model_no': model_no, **r}
 
+        # ── 옵션값 한글 게이트 ──
+        # BUYMA 는 한글을 안 받는다("名称に不正な文字が含まれています"). 보내면 요청 전체가
+        # 거부되어 같이 실린 가격·재고 변경까지 무효가 되므로, 번역이 끝날 때까지 안 보낸다.
+        # (--mode create / --mode edit 선정 쿼리에는 같은 조건이 이미 있는데, 자동화가 쓰는
+        #  --mode auto 경로에만 빠져 있었다. 2026-08-06)
+        with conn.cursor() as _cur:
+            _cur.execute("""
+                SELECT COUNT(*) c FROM listing_options
+                 WHERE listing_id=%s AND is_active=1
+                   AND (color_value REGEXP '[가-힣]' OR size_value REGEXP '[가-힣]')
+            """, (listing_id,))
+            _hangul_opts = _cur.fetchone()['c']
+        if _hangul_opts:
+            return {'skipped': True, 'reason': f'옵션값 한글 {_hangul_opts}개 → 번역 후 처리',
+                    'listing_id': listing_id, 'model_no': model_no}
+
         # ── 출품 가능 → 분류(CREATE/EDIT/COLLAPSE) ── (listing_mode = 스위치 반영)
         if dry_run:
             return {'dry_run': True, 'listing_id': listing_id, 'model_no': model_no,
