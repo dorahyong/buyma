@@ -1081,7 +1081,7 @@ class RawToAceConverter:
         """raw_data_id로 기존 ace_product 조회"""
         with self.engine.connect() as conn:
             result = conn.execute(text("""
-                SELECT id, buyma_product_id, is_published,
+                SELECT id,
                        (SELECT COUNT(*) FROM source_offerings so
                         JOIN buyma_listings bl ON bl.id=so.listing_id AND bl.is_active=1
                         WHERE so.ace_product_id=ace_products.id AND so.is_active=1
@@ -1093,10 +1093,8 @@ class RawToAceConverter:
             if row:
                 return {
                     'id': row[0],
-                    'buyma_product_id': row[1],
-                    'is_published': row[2],
-                    # ON(단일권위): 이 ace 의 listing 이 바이마 등록됐나 (단일=본인·중복=winner 공유 listing)
-                    'listing_published': bool(row[3])
+                    # 이 ace 의 listing 이 바이마 등록됐나 (단일=본인·중복=winner 공유 listing)
+                    'listing_published': bool(row[1])
                 }
             return None
 

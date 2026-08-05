@@ -43,6 +43,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
+import authority_flag  # 등록판정 단일 정의 (buyma_listings 기준)
 
 # ===========================================
 # 환경 설정
@@ -956,12 +957,13 @@ def get_leaf_categories(category_filter: Optional[str] = None) -> List[Dict]:
 def get_published_product_ids() -> set:
     """등록 완료된 laprima 상품의 mall_product_id 집합"""
     with engine.connect() as conn:
-        sql = """
+        _reg = authority_flag.registered_sql('a')
+        sql = f"""
             SELECT r.mall_product_id
             FROM raw_scraped_data r
             INNER JOIN ace_products a ON r.id = a.raw_data_id
             WHERE r.source_site = 'laprima'
-              AND a.is_published = 1
+              AND {_reg}
         """
         rows = conn.execute(text(sql)).fetchall()
         return {str(r[0]) for r in rows}
