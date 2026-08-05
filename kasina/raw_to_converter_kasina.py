@@ -45,6 +45,7 @@ if sys.platform == 'win32':
 # okmall 디렉토리 (공용 모듈 + 마스터 데이터 참조)
 OKMALL_DIR = os.path.join(os.path.dirname(__file__), '..', 'okmall')
 sys.path.insert(0, OKMALL_DIR)
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
 
 # convert_to_japanese_gemini.py에서 배치 번역 함수 가져오기
 from convert_to_japanese_gemini import run_batch_translation
@@ -1141,7 +1142,10 @@ class RawToAceConverter:
             options = json_data.get('options', [])
 
         # 1. 상품명 생성 및 정제 (한국어 원본 저장, 배치 번역에서 처리)
-        product_name = raw_data.get('product_name', '')
+        #   수집 때 이미 정리했지만 여기서 한 번 더 부른다.
+        #   → 정리 규칙을 고치면 재수집 없이 '재변환'만으로 이미 모아 둔 상품에도 반영된다.
+        #   (규칙은 okmall/name_rules.py. 멱등이라 두 번 적용해도 결과가 같다)
+        product_name = clean_product_name(raw_data.get('source_site'), raw_data.get('product_name', ''))
         buyma_name = format_buyma_product_name(
             brand_name=strip_brand_jp(brand_info.get('buyma_brand_name', '')),
             product_name=product_name,

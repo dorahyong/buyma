@@ -38,6 +38,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -500,14 +501,8 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, category_path: str =
     if '리퍼브' in product_name:
         return None  # [리퍼브] 제품 제외
 
-    # 대괄호 태그 정리:
-    #  - 콜라보 [A x B] (x/X/× 포함) → 대괄호만 제거하고 콜라보 텍스트는 유지
-    #  - 그 외 [브랜드/홍보] (last size, brand sale, adizero sale, 본사공식, jerusalem sandals 등) → 통째 제거
-    def _strip_bracket(m):
-        inner = m.group(1)
-        return f" {inner} " if re.search(r'[Xx×]', inner) else " "
-    product_name = re.sub(r"\[([^\]]*)\]", _strip_bracket, product_name)
-    product_name = re.sub(r"\s+", " ", product_name).strip()
+    # 상품명 정리 (대괄호 태그 처리 등). 규칙은 okmall/name_rules.py 에 모여 있다.
+    product_name = clean_product_name(SOURCE_SITE, product_name)
 
     model_id = extract_model_id_from_name(product_name)
     if not model_id:

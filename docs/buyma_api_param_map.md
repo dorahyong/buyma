@@ -42,11 +42,11 @@
 |---|---|---|---|---|---|
 | 1 | control | ✅ | 18 | buying_area_id | ✅ |
 | 2 | reference_number | ✅ | 19 | buying_shop_name | ✅ |
-| 3 | name | ⬜ 다음 | 20 | shipping_area_id | ✅ |
+| 3 | name | ✅ | 20 | shipping_area_id | ✅ |
 | 4 | id | ✅ | 21 | buyer_notes | ✅ |
 | 5 | status | ✅ (남은 문제 있음) | 22 | duty | ✅ |
 | 6 | comments | ✅ | 23 | tags | ✅ |
-| 7 | brand_id | | 24 | images | |
+| 7 | brand_id | ⬜ 다음 | 24 | images | |
 | 8 | brand_name | | 25 | shipping_methods | ✅ |
 | 9 | model_id | | 26 | style_numbers | |
 | 10 | category_id | | 27 | options | |
@@ -90,11 +90,25 @@
 | **바꾸려면 어디를** | `okmall/reconcile_buyma_push.py` → `issue_reference_number()`(발급) / `build_create_request()`·`build_edit_request()`·`execute_retire()`(전송) |
 | **커밋** | `b57df2e` |
 
-## 3. name (필수)
+## 3. name (필수, 상품명)
 
-*(작성 예정 — 몰마다 처리가 갈리는 첫 파라미터)*
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 몰에서 수집한 상품명을 변환기가 `送料・関税込 \| 브랜드 \| 상품명 모델번호` 형식으로 조립 |
+| **어디에 저장되나** | `ace_products.name` (몰별로 하나씩)<br>→ 그룹 대표(seed) ace 의 이름이 `buyma_listings.name`<br>→ 등록 성공 시 `buyma_listings.locked_name` 으로 굳는다 |
+| **어떻게 가공되나** | ① 수집기가 몰별 규칙으로 정리(지점명·시즌코드·국내마커 등)<br>② 변환기가 한 번 더 정리한 뒤 형식 조립 + 특수문자 정제<br>③ 번역 배치가 일본어로 바꿈(`ace_products.name` 갱신)<br>④ 전송 직전 60자(반각)로 자르고 끝 공백 제거 |
+| **언제 나가나** | 신규등록·수정 요청마다. 수정 때는 굳힌 값(`locked_name`) |
+| **단계** | COLLECT(정리) · CONVERT(정리+조립) · TRANSLATE(번역) · REGISTER · STOCK |
+| **실행 파일** | 정리 규칙: `okmall/name_rules.py` (한 곳에 모음)<br>COLLECT: 몰별 수집기<br>CONVERT: `okmall/raw_to_ace_converter.py` · `kasina/raw_to_converter_kasina.py`<br>TRANSLATE: `okmall/convert_to_japanese_gemini.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
+| **공용 / 몰별** | **공용** — 규칙은 `okmall/name_rules.py` 한 파일에 모여 있고, 몰 이름으로 갈라 쓴다. 조립 형식·축약도 공용 |
+| **게시 후 편집** | **불가** — 등록 시점에 정해지면 끝. 틀리면 새로 올리는 수밖에 없다 |
+| **바꾸려면 어디를** | 정리 규칙(몰별·공통 전부): `okmall/name_rules.py` → `MALL_PATTERNS` · `GLOBAL_PATTERNS`<br>조립 형식: 변환기의 `format_buyma_product_name()`<br>축약: `okmall/buyma_new_product_register.py` → `truncate_buyma_name()`<br>등록 전 목록 이름 갱신: `okmall/reconcile_ensure_group.py` → `_refresh_pending_name()` |
+| **커밋** | (작성 시점 미커밋) |
 
-> ⚠️ **게시 후 편집 불가.** 등록 시점에 틀리면 그 상품은 끝까지 틀린 이름으로 남는다.
+**등록 전에는 대표 ace 이름을 계속 따라간다.** 등록된 뒤에는 어떤 경로로도 바꾸지 않는다.
+
+**정리 규칙은 두 번 돌려도 결과가 같아야 한다(멱등).** 수집 때와 변환 때 두 번 적용하기 때문이다.
+덕분에 규칙을 고치면 **재수집 없이 재변환만으로** 이미 모아 둔 상품에도 반영된다.
 
 ## 4. id (읽기 전용, reference_number 없으면 필수)
 
@@ -467,7 +481,112 @@ STOCK     stock_..._merge.py  재고 갱신 → _reconcile_published()
 
 ## 3. name
 
-*(작성 예정)*
+### 명세
+필수(`商品名`). **게시 후 편집 불가**(`公開後に編集できません` 목록에 포함).
+길이 제한·금지문자는 명세에 명시돼 있지 않다. 우리는 반각 60자로 자른다.
+
+### 값이 흐르는 길 (실제 값)
+
+`listing#17` / `ace#547698` / buyma `133558230` / 몰 bblue
+
+| 단계 | 테이블·컬럼 | 값 |
+|---|---|---|
+| ① COLLECT | `raw_scraped_data.product_name` | `아디다스 골프 남성 얼티밋365 테이퍼드 팬츠 (IT7859)` |
+| | `raw_scraped_data.brand_name_en` / `model_id` | `아디다스` / `IT7859` |
+| ② CONVERT ③ TRANSLATE | `ace_products.name` | `送料・関税込 \| adidas \| アディダス ゴルフ メンズ アルティメット365 テーパードパンツ (IT7859) IT7859` |
+| ④ REGISTER | `buyma_listings.name` | `送料・関税込 \| adidas \| メンズ アルティメット365 テーパード パンツ 32 股下 IT7859` |
+| | `buyma_listings.locked_name` | 위와 같은 값 (등록 성공 시 굳힘) |
+| ⑤ 전송 | 저장하지 않음 | 60자로 자른 값 |
+| ⑥ 바이마 | 웹훅 응답 `name` | 우리가 보낸 값 그대로 |
+
+②③ 값과 ④ 값이 다른 이유는 **④가 다른 몰의 ace 이기 때문**이다. 목록 이름은 그룹의 **대표(seed)** 에서 온다.
+
+### 대표(seed)는 어떻게 정하나
+
+`reconcile_ensure_group._seed_ace()` — **몰 우선순위 → 살아있는 것 우선 → 낮은 번호** 순으로 하나를 고른다.
+위 예에서 그룹 멤버는 okmall(ace#20447)과 bblue(ace#547698) 둘인데, okmall 우선순위가 높아 okmall 이름이 쓰였다.
+
+- **winner 와 다르다.** winner 는 가장 싼 소싱처(가격·재고 판단용, 매 사이클 바뀔 수 있음),
+  seed 는 정체성 대표(이름·브랜드·카테고리). 가격 때문에 winner 가 바뀌어도 이름은 흔들리지 않는다.
+- 등록된 뒤에는 대표가 바뀌어도 목록 이름을 갱신하지 않는다(게시 후 편집 불가).
+
+### 이름 정리 — 무엇을 지우나
+
+규칙은 **`okmall/name_rules.py` 한 파일**에 모여 있다. 수집기와 변환기가 `clean_product_name(몰이름, 이름)` 한 줄로 부른다.
+
+| 몰 | 지우는 것 |
+|---|---|
+| shinsegae | `(신세계 강남점)` 같은 백화점 지점명, `[신세계백화점]` 태그 |
+| luxlimit | `(국내백화점)` `(국내매장판)` `(관부가세포함)` |
+| larlashoes | `(국내매장판)` 및 오타 `국냄매장판` |
+| wardrobe | `[워드로브]` 스토어 태그 |
+| thesogno | `19FW` 같은 2010년대 시즌코드 |
+| artemoa | `6F` `5S` 같은 축약 시즌코드 |
+| gimpooutlet | 맨 앞 괄호 토큰 전부 (단 `스크래치` 든 괄호는 남긴다 — 제외 규칙이 걸러야 하므로) |
+| milanosangin | `(당일)` |
+| dmont·tuttobene·maniaon·unico·luvgrande·pano | 각자 스토어 태그 |
+| 9tems | 홍보 문구 `럭키찬스` |
+| brickmansion | 대괄호 태그 (단 콜라보 `[A x B]` 는 대괄호만 벗기고 내용은 남긴다) |
+| loromoda | `[로로모다]` 접두어 |
+| laprima | HTML에서 딸려오는 `상품명` 라벨 |
+| labellusso·nextzennpack | 앞 `[브랜드명]` (변환기가 브랜드를 따로 붙이므로 중복 방지) |
+
+**전 몰 공통 2개**: 국내판매 마커(`[국내...]`·`관부가세포함`) 제거, 시즌코드(`26SS`·`25FW` 등) 제거.
+
+★단 **자체몰 6개(9tems·brickmansion·loromoda·laprima·labellusso·nextzennpack)에는 공통 규칙을 적용하지 않는다**(`GLOBAL_SKIP`).
+이 몰들은 **정리된 상품명에서 모델번호를 뽑아내는데**, 시즌코드 규칙이 모델번호 안의 색상코드(`20F`·`23S`·`27S`)까지
+같이 지워 모델번호를 깨뜨리기 때문이다. (2026-08-05 실측: 적용했다면 23건이 깨짐 — 예 `IGELONG-1C00006-20F` → `IGELONG-1C00006-`)
+네이버 계열은 모델번호를 상품명이 아닌 다른 항목에서 뽑아 이 문제가 없다.
+
+**조립 형식은 공용**이다: `送料・関税込 | 브랜드 | 상품명 모델번호` (`format_buyma_product_name()`).
+
+### 규칙을 한 곳으로 모은 작업 (2026-08-05)
+
+전에는 같은 성격의 규칙이 수집기 20개에 흩어져 있었다. 규칙 하나 고치려면 파일을 여러 개 뒤져야 했다.
+
+- `okmall/name_rules.py` 를 만들어 몰별 규칙 20개 + 공통 규칙 2개를 담았다.
+- 수집기 7개(네이버 계열 1 + 자체몰 6)가 이 함수를 부르도록 바꿨다.
+- **변환기 2개**(`raw_to_ace_converter.py`·`raw_to_converter_kasina.py`)도 부르게 했다.
+  → 규칙을 고치면 **재수집 없이 재변환만으로** 이미 모아 둔 상품에 반영된다.
+
+**동작 대조**: 저장된 상품명 468,144건에 옛 규칙과 새 규칙을 각각 돌려 비교했다.
+다른 것은 **45건뿐이고 전부 "이중 공백 → 한 칸"** 이다(laprima 32·labellusso 12·nextzennpack 1).
+
+**멱등 확인**: 468,144건 전부 두 번 돌려도 결과가 같다.
+처음엔 3건이 깨졌는데(`[메종 키츠네] [23SS]` 처럼 대괄호가 연달아 붙은 경우 하나만 지워짐),
+labellusso·nextzennpack 규칙을 반복 적용되게 고쳐 해결했다.
+
+**옮기지 않은 것**: 모델번호·브랜드를 뽑기 위해 임시로 쓰는 정규식(brickmansion·maisonparco·milaneez)과
+okmall 의 "괄호 앞까지만 쓴다"(파싱에 가깝다)는 그대로 뒀다.
+
+### 실측 (2026-08-04)
+
+| 항목 | 값 |
+|---|---|
+| 이름 없는 목록 | 0건 |
+| 굳힌 이름 보유 | 게시중 82,079건 중 82,014건 |
+| **60자 넘어 잘리는 이름** | 145,556건 중 **133,404건 (92%)** |
+| 바이마 값과 대조 | 일치 30,469 / **불일치 4,217** / 웹훅에 이름 없어 판정 불가 14,372 |
+
+불일치 4,217건은 전부 같은 원인이었다 — **자른 자리가 공백이라 끝에 공백이 남고, 바이마는 저장하며 지운다.**
+`truncate_buyma_name()` 이 자른 뒤 끝 공백을 제거하도록 고쳐, 다음 수정 요청부터 값이 일치한다.
+
+### 등록 전 목록이 옛 이름에 갇히던 문제
+
+목록 이름은 그룹을 처음 만들 때 한 번 복사된다. 그런데 번역 배치는 `ace_products` 만 갱신하므로,
+**그룹이 번역보다 먼저 만들어지면 목록에 한국어 이름이 굳는다.**
+등록 대상 선정에 "이름에 한글 있으면 제외" 조건이 있어 그 목록은 영원히 등록되지 않았다.
+
+```
+미등록 목록 중 이름에 한글 있는 것          4,313건
+그중 대표 ace 는 이미 번역된 것             3,739건   ← 갇힘
+```
+
+`_refresh_pending_name()` 을 넣어 **등록 전 목록은 매 회차 대표 ace 이름을 다시 읽도록** 했다.
+번역이 언제 끝나든 그 다음 회차에 자동으로 풀린다. 등록된 목록은 건드리지 않는다.
+
+표본 30건 실행 결과: 바뀜 25 / 그대로 5 / 오류 0.
+"그대로" 5건은 **대표 ace 가 아직 번역 전**인 경우로, 번역되면 다음 회차에 풀린다.
 
 ---
 

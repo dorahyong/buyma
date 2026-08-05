@@ -41,6 +41,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -380,9 +381,8 @@ def convert_to_raw_data(product_no: str, detail: Dict, brand_name_en: str,
     if not product_name:
         return None
 
-    # 홍보/이벤트 노이즈 단어 제거 (9tems "럭키찬스") — 따옴표 동반·공백 정리 포함
-    product_name = re.sub(r"\s*럭키찬스'?\s*", " ", product_name)
-    product_name = re.sub(r"\s+", " ", product_name).strip()
+    # 상품명 정리 (홍보 문구 '럭키찬스' 제거 등). 규칙은 okmall/name_rules.py 에 모여 있다.
+    product_name = clean_product_name(SOURCE_SITE, product_name)
 
     model_id = extract_model_id(product_name)
 

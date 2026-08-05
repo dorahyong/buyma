@@ -39,6 +39,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -225,12 +226,6 @@ def _parse_price(text_value: str) -> int:
         return 0
     m = re.search(r'[\d,]{2,}', text_value)
     return int(m.group().replace(',', '')) if m else 0
-
-
-def clean_product_name(name: str) -> str:
-    """`[로로모다]` 접두어 제거 + 공백 정리"""
-    name = re.sub(r'^\s*\[로로모다\]\s*', '', name or '').strip()
-    return re.sub(r'\s+', ' ', name).strip()
 
 
 def extract_model_id_from_name(product_name: str) -> str:
@@ -448,7 +443,7 @@ def extract_detail_info(html: str, model_id_hint: str = '') -> Dict[str, Any]:
 def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str) -> Optional[Dict]:
     product_no = list_item['product_no']
     raw_name = detail_info.get('product_name') or list_item.get('product_name', '')
-    product_name = clean_product_name(raw_name)
+    product_name = clean_product_name(SOURCE_SITE, raw_name)
     if not product_name:
         return None
 
@@ -794,7 +789,7 @@ def main():
                     time.sleep(random.uniform(REQUEST_DELAY_MIN, REQUEST_DELAY_MAX))
                     continue
 
-                model_hint = extract_model_id_from_name(clean_product_name(list_item.get('product_name', '')))
+                model_hint = extract_model_id_from_name(clean_product_name(SOURCE_SITE, list_item.get('product_name', '')))
                 detail_info = extract_detail_info(detail_html, model_hint) if detail_html else {}
                 data = convert_to_raw_data(list_item, detail_info, brand_name_en)
                 if not data:

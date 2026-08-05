@@ -40,6 +40,10 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
+
 # ===========================================
 # 환경 설정
 # ===========================================
@@ -235,8 +239,8 @@ def get_product_list_from_page(html: str, cate_no: str) -> List[Dict]:
                 spans = name_elem.find_all('span', recursive=True)
                 # 마지막 span 또는 텍스트 노드 합본
                 product_name = name_elem.get_text(' ', strip=True)
-                # 중복된 "상품명" 같은 라벨 제거
-                product_name = re.sub(r'\s*상품명\s*', ' ', product_name).strip()
+                # 상품명 정리 (딸려오는 '상품명' 라벨 제거 등). 규칙은 okmall/name_rules.py 에 모여 있다.
+                product_name = clean_product_name(SOURCE_SITE, product_name)
 
             # 리스트 썸네일 이미지
             img_elem = item.select_one('div.prdImg img')

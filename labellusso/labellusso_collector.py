@@ -37,6 +37,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -240,8 +241,8 @@ def get_product_list_from_page(html: str, cate_no: str) -> List[Dict]:
                     br.replace_with(' ')
                 raw_name = name_elem.get_text(strip=True)
 
-            # [브랜드명] 접두어 제거
-            product_name = re.sub(r'^\[.*?\]\s*', '', raw_name).strip()
+            # 상품명 정리 (앞 [브랜드명] 제거 등). 규칙은 okmall/name_rules.py 에 모여 있다.
+            product_name = clean_product_name(SOURCE_SITE, raw_name)
 
             # 가격 — data 속성에서 추출
             discount_elem = item.select_one('span.discount_rate')

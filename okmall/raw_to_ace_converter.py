@@ -31,6 +31,7 @@ import unicodedata
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from sqlalchemy import create_engine, text
+from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
@@ -821,7 +822,10 @@ class RawToAceConverter:
         options = json_data.get('options', [])
 
         # 1. 상품명 생성 및 정제 (한국어 원본 저장, 배치 번역에서 처리)
-        product_name = raw_data.get('product_name', '')
+        #   수집 때 이미 정리했지만 여기서 한 번 더 부른다.
+        #   → 정리 규칙을 고치면 재수집 없이 '재변환'만으로 이미 모아 둔 상품에도 반영된다.
+        #   (규칙은 okmall/name_rules.py. 멱등이라 두 번 적용해도 결과가 같다)
+        product_name = clean_product_name(raw_data.get('source_site'), raw_data.get('product_name', ''))
         buyma_name = format_buyma_product_name(
             brand_name=strip_brand_jp(brand_info.get('buyma_brand_name', '')),
             product_name=product_name,
