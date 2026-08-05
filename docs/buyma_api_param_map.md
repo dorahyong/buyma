@@ -46,7 +46,7 @@
 | 4 | id | ✅ | 21 | buyer_notes | ✅ |
 | 5 | status | ✅ (남은 문제 있음) | 22 | duty | ✅ |
 | 6 | comments | ✅ | 23 | tags | ✅ |
-| 7 | brand_id | ✅ | 24 | images | |
+| 7 | brand_id | ✅ | 24 | images | ✅ |
 | 8 | brand_name | ✅ | 25 | shipping_methods | ✅ |
 | 9 | model_id | ⬜ 다음 | 26 | style_numbers | ✅ |
 | 10 | category_id | | 27 | options | |
@@ -399,6 +399,23 @@
 | **바꾸려면 어디를** | 쓰려면 `okmall/buyma_new_product_register.py` → `build_request_json()` 에 항목 추가 |
 | **커밋** | — |
 
+## 24. images (필수, 상품 사진)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 몰 상세페이지의 사진 주소. okmall 만 별도 수집기가 브라우저로 긁는다 |
+| **어디에 저장되나** | `ace_product_images` (몰별 원본) → `listing_images` (목록별로 고른 20장)<br>뱃지본은 `ace_product_thumbnails` 에 따로 |
+| **어떻게 가공되나** | ① R2 로 업로드해 공개 주소 확보 ② 대표사진에 뱃지 합성<br>③ winner 먼저·우선순위 순으로 20장까지 이어붙임 ④ 보낼 때 뱃지본을 맨 앞에 끼우고 position 을 1부터 다시 매김 |
+| **언제 나가나** | 신규등록·수정 요청마다. 이미지가 0장이면 **요청 자체를 안 보낸다** |
+| **단계** | COLLECT · CONVERT · IMAGE(업로드) · THUMBNAIL(뱃지) · REGISTER · STOCK |
+| **실행 파일** | COLLECT: 몰별 수집기 / okmall 은 `okmall/image_collector_parallel.py`<br>IMAGE: `okmall/r2_image_uploader.py`<br>THUMBNAIL: `thumbnail/thumbnail_generator.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
+| **공용 / 몰별** | **몰별** — `mall_sites.has_own_images`(okmall 만 0, 나머지 62몰 1)로 갈리고, 이어붙이는 순서는 `SOURCE_PRIORITY` |
+| **게시 후 편집** | 가능 — 다만 **이미 등록된 목록은 기존 자리를 안 바꾼다**(대표사진 고정) |
+| **바꾸려면 어디를** | 고르는 규칙: `okmall/image_union_loader_merge.py` → `combine_images()` · `MAX_IMAGES`<br>적재: `okmall/reconcile_ensure_group.py` → `_write_images()`<br>보낼 때 뱃지·번호: `okmall/reconcile_buyma_push.py` → `_images()`, `okmall/buyma_new_product_register.py` → `build_images_array()`<br>몰 우선순위: `SOURCE_PRIORITY` (파이썬 딕셔너리 3벌 — 할 일 참조) |
+| **커밋** | (조사만 함, 코드 변경 없음) |
+
+**바이마는 우리 주소를 받아 자기 CDN 으로 다시 호스팅한다.** 웹훅에 돌아오는 건 `cdn-images.buyma.com/…` 이다.
+
 ## 25. shipping_methods (필수)
 
 | 항목 | 내용 |
@@ -459,6 +476,23 @@ errors: style_numbers[0].number
 명세: 설정 가능한 단위는 카테고리마다 다르고 `units.csv` 에 있다. `cm` · `inch` · `号` 는 전 카테고리 공통,
 `g` · `mg` · `ml` · `%` 는 화장품·와인·전자담배 등 일부 카테고리 전용.
 
+## 29. colorsize_comments (선택, 색·사이즈 보충설명)
+
+| 항목 | 내용 |
+|---|---|
+| **어디서 생기나** | 수집기가 긁은 실측치수·혼용률. `raw_scraped_data.raw_json_data` 의 `measurements`·`composition` |
+| **어디에 저장되나** | 변환기가 한국어 글로 조립 → `ace_products.colorsize_comments`<br>Gemini 배치가 일본어로 → `ace_products.colorsize_comments_jp`<br>reconcile 이 winner 것을 → `buyma_listings.colorsize_comments` |
+| **어떻게 가공되나** | winner 실측정보 + 소스코드에 박아둔 고정 홍보문구 5토막.<br>합쳐서 1000자를 넘으면 **홍보문구를 뒤에서부터** 뺀다 |
+| **언제 나가나** | 신규등록·수정 요청마다 매번 새로 조립해 보냄 |
+| **단계** | COLLECT → CONVERT → TRANSLATE → REGISTER · STOCK |
+| **실행 파일** | CONVERT: `okmall/raw_to_ace_converter.py` · `kasina/raw_to_converter_kasina.py`<br>TRANSLATE: `okmall/convert_to_japanese_gemini.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
+| **공용 / 몰별** | 실측정보는 **몰별**(수집기가 긁은 것) · 홍보문구는 **공용**(40개 몰 동일) |
+| **게시 후 편집** | 가능 — winner 가 바뀌면 따라 바뀐다 |
+| **바꾸려면 어디를** | 담는 규칙: `okmall/reconcile_ensure_group.py` → `make_colorsize_comments()`<br>홍보문구: `okmall/buyma_new_product_register.py` → `colorsize_footer_sections` |
+| **커밋** | `29 colorsize_comments` |
+
+**한도** 1000자. 담을 때 1000자로 자르고, **한글이 섞인 것은 담지 않는다**(요청 전체가 거부되므로).
+
 ## 31. order_quantity (조건부 필수, 주문 가능 수량)
 
 | 항목 | 내용 |
@@ -479,23 +513,6 @@ errors: style_numbers[0].number
 실제 하차는 이 값이 아니라 재고 API 의 `0` 이 한다.
 
 **주문이 들어오면 바이마가 1씩 깎고, 우리는 다음 수정 때 새 난수로 되돌린다.**
-
-## 29. colorsize_comments (선택, 색·사이즈 보충설명)
-
-| 항목 | 내용 |
-|---|---|
-| **어디서 생기나** | 수집기가 긁은 실측치수·혼용률. `raw_scraped_data.raw_json_data` 의 `measurements`·`composition` |
-| **어디에 저장되나** | 변환기가 한국어 글로 조립 → `ace_products.colorsize_comments`<br>Gemini 배치가 일본어로 → `ace_products.colorsize_comments_jp`<br>reconcile 이 winner 것을 → `buyma_listings.colorsize_comments` |
-| **어떻게 가공되나** | winner 실측정보 + 소스코드에 박아둔 고정 홍보문구 5토막.<br>합쳐서 1000자를 넘으면 **홍보문구를 뒤에서부터** 뺀다 |
-| **언제 나가나** | 신규등록·수정 요청마다 매번 새로 조립해 보냄 |
-| **단계** | COLLECT → CONVERT → TRANSLATE → REGISTER · STOCK |
-| **실행 파일** | CONVERT: `okmall/raw_to_ace_converter.py` · `kasina/raw_to_converter_kasina.py`<br>TRANSLATE: `okmall/convert_to_japanese_gemini.py`<br>REGISTER·STOCK: `okmall/reconcile_runner.py` |
-| **공용 / 몰별** | 실측정보는 **몰별**(수집기가 긁은 것) · 홍보문구는 **공용**(40개 몰 동일) |
-| **게시 후 편집** | 가능 — winner 가 바뀌면 따라 바뀐다 |
-| **바꾸려면 어디를** | 담는 규칙: `okmall/reconcile_ensure_group.py` → `make_colorsize_comments()`<br>홍보문구: `okmall/buyma_new_product_register.py` → `colorsize_footer_sections` |
-| **커밋** | `29 colorsize_comments` |
-
-**한도** 1000자. 담을 때 1000자로 자르고, **한글이 섞인 것은 담지 않는다**(요청 전체가 거부되므로).
 
 ## 32. shop_urls (선택, 매입처 주소)
 
@@ -1235,6 +1252,112 @@ ace→listings 이관 때 만들지 않은 단계로, `reference_price` 와 같�
 
 ---
 
+## 24. images
+
+### 명세
+**필수**. `[{"path": 공개주소, "position": 번호}, …]`. 상한 **20장**.
+번호는 1부터 빈칸 없이 이어져야 한다 — 구멍이 있으면 422 (`表示位置番号は歯抜けができないように…`).
+
+### 값이 흐르는 길
+
+```
+몰 상세페이지 사진 주소
+   ↓ 수집기 (okmall 만 image_collector_parallel.py 가 브라우저로 별도 수집)
+ace_product_images.source_image_url
+   ↓ r2_image_uploader.py — Cloudflare R2 업로드
+ace_product_images.cloudflare_image_url
+   ↓ thumbnail_generator.py — 대표사진에 뱃지 합성
+ace_product_thumbnails.thumbnail_cloudflare_url
+   ↓ _write_images() — winner 먼저, 우선순위 순으로 20장까지
+listing_images.cloudflare_image_url
+   ↓ _images() + build_images_array()
+"images": [{"path": …, "position": 1}, …]
+```
+
+### 두 테이블이 각각 필요한 이유
+
+| 테이블 | 무엇 | 왜 |
+|---|---|---|
+| `ace_product_images` | **몰별 원본 창고** | 한 상품이 여러 몰에 있으면 몰마다 사진이 다르다. 새 몰이 붙었을 때 그 몰 사진을 여기서 가져온다 |
+| `listing_images` | **바이마에 보낼 20장** | 순서·장수를 고정해야 한다. 특히 이미 등록된 상품은 대표사진이 바뀌면 안 된다 |
+
+`ace_product_images` 만 있으면 winner 가 바뀔 때마다 순서가 흔들리고,
+`listing_images` 만 있으면 새 몰 사진을 가져올 곳이 없다.
+
+### 규칙 네 가지
+
+**① 뱃지본을 맨 앞에 끼우고 원본도 남긴다**
+
+```
+[뱃지본] → [원본1] → [원본2] → …
+```
+뱃지본은 `listing_images` 에 저장하지 않는다 — 보낼 때 `ace_product_thumbnails` 에서 찾아 앞에 붙인다.
+20장짜리에 뱃지가 붙어 21장이 되면 **마지막 원본 1장을 잘라** 20으로 맞춘다.
+
+**② position 을 1부터 다시 매긴다**
+
+업로드 실패로 번호에 구멍이 나면 바이마가 거부한다. 순서만 유지한 채 1,2,3… 으로 재부여한다.
+실측 **번호가 1부터 시작하지 않는 목록 1,191건** — 이 재부여 덕에 통과한다.
+
+**③ winner 먼저, 그다음 `SOURCE_PRIORITY` 순**
+
+대표(1번)가 winner 첫 사진이라야 뱃지 썸네일(winner 기준 생성)과 일치한다.
+
+**④ 이미 등록된 목록은 기존 자리를 안 바꾼다**
+
+새로 들어온 사진은 **빈 뒤쪽에만** 덧붙인다. 대표사진이 바뀌면 바이마 화면의 얼굴이 바뀌고 뱃지와도 어긋난다.
+
+### 몰별로 갈리는 것 두 가지
+
+**`mall_sites.has_own_images`** — 수집기가 사진 주소까지 직접 긁는지
+
+```
+1 : 62개 몰   (수집기가 상세페이지에서 같이 긁음)
+0 :  1개      (okmall 뿐)
+```
+
+okmall 만 IMAGE 단계가 2벌이다 — 수집 후 업로드.
+
+```python
+# run_daily_unified.py:195
+if mall == OKMALL:
+    return [[PY, IMG_COLLECT, …], [PY, IMG_UPLOAD, …]]
+return [[PY, IMG_UPLOAD, …]]
+```
+
+**`SOURCE_PRIORITY`** — 이어붙이는 순서. 파이썬 딕셔너리다(할 일 참조).
+
+### 실측 (2026-08-05)
+
+| 항목 | 값 |
+|---|---|
+| 게시중 목록 | 82,011 |
+| `ace_product_images` | 3,533,358행 / 836MB |
+| `listing_images` | 690,618행 (업로드된 것 682,142) / 190MB |
+| `ace_product_thumbnails` 생성분 | 459,681 |
+| 번호가 1부터 시작 안 함 | 1,191 |
+
+**목록당 장수** — 1장이 18,505건으로 가장 많고 **20장이 2,867건**(상한에 닿음).
+
+```
+ 1장 18,505    5장 10,939    9장  3,369   13장   503   17장   382
+ 2장 10,544    6장  6,113   10장  4,875   14장   478   18장   325
+ 3장  5,499    7장  4,515   11장    988   15장   446   19장   379
+ 4장  6,585    8장  3,388   12장    799   16장   440   20장 2,867
+```
+
+**바이마 쪽 결과** (웹훅 표본 30,000건)
+
+| | 건수 |
+|---|---|
+| 이미지 관련 에러 | **301건 (1%)** |
+| ↳ `商品イメージ…` 바이마 내부 오류 | 141 등 |
+| ↳ `画像を取得できませんでした` (우리 R2 주소에 접근 실패) | 25 |
+
+**99% 는 정상으로 나가고 있다.**
+
+---
+
 ## 19. buying_shop_name
 
 ### 명세
@@ -1329,6 +1452,9 @@ BUYMA   축약본
 | `colorsize_comments` | **어느 멤버 값을 담을지 재검토** — 지금은 winner 것. winner 가 바뀌면 실측정보도 바뀐다. 후보: 가장 긴 것(사이즈가 많은 소싱일수록 실측 줄이 많다) / 최신 수집분. 병합 목록에서 멤버끼리 실측치가 다를 수 있어 어느 쪽이 맞는지 판단 필요 |
 | `colorsize_comments` | **실측정보가 377자를 넘으면 홍보문구가 뒤에서부터 잘린다 — 5,055건 해당.** 맨 뒤 토막이 `※ 上記参考価格は…10KRW＝1.1円で換算…`(참고가 설명)이라 제일 먼저 사라진다. 참고가를 복구해 내보내는 중이므로 설명 없이 정가만 뜨게 된다. 토막 순서를 바꿀지 판단 필요 |
 | `colorsize_comments` | 한국어 원문은 있는데 일본어 번역이 없는 ace 152건 — 번역 배치가 못 채운 것. 담기지 않으므로 무해하나 실측정보가 안 나간다 |
+| `images` | **게시중인데 올릴 이미지가 0장인 목록 72건.** `reconcile_buyma_push.py:576` 이 `if not images: return None` 로 수정 요청 자체를 스킵하므로 **가격·재고 갱신이 영구히 멈춰 있다**(전부 `status='success'` 라 겉보기엔 정상). 사진이 없어서가 아니다 — 72건 **전부** `ace_product_images` 에 사진이 있고 R2 업로드도 돼 있다(7~35장). `_write_images()` 의 "이미 등록된 건 기존 자리를 안 바꾼다" 규칙이 **처음부터 빈 경우**를 다루지 않아 채울 기회가 없다. 한 번 채워주는 보정이 필요 |
+| `images` | **`SOURCE_PRIORITY` 가 파이썬 딕셔너리로 3벌 복사돼 있다** (`image_union_loader_merge.py`·`dedup_corrector.py`·`dedup_corrector_merge.py`, 셋 다 내용 동일. `reconcile_ensure_group.py` 는 `dedup_corrector_merge` 에서 import). **28개 몰만 있고 16개 몰(lotte·shinsegae·abcmart·grandstage·bobu·stellastore·artemoa·adonis·milanobridge·wardrobe·milanosangin·brickmansion·maisonparco·loromoda·milaneez·musinsa)이 빠져 전부 99(맨 뒤)** 로 취급된다. DB 에 `mall_sites.order_no` 칸이 이미 있는데 63개 중 62개가 0 이라 안 쓰이고 있다. ⚠️이 값은 이미지 순서만이 아니라 **`_seed_ace()` 의 정체성 대표 선정에도 쓰이므로**(reconcile_ensure_group:131) 값을 채우면 미등록 목록의 이름·브랜드·카테고리 출처가 바뀔 수 있다 — 규모 확인 후 진행할 것 |
+| `images` | **`listing_images` 를 참조 구조로 바꾸는 안 — 지금은 보류.** 현재는 주소를 통째로 복사해 둬 중복이고(190MB), 뱃지 대조를 주소 글자로 해야 한다(`listing_images` 에 `image_id` 가 없어서. `ace_product_thumbnails` 는 이미 `uk_image_id` 로 묶여 있다. 코드 주석이 스스로 "인덱스가 없어 ace_product_id 로 먼저 좁힌다"고 적어둠). `listing_images` 의 주소 3칸을 `image_id` 하나로 바꾸면 중복·대조·용량이 한꺼번에 해결된다. **그런데 순수 구조 변경이 아니다** — 지금의 복사가 방어막 역할을 하고 있다: 변환기가 자리별로 사진을 갈아끼우고(`raw_to_converter_kasina.py:1502~1552`) 재고 동기화가 ace 이미지를 통째로 지운다(`stock_common.py:433`). 참조로 바꾸면 **라이브 상품의 대표사진이 바뀌거나 사라질 수 있다.** 하려면 이미지 수명 규칙(자리 교체 대신 새 행 추가 / 목록이 가리키는 이미지 삭제 금지 / ace 삭제 시 이미지 보존)을 먼저 만들어야 한다. 이미지 쪽을 크게 손볼 때 같이 할 것 |
 | 웹훅 | 2026-08-04 16:51~18:21 수신분 유실(서버가 옛 코드로 돌다 멈춤). 그 사이 등록·수정 결과가 DB에 반영되지 않았다 |
 | 병합 | 26 조사 중 발견 — 한 목록에 **모델번호가 아예 다른 멤버**가 섞인 경우 2,079건(브랜드 있는 게시중 75,688건의 2.7%). 예: `699296 92TCG 8563` 목록에 `699296-UKMBG-2572` 멤버. 앞 번호만 같고 뒤 코드가 다르면 다른 상품이라 과병합 의심. style_numbers 와는 무관하며 실제 오병합 규모는 미확인 |
 
