@@ -749,6 +749,39 @@ def normalize_musinsa_options(json_data: Dict) -> List[Dict]:
     return flat
 
 
+def normalize_abc_options(json_data: Dict) -> List[Dict]:
+    """ABC마트/그랜드스테이지 raw_json을 평평한 옵션 형식으로 변환.
+
+    수집기(abcmart/abc_collector.py parse_options)는 옵션을
+      {optn_no, color, size, stock}
+    이름으로 저장하는데, 변환기 공통 형식은
+      {color, tag_size, status, option_code}
+    라서 이름이 하나도 안 맞는다. 정규화 없이 읽으면 사이즈는 전부 FREE,
+    option_code 는 NULL, status 가 없어 재고가 전량 out_of_stock 이 된다.
+
+    색상/사이즈 축 배정은 수집기가 이미 끝냈다(addOptn2Text 유무로 판별.
+    1차원이면 color='' + size=사이즈). 재고동기화의 collect_from_abc 도 같은
+    규칙이라 여기서 축을 다시 손대면 안 된다 — 그대로 옮기기만 한다.
+
+    수집기가 품절·재고0 옵션을 애초에 빼고 저장하므로 남은 것은 전부 재고 있음이지만,
+    옛 raw 나 수집기 변경에 대비해 stock 값으로 판정한다.
+    """
+    flat = []
+    for o in json_data.get('options') or []:
+        try:
+            stock = int(o.get('stock') or 0)
+        except (TypeError, ValueError):
+            stock = 0
+        optn_no = o.get('optn_no')
+        flat.append({
+            'color': (o.get('color') or '').strip() or 'FREE',
+            'tag_size': (o.get('size') or '').strip() or 'FREE',
+            'status': 'in_stock' if stock > 0 else 'out_of_stock',
+            'option_code': str(optn_no) if optn_no not in (None, '') else None,
+        })
+    return flat
+
+
 def format_buyma_product_name(brand_name: str, product_name: str, model_id: str = None) -> str:
     """
     바이마 상품명 형식으로 변환
@@ -1135,9 +1168,14 @@ class RawToAceConverter:
             return None
 
         json_data = safe_json_loads(raw_data.get('raw_json_data', '{}')) or {}
-        # 무신사는 옵션 구조가 다름(색상/사이즈 그룹 + option_items). 평평한 형식으로 정규화.
-        if raw_data.get('source_site') == 'musinsa':
+        # 옵션 구조가 공통 형식과 다른 몰은 평평한 형식으로 정규화한 뒤 쓴다.
+        #   musinsa: 색상/사이즈 그룹 + option_items
+        #   abc 계열: 키 이름이 size/optn_no/stock (공통은 tag_size/option_code/status)
+        _site = raw_data.get('source_site')
+        if _site == 'musinsa':
             options = normalize_musinsa_options(json_data)
+        elif _site in ('abcmart', 'grandstage'):
+            options = normalize_abc_options(json_data)
         else:
             options = json_data.get('options', [])
 
