@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS market_stylehaus_history (
   observed_at           VARCHAR(32) NOT NULL,
   has_style_haus        TINYINT     NOT NULL,
   stylehaus_video_count INT,
+  has_style_haus_post   TINYINT     NOT NULL DEFAULT 0,
+  stylehaus_post_count  INT,
   PRIMARY KEY (item_id, observed_at),
   KEY idx_market_stylehaus_history_item (item_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -140,7 +140,13 @@ def apply_enrich(conn: sqlite3.Connection, item_id: str, html: str, now: str) ->
         record_variant_history_delta(conn, item_id, meta["variants"], now)
         replace_item_variants(conn, item_id, meta["variants"])
         record_stylehaus_observation(
-            conn, item_id, meta["has_style_haus"], meta["stylehaus_video_count"], now,
+            conn,
+            item_id,
+            meta["has_style_haus"],
+            meta["stylehaus_video_count"],
+            now,
+            has_style_haus_post=meta["has_style_haus_post"],
+            stylehaus_post_count=meta["stylehaus_post_count"],
         )
         conn.execute("COMMIT")
     except Exception:

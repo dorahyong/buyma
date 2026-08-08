@@ -169,14 +169,17 @@ def test_parse_item_detail_stylehaus_fixture():
     html = FIXTURE.read_text(encoding="utf-8")
     meta = parse_item_detail(html)
     assert meta["has_style_haus"] is True
-    # fixture has 2 youtube buttons; related articles are ignored
     assert meta["stylehaus_video_count"] == 2
+    assert meta["has_style_haus_post"] is True
+    assert meta["stylehaus_post_count"] == 5
 
 
 def test_parse_item_detail_stylehaus_false_when_absent():
     meta = parse_item_detail("<html><body></body></html>")
     assert meta["has_style_haus"] is False
     assert meta["stylehaus_video_count"] == 0
+    assert meta["has_style_haus_post"] is False
+    assert meta["stylehaus_post_count"] == 0
 
 
 def test_parse_item_detail_stylehaus_footer_alone_does_not_count():
@@ -186,15 +189,19 @@ def test_parse_item_detail_stylehaus_footer_alone_does_not_count():
     meta = parse_item_detail(html)
     assert meta["has_style_haus"] is False
     assert meta["stylehaus_video_count"] == 0
+    assert meta["has_style_haus_post"] is False
+    assert meta["stylehaus_post_count"] == 0
 
 
-def test_parse_item_detail_stylehaus_posts_alone_do_not_count():
+def test_parse_item_detail_stylehaus_posts_alone_count_as_posts_not_video():
     html = '''<html><body>
       <img class="js-stylehaus-post-img" data-article-id="1" alt="article" />
     </body></html>'''
     meta = parse_item_detail(html)
     assert meta["has_style_haus"] is False
     assert meta["stylehaus_video_count"] == 0
+    assert meta["has_style_haus_post"] is True
+    assert meta["stylehaus_post_count"] == 1
 
 
 def test_parse_item_detail_variants_shape():

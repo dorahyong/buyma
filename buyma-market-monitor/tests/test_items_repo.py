@@ -253,12 +253,36 @@ def test_record_stylehaus_observation_writes_first_then_delta_only(tmp_path: Pat
     assert record_stylehaus_observation(conn, "100", True, 3, "2026-06-11T10:00:00+09:00")
     assert not record_stylehaus_observation(conn, "100", True, 3, "2026-06-12T10:00:00+09:00")
     rows = list(conn.execute(
-        "SELECT observed_at, has_style_haus, stylehaus_video_count FROM stylehaus_history "
+        "SELECT observed_at, has_style_haus, stylehaus_video_count, "
+        "has_style_haus_post, stylehaus_post_count FROM stylehaus_history "
         "WHERE item_id='100' ORDER BY observed_at"
     ))
     assert len(rows) == 2
     assert rows[0]["has_style_haus"] == 0 and rows[0]["stylehaus_video_count"] == 0
     assert rows[1]["has_style_haus"] == 1 and rows[1]["stylehaus_video_count"] == 3
+
+
+def test_record_stylehaus_observation_delta_on_post_change(tmp_path: Path):
+    conn = make_conn(tmp_path)
+    assert record_stylehaus_observation(
+        conn, "100", True, 2, "2026-06-09T10:00:00+09:00",
+        has_style_haus_post=False, stylehaus_post_count=0,
+    )
+    assert not record_stylehaus_observation(
+        conn, "100", True, 2, "2026-06-10T10:00:00+09:00",
+        has_style_haus_post=False, stylehaus_post_count=0,
+    )
+    assert record_stylehaus_observation(
+        conn, "100", True, 2, "2026-06-11T10:00:00+09:00",
+        has_style_haus_post=True, stylehaus_post_count=5,
+    )
+    rows = list(conn.execute(
+        "SELECT has_style_haus_post, stylehaus_post_count FROM stylehaus_history "
+        "WHERE item_id='100' ORDER BY observed_at"
+    ))
+    assert len(rows) == 2
+    assert rows[0]["has_style_haus_post"] == 0 and rows[0]["stylehaus_post_count"] == 0
+    assert rows[1]["has_style_haus_post"] == 1 and rows[1]["stylehaus_post_count"] == 5
 
 
 def _v(sku, availability, color="RED", size="S"):

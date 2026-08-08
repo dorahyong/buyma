@@ -32,7 +32,8 @@ def parse_item_detail(html: str) -> dict[str, Any]:
     single BUYMA 「テーマ」 (feature/campaign) name, or None. ``listed_at`` is the
     出品(公開)日 (kokaidate) ISO string from the tracking meta, or None.
     ``has_style_haus`` / ``stylehaus_video_count``: STYLE HAUS 관련 동영상
-    연동 여부 및 개수 (関連記事·푸터 링크는 제외).
+    연동 여부 및 개수. ``has_style_haus_post`` / ``stylehaus_post_count``:
+    関連記事(포스트) 연동 여부 및 개수. 푸터 STYLE HAUS 링크는 제외.
 
     NOTE on ``name``: this key is returned for completeness and forensics.
     The listing-page name was already stored via ``upsert_scanned_item``, so
@@ -335,28 +336,41 @@ def _extract_listed_at(soup) -> str | None:
 
 
 def _extract_stylehaus(soup) -> dict[str, Any]:
-    """STYLE HAUS related videos on the item detail page (``#recent_youtube``).
+    """STYLE HAUS related videos and related articles on the item detail page.
 
-    True only when the block is STYLEHAUS-branded. Related articles
-    (``js-stylehaus-post-img``) and footer STYLE HAUS links do not count.
-    ``stylehaus_video_count`` = number of youtube buttons in that block.
+    Videos: STYLEHAUS-branded ``#recent_youtube`` (button count).
+    Posts: ``img.js-stylehaus-post-img`` (unique article ids).
+    Footer STYLE HAUS links do not count. Video and post are tracked separately.
     """
+    has_video = False
+    video_count = 0
     yt = soup.select_one("#recent_youtube")
-    if yt is None:
-        return {"has_style_haus": False, "stylehaus_video_count": 0}
+    if yt is not None:
+        branded = False
+        for img in yt.find_all("img"):
+            alt = (img.get("alt") or "").upper().replace(" ", "")
+            src = (img.get("data-src") or img.get("src") or "").lower()
+            if "STYLEHAUS" in alt or "stylehaus" in src:
+                branded = True
+                break
+        if branded:
+            has_video = True
+            video_count = len(yt.select("button.js-recent-youtube-button"))
 
-    branded = False
-    for img in yt.find_all("img"):
-        alt = (img.get("alt") or "").upper().replace(" ", "")
-        src = (img.get("data-src") or img.get("src") or "").lower()
-        if "STYLEHAUS" in alt or "stylehaus" in src:
-            branded = True
-            break
-    if not branded:
-        return {"has_style_haus": False, "stylehaus_video_count": 0}
+    article_ids: set[str] = set()
+    for img in soup.select("img.js-stylehaus-post-img"):
+        aid = img.get("data-article-id")
+        if aid:
+            article_ids.add(str(aid))
+        else:
+            article_ids.add(img.get("data-src") or img.get("src") or str(id(img)))
 
-    count = len(yt.select("button.js-recent-youtube-button"))
-    return {"has_style_haus": True, "stylehaus_video_count": count}
+    return {
+        "has_style_haus": has_video,
+        "stylehaus_video_count": video_count,
+        "has_style_haus_post": bool(article_ids),
+        "stylehaus_post_count": len(article_ids),
+    }
 
 
 def _extract_int_from_selector(soup, selector: str) -> int | None:

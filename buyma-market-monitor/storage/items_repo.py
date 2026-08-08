@@ -326,26 +326,44 @@ def record_stylehaus_observation(
     has_style_haus: bool,
     stylehaus_video_count: int | None,
     observed_at: str,
+    has_style_haus_post: bool = False,
+    stylehaus_post_count: int | None = 0,
 ) -> bool:
-    """Append STYLE HAUS presence only when it differs from the latest row
-    (first observation always written). Returns True if a row was inserted."""
+    """Append STYLE HAUS video/post presence only when it differs from the
+    latest row (first observation always written). Returns True if inserted."""
     has_i = 1 if has_style_haus else 0
     count_i = int(stylehaus_video_count or 0)
+    post_i = 1 if has_style_haus_post else 0
+    post_count_i = int(stylehaus_post_count or 0)
     last = conn.execute(
-        "SELECT has_style_haus, stylehaus_video_count FROM stylehaus_history "
+        "SELECT has_style_haus, stylehaus_video_count, "
+        "has_style_haus_post, stylehaus_post_count FROM stylehaus_history "
         "WHERE item_id = ? ORDER BY observed_at DESC LIMIT 1",
         (item_id,),
     ).fetchone()
     if last is not None:
-        last_has = int(last["has_style_haus"] if isinstance(last, sqlite3.Row) else last[0])
-        last_count = last["stylehaus_video_count"] if isinstance(last, sqlite3.Row) else last[1]
-        last_count_i = int(last_count or 0)
-        if last_has == has_i and last_count_i == count_i:
+        if isinstance(last, sqlite3.Row):
+            last_has = int(last["has_style_haus"])
+            last_count = int(last["stylehaus_video_count"] or 0)
+            last_post = int(last["has_style_haus_post"] or 0)
+            last_post_count = int(last["stylehaus_post_count"] or 0)
+        else:
+            last_has = int(last[0])
+            last_count = int(last[1] or 0)
+            last_post = int(last[2] or 0)
+            last_post_count = int(last[3] or 0)
+        if (
+            last_has == has_i
+            and last_count == count_i
+            and last_post == post_i
+            and last_post_count == post_count_i
+        ):
             return False
     conn.execute(
         "INSERT OR IGNORE INTO stylehaus_history "
-        "(item_id, observed_at, has_style_haus, stylehaus_video_count) VALUES (?, ?, ?, ?)",
-        (item_id, observed_at, has_i, count_i),
+        "(item_id, observed_at, has_style_haus, stylehaus_video_count, "
+        "has_style_haus_post, stylehaus_post_count) VALUES (?, ?, ?, ?, ?, ?)",
+        (item_id, observed_at, has_i, count_i, post_i, post_count_i),
     )
     return True
 

@@ -15,7 +15,7 @@ import re
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 # ---- .env (buyma DB 자격증명) 로드: buyma-market-monitor 의 상위 buyma 폴더 .env ----
 _ENV_PATH = os.path.join(
@@ -201,10 +201,12 @@ CREATE TABLE IF NOT EXISTS exposure_state (
 );
 
 CREATE TABLE IF NOT EXISTS stylehaus_history (
-  item_id              TEXT NOT NULL,
-  observed_at          TEXT NOT NULL,
-  has_style_haus       INTEGER NOT NULL,
+  item_id               TEXT NOT NULL,
+  observed_at           TEXT NOT NULL,
+  has_style_haus        INTEGER NOT NULL,
   stylehaus_video_count INTEGER,
+  has_style_haus_post   INTEGER NOT NULL DEFAULT 0,
+  stylehaus_post_count  INTEGER,
   PRIMARY KEY (item_id, observed_at)
 );
 CREATE INDEX IF NOT EXISTS idx_stylehaus_history_item ON stylehaus_history(item_id);
