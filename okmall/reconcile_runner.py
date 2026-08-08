@@ -256,6 +256,15 @@ def process_one_group(conn, model_no, brand_id, dry_run=True, lock_timeout=10, s
         _bp = listing.get('buyma_product_id')
         print(f"{tag}{model_no!r} 멤버{len(_members)}({_dup}) listing#{listing_id}"
               + (f" buyma#{_bp}" if _bp else ""), flush=True)
+        # ── 출품 제외 게이트 ──
+        # exception_reason 이 찍힌 목록은 사람이/도구가 "다시 올리지 않기로" 정한 것이다
+        #   (예: 조회수 0 장기 → buyma_low_view_cleaner 가 출품정지시키고 표시).
+        #   이게 없으면 다음 재고 동기화가 재고 있다고 판단해 같은 상품을 도로 출품중으로 되살린다.
+        #   푸는 방법: buyma_listings.exception_reason 을 NULL 로.
+        if listing.get('exception_reason'):
+            return {'skipped': True, 'reason': f"출품 제외({listing['exception_reason']})",
+                    'listing_id': listing_id, 'model_no': model_no}
+
         # ── create/edit 판단: 목록 자신의 정체성(buyma_product_id) 있으면 edit, 없으면 create ──
         n_pub = 1 if listing.get('buyma_product_id') else 0
         listing_mode = 'edit' if listing.get('buyma_product_id') else 'create'
