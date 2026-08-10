@@ -346,6 +346,10 @@ class StockCommonMixin:
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
+                # 마진(margin_rate·margin_amount_krw)은 ace 에 저장하지 않는다 — 판매가를
+                # 목록이 정하므로 소싱처 혼자서는 마진을 확정할 수 없다. 진실은
+                # source_offerings 에 있고 resolve_merge 가 목록 판매가로 매번 갱신한다.
+                # 인자는 호출부 호환을 위해 그대로 받되 쓰지 않는다. (2026-08-10)
                 cursor.execute("""
                     UPDATE ace_products
                     SET original_price_krw = %s,
@@ -353,16 +357,13 @@ class StockCommonMixin:
                         price = %s,
                         original_price_jpy = %s,
                         buyma_lowest_price = %s,
-                        margin_rate = %s,
-                        margin_amount_krw = %s,
                         is_lowest_price = %s,
                         purchase_price_jpy = %s,
-                        margin_calculated_at = NOW(),
                         buyma_lowest_price_checked_at = NOW()
                     WHERE id = %s
                 """, (original_price_krw, purchase_price_krw, price_jpy,
-                      original_price_jpy, buyma_lowest_price, margin_rate,
-                      margin_amount_krw, is_lowest_price, purchase_price_jpy,
+                      original_price_jpy, buyma_lowest_price,
+                      is_lowest_price, purchase_price_jpy,
                       ace_product_id))
                 conn.commit()
         finally:

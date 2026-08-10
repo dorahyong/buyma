@@ -417,18 +417,19 @@ class BuymaLowestPriceCollector:
             else:
                 is_lowest = 1 if my_price <= lowest_price else 0
 
+            # 마진은 ace 에 저장하지 않는다 — 마진은 "이 소싱처에서 사서 그 목록의 판매가에
+            # 팔면 얼마 남나" 라서 소싱처 혼자 정할 수 없다. 진실은 source_offerings 에 있고
+            # resolve_merge / reconcile_ensure_group 이 목록 판매가 기준으로 매번 갱신한다.
+            # 여기서는 아래 로그·가격 역산에만 쓰고 버린다. (2026-08-10)
             cur.execute("""
                 UPDATE ace_products
                 SET buyma_lowest_price = %s,
                     price = %s,
                     is_lowest_price = %s,
                     buyma_lowest_price_checked_at = NOW(),
-                    margin_rate = %s,
-                    margin_amount_krw = %s,
-                    margin_calculated_at = CASE WHEN %s IS NOT NULL THEN NOW() ELSE margin_calculated_at END,
                     purchase_price_jpy = %s
                 WHERE id = %s
-            """, (lowest_price, my_price, is_lowest, margin_rate, margin_amount, margin_rate, purchase_price_jpy, product_id))
+            """, (lowest_price, my_price, is_lowest, purchase_price_jpy, product_id))
 
             conn.commit()
             return True, margin_rate, margin_amount
