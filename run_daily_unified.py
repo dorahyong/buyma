@@ -73,7 +73,9 @@ _NV_BRANDSTORE = _p('naver', 'premiumsneakers', 'brand_store_collector.py')
 NAVER_COLLECTOR = {
     'premiumsneakers': _NV_BRAND, 'fabstyle': _NV_BRAND, 'loutique': _NV_BRAND,
     't1global': _NV_BRAND, 'vvano': _NV_BRAND, 'veroshopmall': _NV_BRAND,
-    'carpi': _NV_BRANDSTORE, 'joharistore': _NV_BRANDSTORE,
+    # carpi 는 브랜드 카테고리가 전부 죽어(112개 모두 스토어 홈 리다이렉트) 전체상품 방식으로 옮김.
+    #   joharistore 는 브랜드 카테고리가 살아 있어 그대로 둔다. (2026-08-10)
+    'carpi': _NV_CATEGORY, 'joharistore': _NV_BRANDSTORE,
     'dmont': _NV_CATEGORY, 'tuttobene': _NV_CATEGORY, 'thefactor2': _NV_CATEGORY,
     'maniaon': _NV_CATEGORY, 'bblue': _NV_CATEGORY, 'euroline': _NV_CATEGORY,
     'unico': _NV_CATEGORY, 'kometa': _NV_CATEGORY, 'larlashoes': _NV_CATEGORY,

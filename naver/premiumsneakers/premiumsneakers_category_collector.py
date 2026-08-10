@@ -98,6 +98,11 @@ STORE_ALL_PRODUCT_URLS = {
     # brand.naver.com 도메인 (fetch는 /n/v2/ 사용)
     'trendmecca': 'https://brand.naver.com/trendmecca/category/af9ae952a4054de0bc4762485e779b02?st=RECENT&dt=IMAGE&page=1&size=80',
     'stellastore': 'https://brand.naver.com/stellastore/category/53907985141f4309a2e7867c3c876f2f?st=TOTALSALE&dt=IMAGE&page=1&size=80&filters=oa',
+    # carpi: 브랜드 카테고리가 전부 없어져(112개 모두 스토어 홈으로 리다이렉트) 브랜드 순회
+    #   방식으로는 한 건도 못 모은다. 전체상품 목록은 정상(총 2,604개)이라 그쪽으로 돈다.
+    #   브랜드는 URL 이 아니라 상품 상세에서 읽으므로 6월 오염(죽은 브랜드 URL → 잡탕 상품을
+    #   그 브랜드로 도장) 이 구조적으로 안 생긴다. (2026-08-10)
+    'carpi': 'https://brand.naver.com/carpi/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
 }
 
 PAGE_SIZE = 80
