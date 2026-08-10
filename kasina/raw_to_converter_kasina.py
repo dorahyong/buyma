@@ -78,7 +78,10 @@ DEFAULT_SHIPPING_FEE = 15000  # 기본 배송비
 # 참고: README_buyma_api.md에 따르면 환율은 9.2로 고정
 EXCHANGE_RATE_WON_TO_YEN = 9.2
 EXCHANGE_RATE_KRW_TO_JPY = round(1 / EXCHANGE_RATE_WON_TO_YEN, 4)  # 약 0.1087
-EXCHANGE_RATE_FOR_REFERENCE_PRICE = 0.1  # 엔화 정가는 KRW / 10 고정 로직 유지
+# 정가(참고가) 환산율 — 판매가 환율(9.2)과 다르다. 상품 설명문에 구매자에게
+# "10KRW ＝ 1.1円で換算" 이라고 안내하고 있어 그 값과 맞춘다. 재고동기화도 같은 규칙
+# (stock_common.reference_price_jpy). 예전엔 0.1 이라 경로마다 정가가 달랐다. (2026-08-10)
+EXCHANGE_RATE_FOR_REFERENCE_PRICE = 0.11
 MIN_PRICE_JPY = 500  # 최소 엔화 판매가
 
 # =====================================================
@@ -1274,21 +1277,15 @@ class RawToAceConverter:
             'name': buyma_name,
             'brand_id': brand_info.get('buyma_brand_id', 0), 'brand_name': brand_info.get('buyma_brand_name'),
             'category_id': category_info.get('buyma_category_id', 0), 
-            'expected_shipping_fee': expected_shipping_fee,
             'original_price_krw': original_price_krw,
             'purchase_price_krw': purchase_price_krw, 
-            'original_price_jpy': original_price_jpy,
-            'purchase_price_jpy': purchase_price_jpy,
-            'price': selling_price, 'regular_price': None, 'reference_price': original_price_jpy,
-            'reference_price_verify_count': 0,
-            'buyma_lowest_price': None, 'is_lowest_price': 0, 'available_until': available_until,
+            'available_until': available_until,
             'buying_area_id': BUYMA_FIXED_VALUES['buying_area_id'], 'shipping_area_id': BUYMA_FIXED_VALUES['shipping_area_id'],
             'model_no': raw_data.get('model_id'), 'theme_id': BUYMA_FIXED_VALUES['theme_id'],
             'season_id': season_id, 'colorsize_comments': colorsize_comments, 
             'colorsize_comments_jp': colorsize_comments_jp,
             'duty': BUYMA_FIXED_VALUES['duty'],
             'source_product_url': raw_data.get('product_url'), 'source_model_id': raw_data.get('model_id'),
-            'source_original_price': original_price_krw, 'source_sales_price': purchase_price_krw,
         }
 
         # 이미지는 image_collector_parallel.py에서 별도 수집하여 ace_product_images 테이블에 직접 저장
@@ -1485,13 +1482,6 @@ class RawToAceConverter:
                 UPDATE ace_products
                 SET original_price_krw = :original_price_krw,
                     purchase_price_krw = :purchase_price_krw,
-                    original_price_jpy = :original_price_jpy,
-                    purchase_price_jpy = :purchase_price_jpy,
-                    price = :price,
-                    regular_price = :regular_price,
-                    reference_price = :reference_price,
-                    source_original_price = :source_original_price,
-                    source_sales_price = :source_sales_price,
                     colorsize_comments = :colorsize_comments,
                     colorsize_comments_jp = :colorsize_comments_jp,
                     -- 재수집됨(=수집처에 다시 존재) → deleted였으면 해제하여 재등록 가능하게
@@ -1501,13 +1491,6 @@ class RawToAceConverter:
             """), {
                 'original_price_krw': product.get('original_price_krw'),
                 'purchase_price_krw': product.get('purchase_price_krw'),
-                'original_price_jpy': product.get('original_price_jpy'),
-                'purchase_price_jpy': product.get('purchase_price_jpy'),
-                'price': product.get('price'),
-                'regular_price': product.get('regular_price'),
-                'reference_price': product.get('reference_price'),
-                'source_original_price': product.get('source_original_price'),
-                'source_sales_price': product.get('source_sales_price'),
                 'colorsize_comments': product.get('colorsize_comments'),
                 'colorsize_comments_jp': product.get('colorsize_comments_jp'),
                 'ace_product_id': ace_product_id
@@ -1598,22 +1581,18 @@ class RawToAceConverter:
             result = conn.execute(text("""
                 INSERT INTO ace_products (
                     raw_data_id, source_site, name,
-                    brand_id, brand_name, category_id, expected_shipping_fee,
-                    original_price_krw, purchase_price_krw, original_price_jpy, purchase_price_jpy,
-                    price, regular_price, reference_price, reference_price_verify_count,
-                    buyma_lowest_price, is_lowest_price,
+                    brand_id, brand_name, category_id,
+                    original_price_krw, purchase_price_krw,
                     available_until, buying_area_id, shipping_area_id,
                     model_no, theme_id, season_id, colorsize_comments, colorsize_comments_jp,
-                    source_model_id, duty, source_product_url, source_original_price, source_sales_price
+                    source_model_id, duty, source_product_url
                 ) VALUES (
                     :raw_data_id, :source_site, :name,
-                    :brand_id, :brand_name, :category_id, :expected_shipping_fee,
-                    :original_price_krw, :purchase_price_krw, :original_price_jpy, :purchase_price_jpy,
-                    :price, :regular_price, :reference_price, :reference_price_verify_count,
-                    :buyma_lowest_price, :is_lowest_price,
+                    :brand_id, :brand_name, :category_id,
+                    :original_price_krw, :purchase_price_krw,
                     :available_until, :buying_area_id, :shipping_area_id,
                     :model_no, :theme_id, :season_id, :colorsize_comments, :colorsize_comments_jp,
-                    :source_model_id, :duty, :source_product_url, :source_original_price, :source_sales_price
+                    :source_model_id, :duty, :source_product_url
                 )
             """), product)
             ace_product_id = result.lastrowid

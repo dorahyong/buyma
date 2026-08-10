@@ -32,6 +32,7 @@ import pymysql
 from dotenv import load_dotenv
 
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from dedup_corrector_merge import canonicalize  # 품번 정규화 (파이프라인 공용)
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
@@ -237,14 +238,14 @@ class BuymaLowestPriceCollector:
             brand: 특정 브랜드만 조회
 
         Returns:
-            상품 목록 [{id, model_no, price, brand_name, source_sales_price, category_id}, ...]
+            상품 목록 [{id, model_no, brand_name, purchase_price_krw, category_id}, ...]
         """
         conn = self.get_connection()
         try:
             cur = conn.cursor(pymysql.cursors.DictCursor)
 
             query = """
-                SELECT id, model_no, price, brand_name, source_sales_price, category_id
+                SELECT id, model_no, brand_name, purchase_price_krw, category_id
                 FROM ace_products
                 WHERE model_no IS NOT NULL
                   AND model_no != ''
@@ -268,7 +269,10 @@ class BuymaLowestPriceCollector:
                 query += " AND source_site = %s"
                 params.append(source.lower())
 
-            query += " ORDER BY buyma_lowest_price_checked_at ASC, id ASC"
+            # 오래 안 건드린 것부터. 예전엔 ace 의 최저가 확인시각으로 정렬했는데 그 칸이
+            # 시세표로 옮겨갔다. 시세표 키는 파이썬 정규화 결과라 SQL 조인으로는 정확히
+            # 못 맞추므로(컬레이션·정규화 차이), 같은 의도인 ace 갱신시각으로 돈다. (2026-08-10)
+            query += " ORDER BY updated_at ASC, id ASC"
 
             if limit:
                 query += " LIMIT %s"
@@ -340,6 +344,32 @@ class BuymaLowestPriceCollector:
         except Exception as e:
             return None, f"파싱 오류: {str(e)}"
 
+    def save_market_price(self, model_key: str, lowest_price: Optional[int], result: str) -> None:
+        """품번 시세표(buyma_competitor_prices) 갱신.
+
+        경쟁자 최저가는 "바이마에서 이 품번이 얼마에 팔리나" 라서 소싱처(ace)와도
+        우리 출품(listing)과도 무관한 **품번 단위 사실**이다. 그래서 자리는 여기 한 곳이고,
+        같은 품번을 여러 ace 가 물고 있어도 검색은 1회면 된다. (2026-08-10)
+        """
+        if not model_key:
+            return
+        conn = self.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO buyma_competitor_prices (model_key, lowest_price, last_result, checked_at)
+                VALUES (%s, %s, %s, NOW())
+                ON DUPLICATE KEY UPDATE
+                    lowest_price = VALUES(lowest_price),
+                    last_result  = VALUES(last_result),
+                    checked_at   = NOW()
+            """, (model_key, lowest_price, result))
+            conn.commit()
+        except Exception as e:
+            log(f"시세표 저장 실패 (model_key={model_key}): {e}", "WARNING")
+        finally:
+            conn.close()
+
     def get_shipping_fee(self, category_id: int) -> int:
         """
         카테고리별 예상 배송비 조회
@@ -375,7 +405,7 @@ class BuymaLowestPriceCollector:
             conn.close()
 
     def update_lowest_price(self, product_id: int, lowest_price: Optional[int],
-                           my_price: int, source_sales_price: int = None,
+                           my_price: int, purchase_price_krw: int = None,
                            category_id: int = None, error_msg: str = None) -> Tuple[bool, Optional[float], Optional[float]]:
         """
         DB에 최저가 정보, 내 판매가 및 마진 정보 업데이트
@@ -384,7 +414,7 @@ class BuymaLowestPriceCollector:
             product_id: ace_products.id
             lowest_price: 바이마 최저가 (없으면 None)
             my_price: 내 판매가 (바이마 판매 예정가)
-            source_sales_price: 구매가 (오케이몰 판매가)
+            purchase_price_krw: 매입가 (몰에서 사는 가격, 최신)
             category_id: 카테고리 ID (배송비 조회용)
 
         Returns:
@@ -396,20 +426,16 @@ class BuymaLowestPriceCollector:
 
             # 마진율 및 마진액 계산
             margin_rate, margin_amount = None, None
-            purchase_price_jpy = None
 
             price_for_margin = lowest_price or my_price
-            if price_for_margin and source_sales_price:
+            if price_for_margin and purchase_price_krw:
                 shipping_fee = self.get_shipping_fee(category_id)
                 margin_rate, margin_amount = calculate_margin_rate(
                     buyma_price_jpy=price_for_margin,
-                    purchase_price_krw=source_sales_price,
+                    purchase_price_krw=purchase_price_krw,
                     shipping_fee_krw=shipping_fee
                 )
 
-            # 구매가(원) → 엔화 변환
-            if source_sales_price:
-                purchase_price_jpy = round(float(source_sales_price) / EXCHANGE_RATE)
 
             # 최저가 여부 판단: 경쟁자 없으면(lowest_price=None) 자동 최저가
             if not lowest_price:
@@ -421,15 +447,16 @@ class BuymaLowestPriceCollector:
             # 팔면 얼마 남나" 라서 소싱처 혼자 정할 수 없다. 진실은 source_offerings 에 있고
             # resolve_merge / reconcile_ensure_group 이 목록 판매가 기준으로 매번 갱신한다.
             # 여기서는 아래 로그·가격 역산에만 쓰고 버린다. (2026-08-10)
+            # 최저가·최저가여부는 ace 에 저장하지 않는다 — 시세는 품번 시세표
+            # (buyma_competitor_prices), "우리가 최저가인가"는 목록(buyma_listings) 몫이다.
+            # 판매가도 ace 에 저장하지 않는다 — 실제로 파는 가격은 묶음(buyma_listings)이
+            # 정하고, 등록할 때 resolve 가 시세·매입가로 다시 계산한다. 여기서 정한 값은
+            # 로그와 마진 판단에만 쓰고 버린다. (2026-08-10)
             cur.execute("""
                 UPDATE ace_products
-                SET buyma_lowest_price = %s,
-                    price = %s,
-                    is_lowest_price = %s,
-                    buyma_lowest_price_checked_at = NOW(),
-                    purchase_price_jpy = %s
+                SET price_checked_at = NOW()
                 WHERE id = %s
-            """, (lowest_price, my_price, is_lowest, purchase_price_jpy, product_id))
+            """, (product_id,))
 
             conn.commit()
             return True, margin_rate, margin_amount
@@ -477,30 +504,56 @@ class BuymaLowestPriceCollector:
         stats_lock = threading.Lock()
         total = len(products)
 
+        # ── 품번 단위 검색 캐시 ──
+        # 같은 품번을 여러 소싱처가 물고 있어(활성 ace 739,215건 / 품번 489,997개) 예전엔
+        # 같은 검색을 평균 1.5번 반복했다. 시세는 품번 단위 사실이라 한 번만 보면 된다.
+        search_cache = {}          # model_key -> (lowest_price, error_msg)
+        cache_lock = threading.Lock()
+
+        def lookup_market(model_no: str):
+            key = canonicalize(model_no or '')
+            if not key:
+                return self.search_buyma_lowest_price(model_no), None
+            with cache_lock:
+                hit = search_cache.get(key)
+            if hit is not None:
+                return hit, key
+            res = self.search_buyma_lowest_price(model_no)
+            with cache_lock:
+                search_cache[key] = res
+            lowest, err = res
+            self.save_market_price(
+                key, lowest,
+                'found' if lowest else ('no_competitor' if err and ('없음' in err) else 'error'))
+            return res, key
+
         def process_product(idx: int, product: Dict) -> None:
             """단일 상품 처리 (스레드에서 실행)"""
             product_id = product['id']
             model_no = product['model_no']
-            my_price = product['price']
-            source_sales_price = product.get('source_sales_price')
+            my_price = 0            # ace.price 폐지 — 아래에서 시세/목표마진으로 새로 정한다
+            # 매입가는 '지금 얼마에 사는가' 여야 한다. source_sales_price 는 수집한 날의
+            # 몰 가격이라 그 뒤 몰이 값을 바꿔도 그대로다(실측 56,017건이 최신값과 다름).
+            # 재고동기화가 매일 갱신하는 purchase_price_krw 를 쓰고, 없을 때만 옛 값으로 폴백.
+            purchase_price_krw = product.get('purchase_price_krw')
             category_id = product.get('category_id')
 
             log(f"[{idx+1}/{total}] 검색 중: id={product_id}, model_no={model_no}")
 
-            # 바이마 검색
-            lowest_price, error_msg = self.search_buyma_lowest_price(model_no)
+            # 바이마 검색 (품번당 1회 — 나머지는 캐시 재사용)
+            (lowest_price, error_msg), _key = lookup_market(model_no)
 
             margin_rate, margin_amount = None, None
             if error_msg:
                 is_no_competitor = "검색 결과 없음" in error_msg or "경쟁자 없음" in error_msg
 
-                if is_no_competitor and source_sales_price:
+                if is_no_competitor and purchase_price_krw:
                     # 경쟁자 없음 → 마진율 30%가 되는 가격으로 설정
                     shipping_fee = self.get_shipping_fee(category_id)
-                    target_price = calculate_target_price_jpy(source_sales_price, shipping_fee)
+                    target_price = calculate_target_price_jpy(purchase_price_krw, shipping_fee)
                     if target_price:
                         my_price = target_price
-                        margin_rate, margin_amount = calculate_margin_rate(my_price, source_sales_price, shipping_fee)
+                        margin_rate, margin_amount = calculate_margin_rate(my_price, purchase_price_krw, shipping_fee)
                         margin_str = f"{margin_rate:.2f}% ({margin_amount:,.0f}원)" if margin_rate is not None else "계산불가"
                         log(f"  → [없음{'(404)' if '404' in error_msg else ''}] 마진30% 가격 설정: {my_price:,}엔 | 마진: {margin_str}")
                     else:
@@ -520,9 +573,9 @@ class BuymaLowestPriceCollector:
                 my_price = lowest_price - random.randint(1, 9)
                 
                 # 마진 정보 계산 (로그 출력용)
-                if source_sales_price:
+                if purchase_price_krw:
                     shipping_fee = self.get_shipping_fee(category_id)
-                    margin_rate, margin_amount = calculate_margin_rate(lowest_price, source_sales_price, shipping_fee)
+                    margin_rate, margin_amount = calculate_margin_rate(lowest_price, purchase_price_krw, shipping_fee)
 
                 margin_str = f"{margin_rate:.2f}% ({margin_amount:,.0f}원)" if margin_rate is not None else "계산불가"
                 log(f"  → [있음] 바이마 최저가: {lowest_price:,}엔 | 내 판매가: {my_price:,}엔 | 마진: {margin_str}")
@@ -535,7 +588,7 @@ class BuymaLowestPriceCollector:
                     product_id=product_id,
                     lowest_price=lowest_price,
                     my_price=my_price,
-                    source_sales_price=source_sales_price,
+                    purchase_price_krw=purchase_price_krw,
                     category_id=category_id,
                     error_msg=error_msg
                 )

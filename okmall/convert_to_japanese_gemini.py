@@ -273,7 +273,7 @@ def collect_translation_targets(conn, brand: str = None, limit: int = None, pric
         params = []
 
         if price_checked_only:
-            sql += " AND p.buyma_lowest_price_checked_at IS NOT NULL"
+            sql += " AND p.price_checked_at IS NOT NULL"
 
         if with_images:
             sql += " AND p.id IN (SELECT DISTINCT ace_product_id FROM ace_product_images WHERE is_uploaded = 1)"

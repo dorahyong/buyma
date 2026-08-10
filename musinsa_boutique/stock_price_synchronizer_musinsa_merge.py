@@ -71,7 +71,7 @@ from stock_common import (  # noqa: E402
     BUYMA_BUYER_ID, BUYMA_SEARCH_URL, _log_lock,
     log, log_batch, parse_price, decimal_to_float, _buyma_width,
     truncate_buyma_name, truncate_option_value, truncate_buying_shop_name,
-    generate_model_no_variants, calculate_margin,
+    generate_model_no_variants, calculate_margin, reference_price_jpy,
     StockCommonMixin,
 )
   # 단일권위 전환 스위치 (ace → buyma_listings)
@@ -393,11 +393,13 @@ class StockPriceSynchronizer(StockCommonMixin):
                         ap.source_product_url,
                         ap.original_price_krw,
                         ap.purchase_price_krw,
-                        ap.original_price_jpy,
-                        ap.price,
-                        ap.buyma_lowest_price,
-                        ap.expected_shipping_fee,
-                        ap.buyma_lowest_price_checked_at
+                        -- 현재 내 판매가 = 바이마에 실제로 걸어둔 값(목록). ace.price 는
+                        -- 묶어 팔기 전 잔재라 실제와 어긋난다. 키 이름은 그대로 둬서
+                        -- 아래 비교 로직(old_price 등)은 손대지 않는다. (2026-08-10)
+                        (SELECT bl.price FROM source_offerings so2
+                           JOIN buyma_listings bl ON bl.id = so2.listing_id
+                          WHERE so2.ace_product_id = ap.id AND so2.is_active = 1
+                          ORDER BY bl.id LIMIT 1) AS price
                     FROM ace_products ap
                     WHERE {_reg}
                       AND ap.source_product_url IS NOT NULL
@@ -414,7 +416,7 @@ class StockPriceSynchronizer(StockCommonMixin):
                     sql += " AND UPPER(ap.brand_name) LIKE %s"
                     params.append(f"%{brand.upper()}%")
 
-                sql += " ORDER BY ap.buyma_lowest_price_checked_at ASC, ap.id ASC"
+                sql += " ORDER BY ap.updated_at ASC, ap.id ASC"
 
                 if limit:
                     sql += " LIMIT %s"
@@ -896,6 +898,8 @@ class StockPriceSynchronizer(StockCommonMixin):
 
                 # 최저가 결과 대기
                 competitor_lowest_price, lp_error = future_lowest.result()
+                # 찾은 시세는 품번 시세표에 기록 — 등록·재고가 같은 값을 본다 (2026-08-10)
+                self.save_competitor_price(product.get('model_no'), competitor_lowest_price, lp_error)
 
             # 4. 새 가격 계산 (JPY)
             if lp_error:
@@ -903,7 +907,7 @@ class StockPriceSynchronizer(StockCommonMixin):
                     # 경쟁자 없음 → 매입가 기반 30% 마진 가격 재계산
                     new_purchase = new_sale_price if new_sale_price else float(product.get('purchase_price_krw') or 0)
                     if new_purchase > 0:
-                        shipping_fee_for_calc = product.get('expected_shipping_fee') or self.get_shipping_fee(product.get('category_id'))
+                        shipping_fee_for_calc = self.get_shipping_fee(product.get('category_id'))
                         total_cost = new_purchase + float(shipping_fee_for_calc)
                         vat_refund = new_purchase / 11.0
                         denominator = (1.0 - SALES_FEE_RATE) - 0.30  # 0.645
@@ -922,7 +926,8 @@ class StockPriceSynchronizer(StockCommonMixin):
                 else:
                     add_log(f"  - 최저가 수집 실패: {lp_error}")
                     new_price_jpy = product.get('price')
-                    new_lowest_price = product.get('buyma_lowest_price')
+                    # 검색 실패 시엔 직전에 알던 시세를 유지한다(예전엔 ace 에 있던 값).
+                    new_lowest_price = self.get_competitor_price(product.get('model_no'))
             else:
                 old_price = product.get('price') or 0
                 price_range_min = competitor_lowest_price - 9
@@ -937,11 +942,11 @@ class StockPriceSynchronizer(StockCommonMixin):
                     new_lowest_price = competitor_lowest_price
                     add_log(f"  - 경쟁자 최저가: ¥{competitor_lowest_price:,} → 내 가격: ¥{new_price_jpy:,}")
 
-            new_original_price_jpy = int(new_original_price / EXCHANGE_RATE) if new_original_price else product.get('original_price_jpy') or 0
+            new_original_price_jpy = reference_price_jpy(new_original_price or product.get('original_price_krw'))
             new_purchase_price_krw = new_sale_price if new_sale_price else float(product.get('purchase_price_krw') or 0)
 
             # 5. 마진 계산
-            shipping_fee = product.get('expected_shipping_fee') or self.get_shipping_fee(product.get('category_id'))
+            shipping_fee = self.get_shipping_fee(product.get('category_id'))
             margin_info = calculate_margin(new_price_jpy, new_purchase_price_krw, shipping_fee)
 
             add_log(f"  - 판매가: ¥{new_price_jpy:,} (₩{margin_info['sales_price_krw']:,.0f})")
@@ -950,8 +955,8 @@ class StockPriceSynchronizer(StockCommonMixin):
 
             # 6. 변경 여부 판단
             old_price_jpy = product.get('price') or 0
-            old_original_price_jpy = product.get('original_price_jpy') or 0
-            old_lowest_price = product.get('buyma_lowest_price') or 0
+            old_original_price_jpy = reference_price_jpy(product.get('original_price_krw'))
+            old_lowest_price = self.get_competitor_price(product.get('model_no')) or 0
 
             need_api_call = False
             is_delete = False

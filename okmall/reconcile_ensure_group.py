@@ -185,10 +185,21 @@ def _resolve_inputs(conn, listing_id, listing_row, offerings):
             for r in cur.fetchall():
                 options_by_offering[r['offering_id']].append(r)
         if ace_ids:
+            # 경쟁자 시세는 품번 단위 사실이라 buyma_competitor_prices 에서 읽는다.
+            #   (예전엔 ace 마다 각자 값을 들고 있어 멤버끼리 어긋났다. 2026-08-10)
             fmt = ','.join(['%s'] * len(ace_ids))
-            cur.execute(f"""SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at
-                            FROM ace_products WHERE id IN ({fmt})""", ace_ids)
-            ace_info = {r['id']: r for r in cur.fetchall()}
+            cur.execute(f"SELECT id, model_no FROM ace_products WHERE id IN ({fmt})", ace_ids)
+            ace_models = {r['id']: r['model_no'] for r in cur.fetchall()}
+            keys = {canonicalize(m or '') for m in ace_models.values()}
+            keys.discard('')
+            market = {}
+            if keys:
+                kf = ','.join(['%s'] * len(keys))
+                cur.execute(f"""SELECT model_key, lowest_price FROM buyma_competitor_prices
+                                 WHERE model_key IN ({kf}) AND lowest_price > 0""", list(keys))
+                market = {r['model_key']: int(r['lowest_price']) for r in cur.fetchall()}
+            ace_info = {aid: {'buyma_lowest_price': market.get(canonicalize(mno or ''))}
+                        for aid, mno in ace_models.items()}
     return options_by_offering, ace_info
 
 

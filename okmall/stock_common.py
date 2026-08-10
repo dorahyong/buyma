@@ -32,6 +32,10 @@ import pymysql
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dedup_corrector_merge import canonicalize  # 품번 정규화 (시세표 키)
+
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'), override=True)
 # =====================================================
 # 설정값
@@ -48,9 +52,15 @@ DB_CONFIG = {
 EXCHANGE_RATE = 9.2
 SALES_FEE_RATE = 0.055
 DEFAULT_SHIPPING_FEE = 15000
+# 정가(참고가) 환산율 — 판매가 환율(9.2)과 다르다.
+#   상품 설명문에 "10KRW ＝ 1.1円で換算" 이라고 구매자에게 안내하고 있으므로 그 값과 맞춘다.
+#   (예전엔 변환기가 ×0.1, 재고동기화가 ÷9.2 를 써서 같은 상품의 정가가 경로마다 달랐다.
+#    등록 직후 ¥19,300 → 다음날 재고동기화 후 ¥20,978 처럼 화면 정가가 흔들렸다. 2026-08-10)
+REFERENCE_PRICE_KRW_TO_JPY = 0.11
 BUYMA_BUYER_ID = os.getenv('BUYMA_BUYER_ID', '')  # 내 바이마 판매자 ID
 BUYMA_SEARCH_URL = "https://www.buyma.com/r/-O3/{model_no}/"
 _log_lock = threading.Lock()
+_SHIPPING_FEE_CACHE = {}     # category_id -> 배송비(원). 마스터 조회 결과 캐시
 
 # =====================================================
 # 공용 함수
@@ -205,6 +215,22 @@ def generate_model_no_variants(model_no: str) -> List[str]:
 
     return variants  # 리스트 반환
 
+def reference_price_jpy(original_price_krw) -> int:
+    """정가(원) → 정가(엔). 등록·재고 어느 경로로 계산해도 같은 값이 나오게 하는 단일 규칙.
+
+    구매자에게 안내한 환산율(10KRW=1.1円)을 그대로 쓰고, 화면에 지저분하게 보이지 않도록
+    100엔 단위로 반올림한다(변환기가 원래 하던 방식).
+    """
+    try:
+        krw = float(original_price_krw or 0)
+    except (TypeError, ValueError):
+        return 0
+    if krw <= 0:
+        return 0
+    jpy = int(krw * REFERENCE_PRICE_KRW_TO_JPY)
+    return ((jpy + 50) // 100) * 100
+
+
 def calculate_margin(price_jpy: int, purchase_price_krw: float,
                      shipping_fee_krw: int = DEFAULT_SHIPPING_FEE) -> Dict:
     """
@@ -253,9 +279,65 @@ class StockCommonMixin:
     본문은 각 몰 파일에 있던 것과 동일하다."""
     def get_connection(self) -> pymysql.Connection:
         return pymysql.connect(**DB_CONFIG)
+    # ── 경쟁자 시세 (품번 단위) ──────────────────────────────
+    # 시세는 "바이마에서 이 품번이 얼마에 팔리나" 라서 소싱처(ace)와도 우리 출품(listing)
+    # 과도 무관한 품번 단위 사실이다. 그래서 buyma_competitor_prices 한 곳에 둔다.
+    # 예전엔 ace 마다 각자 값을 들고 있어 같은 품번인데 멤버끼리 값이 달랐고,
+    # 등록·재고가 그중 하나를 골라 쓰느라 판단이 흔들렸다. (2026-08-10)
+    def save_competitor_price(self, model_no: str, lowest_price, error_msg: str = None) -> None:
+        """검색 결과를 시세표에 기록. 11개 몰 재고동기화가 공유한다."""
+        key = canonicalize(model_no or '')
+        if not key:
+            return
+        result = 'found' if lowest_price else ('no_competitor' if (error_msg and '없음' in error_msg) else 'error')
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO buyma_competitor_prices (model_key, lowest_price, last_result, checked_at)
+                    VALUES (%s, %s, %s, NOW())
+                    ON DUPLICATE KEY UPDATE
+                        lowest_price = VALUES(lowest_price),
+                        last_result  = VALUES(last_result),
+                        checked_at   = NOW()
+                """, (key, lowest_price, result))
+            conn.commit()
+        except Exception as e:
+            log(f"시세표 저장 실패 (model_no={model_no}): {e}", "WARNING")
+        finally:
+            conn.close()
+
+    def get_competitor_price(self, model_no: str):
+        """시세표에서 이 품번의 경쟁자 최저가. 없으면 None."""
+        key = canonicalize(model_no or '')
+        if not key:
+            return None
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT lowest_price FROM buyma_competitor_prices WHERE model_key=%s", (key,))
+                r = cur.fetchone()
+            return r['lowest_price'] if r else None
+        except Exception:
+            return None
+        finally:
+            conn.close()
+
     def get_shipping_fee(self, category_id: int) -> int:
+        """카테고리별 예상 배송비. 진실은 buyma_master_categories_data 한 곳.
+
+        예전엔 ace_products.expected_shipping_fee 에 복사해두고 그 값을 먼저 썼는데,
+        마스터가 바뀌어도 사본은 그대로라 13,337건이 기본값 15,000원에 묶여 있었다
+        (실제 카테고리 배송비는 8,950~26,850원). 배송비는 마진 계산에 그대로 들어가므로
+        틀리면 출품 여부 판단이 틀어진다. → 사본을 없애고 매번 마스터를 본다.
+        상품마다 조회하므로 카테고리 단위로 캐시한다. (2026-08-10)
+        """
         if not category_id:
             return DEFAULT_SHIPPING_FEE
+        cached = _SHIPPING_FEE_CACHE.get(category_id)
+        if cached is not None:
+            return cached
+        fee = DEFAULT_SHIPPING_FEE
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
@@ -266,12 +348,14 @@ class StockCommonMixin:
                 """, (category_id,))
                 row = cursor.fetchone()
                 if row and row.get('expected_shipping_fee'):
-                    return int(row['expected_shipping_fee'])
-                return DEFAULT_SHIPPING_FEE
-        except:
-            return DEFAULT_SHIPPING_FEE
+                    fee = int(row['expected_shipping_fee'])
+        except Exception:
+            fee = DEFAULT_SHIPPING_FEE
         finally:
             conn.close()
+        with _log_lock:
+            _SHIPPING_FEE_CACHE[category_id] = fee
+        return fee
     def get_buyma_lowest_price(self, model_no: str) -> Tuple[Optional[int], Optional[str]]:
         """
         바이마에서 경쟁자 최저가를 수집합니다.
@@ -350,21 +434,19 @@ class StockCommonMixin:
                 # 목록이 정하므로 소싱처 혼자서는 마진을 확정할 수 없다. 진실은
                 # source_offerings 에 있고 resolve_merge 가 목록 판매가로 매번 갱신한다.
                 # 인자는 호출부 호환을 위해 그대로 받되 쓰지 않는다. (2026-08-10)
+                # 경쟁자 최저가(buyma_lowest_price·is_lowest_price·checked_at)는 ace 에
+                # 저장하지 않는다 — 시세는 품번 단위 사실이라 buyma_competitor_prices 가,
+                # "우리가 최저가인가"는 우리 출품에 대한 사실이라 buyma_listings 가 갖는다.
+                # 인자는 호출부 호환을 위해 그대로 받되 쓰지 않는다. (2026-08-10)
+                # ace 에 남는 금액은 '몰이 준 사실' 두 가지뿐이다.
+                #   판매가(price)·정가(엔)·매입가(엔)·최저가·마진은 전부 다른 곳으로 갔거나
+                #   쓸 때 계산한다. 나머지 인자는 호출부 호환을 위해 받되 쓰지 않는다.
                 cursor.execute("""
                     UPDATE ace_products
                     SET original_price_krw = %s,
-                        purchase_price_krw = %s,
-                        price = %s,
-                        original_price_jpy = %s,
-                        buyma_lowest_price = %s,
-                        is_lowest_price = %s,
-                        purchase_price_jpy = %s,
-                        buyma_lowest_price_checked_at = NOW()
+                        purchase_price_krw = %s
                     WHERE id = %s
-                """, (original_price_krw, purchase_price_krw, price_jpy,
-                      original_price_jpy, buyma_lowest_price,
-                      is_lowest_price, purchase_price_jpy,
-                      ace_product_id))
+                """, (original_price_krw, purchase_price_krw, ace_product_id))
                 conn.commit()
         finally:
             conn.close()
@@ -385,13 +467,19 @@ class StockCommonMixin:
         finally:
             conn.close()
     def update_sync_time_only(self, ace_product_id: int) -> None:
-        """변경 없을 때 체크 시간만 갱신"""
+        """변경 없을 때 '언제 확인했는지'만 갱신.
+
+        예전엔 buyma_lowest_price_checked_at 에 찍었는데, 그 칸은 시세 확인 시각이라
+        품번 시세표로 옮겨갔다. 여기서 남길 것은 "이 ace 를 언제 확인했나" 이므로
+        updated_at 을 건드린다(재고동기화 대상 정렬도 updated_at 순이라 회전이 유지된다).
+        (2026-08-10)
+        """
         conn = self.get_connection()
         try:
             with conn.cursor() as cursor:
                 cursor.execute("""
                     UPDATE ace_products
-                    SET buyma_lowest_price_checked_at = NOW()
+                    SET updated_at = NOW()
                     WHERE id = %s
                 """, (ace_product_id,))
                 conn.commit()

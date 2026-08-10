@@ -494,7 +494,7 @@ class WconceptImageCollectorParallel:
             params = {}
 
             if price_checked_only:
-                query += " AND ap.buyma_lowest_price_checked_at IS NOT NULL"
+                query += " AND ap.price_checked_at IS NOT NULL"
 
             if brand:
                 query += " AND UPPER(ap.brand_name) LIKE :brand"

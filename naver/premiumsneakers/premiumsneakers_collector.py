@@ -706,6 +706,15 @@ async def run(brand_filter: Optional[str], limit: Optional[int],
 
         # Phase 2
         logger.info("\n== Phase 2: 상세 수집 ==")
+        # ★ 목록을 읽던 탭은 버리고 새 탭에서 상세를 받는다.
+        #   목록 쪽에서 페이지 넘김이 실패하면 그 탭으로는 상세를 못 연다(상세 전건 실패).
+        #   쿠키·세션은 context 에 있으므로 새 탭도 로그인 상태 그대로다. (2026-08-10)
+        try:
+            await page.close()
+        except Exception:
+            pass
+        page = await context.new_page()
+
         rows = []
         first_row = None      # dump용 (batch save로 rows 비워져도 보존)
         total_collected = 0   # 누적 수집 카운트

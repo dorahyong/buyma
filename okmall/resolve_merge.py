@@ -28,6 +28,10 @@ from collections import defaultdict
 import pymysql
 from dotenv import load_dotenv
 
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dedup_corrector_merge import canonicalize  # 품번 정규화 (시세표 키)
+
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 logging.basicConfig(
@@ -124,13 +128,16 @@ def load_all(conn):
         options_by_offering[r['offering_id']].append(r)
     logger.info(f"options 로드: {sum(len(v) for v in options_by_offering.values())}")
 
-    # ace 가격/정보: buyma_lowest_price(경쟁자), 신선도
-    cur.execute("""
-        SELECT id, buyma_lowest_price, buyma_lowest_price_checked_at
-        FROM ace_products WHERE is_active=1
-    """)
-    ace_info = {r['id']: r for r in cur.fetchall()}
-    logger.info(f"ace 가격정보 로드: {len(ace_info)}")
+    # 경쟁자 시세: 품번 단위 사실이라 ace 가 아니라 buyma_competitor_prices 에 있다.
+    #   예전엔 멤버 ace 마다 각자 값을 들고 있어 "그중 가장 최근 것"을 매번 골라야 했다.
+    #   이제 품번당 한 값이라 고를 것이 없다. (2026-08-10)
+    cur.execute("SELECT id, model_no FROM ace_products WHERE is_active=1")
+    ace_model = {r['id']: r['model_no'] for r in cur.fetchall()}
+    cur.execute("SELECT model_key, lowest_price FROM buyma_competitor_prices WHERE lowest_price > 0")
+    market = {r['model_key']: int(r['lowest_price']) for r in cur.fetchall()}
+    ace_info = {aid: {'buyma_lowest_price': market.get(canonicalize(mno or ''))}
+                for aid, mno in ace_model.items()}
+    logger.info(f"ace 품번 로드: {len(ace_model)} / 시세 보유 품번: {len(market)}")
 
     # 카테고리 배송비
     fee_map = {}
@@ -154,19 +161,14 @@ def resolve_listing(listing, offerings, options_by_offering, ace_info, fee_map):
     """한 listing 해석 → 판단 결과 dict 반환 (DB 미반영)."""
     shipping = fee_map.get(listing['category_id'], DEFAULT_SHIPPING_FEE)
 
-    # --- 경쟁자 최저가: 멤버 중 가장 최근 체크된 buyma_lowest_price>0 ---
+    # --- 경쟁자 최저가: 품번 시세(멤버들은 같은 품번이라 값이 하나) ---
     competitor = None
-    best_at = None
     for off in offerings:
         ai = ace_info.get(off['ace_product_id'])
-        if not ai:
-            continue
-        low = ai['buyma_lowest_price']
+        low = ai and ai.get('buyma_lowest_price')
         if low and low > 0:
-            at = ai['buyma_lowest_price_checked_at']
-            if best_at is None or (at is not None and at > best_at):
-                best_at = at
-                competitor = int(low)
+            competitor = int(low)
+            break
 
     # --- 판매가 결정 ---
     if competitor:

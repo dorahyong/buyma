@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import buyma_new_product_register as reg  # noqa: E402
 import authority_flag  # noqa: E402  단일권위 전환 스위치
+from stock_common import reference_price_jpy  # noqa: E402  정가(엔) 계산 단일 규칙
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
 
@@ -67,12 +68,15 @@ def _reference_price_jpy(conn, listing_id):
     """
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT MAX(a.original_price_jpy) v
+            SELECT MAX(a.original_price_krw) v
             FROM source_offerings so JOIN ace_products a ON a.id = so.ace_product_id
             WHERE so.listing_id = %s AND so.is_active = 1
         """, (listing_id,))
         row = cur.fetchone()
-    return row['v'] if row and row['v'] else None
+    # 정가(엔)는 저장하지 않고 여기서 한 규칙으로 계산한다(10KRW=1.1円, 100엔 반올림).
+    #   예전엔 ace.original_price_jpy 를 읽었는데, 변환기는 ×0.1 재고동기화는 ÷9.2 로 채워
+    #   같은 상품의 정가가 경로마다 달랐다. 이제 계산이 한 곳이라 어긋날 수 없다. (2026-08-10)
+    return reference_price_jpy(row['v']) if row and row['v'] else None
 
 
 def _winner_offering(conn, listing):
