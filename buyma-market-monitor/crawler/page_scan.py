@@ -10,6 +10,7 @@ If any page of a seller fails to fetch, that seller is skipped this run (not
 reconciled) and retried next run — conservative guard against false
 disappearances from transient page errors.
 """
+import logging
 import queue
 import threading
 import time
@@ -25,7 +26,7 @@ from crawler.monitor import (
 )
 from crawler.item_status import ItemStatus
 from crawler.item_detail import build_item_detail_url
-from storage.db import connect, init_schema
+from storage.db import connect, init_schema, with_lock_retry
 from storage import scan_repo
 
 
@@ -89,7 +90,14 @@ def run_page_scan(
     def _reconcile(sid: str) -> None:
         items = buf[sid]
         with db_lock:
-            outcome = apply_seller_scan_to_db(main_conn, sid, items, now)
+            # 잠금 충돌(데드락/락대기)은 트랜잭션 통째로 다시 실행한다.
+            #   apply_seller_scan_to_db 는 BEGIN~COMMIT 한 덩어리이고, 함수 시작에서
+            #   현재 상태를 다시 읽으므로 통째 재실행이 안전하다.
+            #   ★ 이 자리는 예외가 위로 새면 scan_worker 스레드가 죽는다(2026-08-10 사고).
+            #   (집계 쿼리 INSERT INTO po SELECT ... FROM market_items 와 부딪힌다)
+            outcome = with_lock_retry(
+                apply_seller_scan_to_db, main_conn, sid, items, now,
+                label=f"[scan] seller {sid}")
             # 셀러 저장 즉시 스캔 체크포인트 기록(같은 db_lock 안) → 중간에 죽어도
             # 완료된 셀러는 다음 run에서 다시 안 긁음. (구: value_scan에서 일괄 기록)
             if not outcome.skipped_due_to_empty_scan:
@@ -100,6 +108,10 @@ def run_page_scan(
                 summary.sellers_scanned += 1
                 summary.items_new += len(outcome.new_item_ids)
                 summary.price_changes += outcome.price_changes
+                logging.info(
+                    "[scan] seller %s: +%d new / %d items (%d/%d sellers, %d disappeared)",
+                    sid, len(outcome.new_item_ids), len(items),
+                    summary.sellers_scanned, len(seller_ids), len(outcome.disappeared_item_ids))
         if outcome.disappeared_item_ids:
             with state_lock:
                 disappeared_ids.extend(outcome.disappeared_item_ids)
@@ -203,7 +215,9 @@ def run_page_scan(
                             status_code, _ = fetched
                             try:
                                 with db_lock:
-                                    status = apply_classification(main_conn, iid, status_code, now)
+                                    status = with_lock_retry(
+                                        apply_classification, main_conn, iid, status_code, now,
+                                        label=f"[classify] item {iid}")
                                 with counts_lock:
                                     if status is ItemStatus.DELETED:
                                         summary.deleted += 1

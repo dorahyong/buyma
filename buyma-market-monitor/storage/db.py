@@ -10,9 +10,11 @@ shim 이 SQLite→MySQL dialect 를 자동 변환한다:
   ?→%s / 테이블명→market_ 접두어 / INSERT OR IGNORE→INSERT IGNORE /
   ON CONFLICT(col) DO UPDATE SET→ON DUPLICATE KEY UPDATE / excluded.x→VALUES(x)
 """
+import logging
 import os
 import re
 import sqlite3
+import time
 from pathlib import Path
 
 SCHEMA_VERSION = 13
@@ -291,6 +293,44 @@ class _HybridCursor(DictCursor):
 
 # 연결 끊김(idle drop 등) 에러코드 → 재연결 후 재시도
 _LOST_CODES = (2013, 2006, 2055, 0)
+
+# 잠금 충돌(데드락 1213 / 락대기 초과 1205) → 잠시 뒤 다시 하면 대개 성공한다.
+# ★ 여기서 재시도하지 않는다. 데드락이 나면 InnoDB 가 그 트랜잭션을 통째로 되돌리므로
+#   문장 하나만 다시 실행하면 반쪽짜리 데이터가 된다. 재시도는 BEGIN~COMMIT 을 감싼
+#   호출부(예: page_scan._reconcile)에서 트랜잭션 단위로 해야 한다.
+_LOCK_CONFLICT_CODES = (1213, 1205)
+
+
+def is_lock_conflict(exc: Exception) -> bool:
+    """이 예외가 '다시 하면 되는' 잠금 충돌인가 (데드락/락대기 초과)."""
+    code = exc.args[0] if getattr(exc, "args", None) else None
+    if code in _LOCK_CONFLICT_CODES:
+        return True
+    msg = str(exc)
+    return "Deadlock found" in msg or "Lock wait timeout" in msg
+
+
+LOCK_RETRIES = 3          # 총 시도 횟수
+LOCK_RETRY_SLEEP = 0.5    # 첫 대기(초). 시도마다 배로 늘어난다.
+
+
+def with_lock_retry(fn, *args, label: str = "", **kwargs):
+    """잠금 충돌이면 잠시 뒤 통째로 다시 실행한다.
+
+    ★ 반드시 트랜잭션(BEGIN~COMMIT) '전체'를 감싸는 자리에서 호출할 것.
+      데드락이 나면 InnoDB 가 그 트랜잭션을 전부 되돌리므로, 안쪽 문장 하나만
+      다시 실행하면 반쪽짜리 데이터가 된다.
+    잠금 충돌이 아닌 예외(컬럼 없음 등 진짜 버그)는 그대로 올려보낸다.
+    """
+    for attempt in range(LOCK_RETRIES):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            if attempt == LOCK_RETRIES - 1 or not is_lock_conflict(e):
+                raise
+            logging.warning("잠금충돌 → 재시도 %d/%d %s (%s)",
+                            attempt + 1, LOCK_RETRIES - 1, label, str(e)[:70])
+            time.sleep(LOCK_RETRY_SLEEP * (attempt + 1))
 
 
 class _MySQLConn:

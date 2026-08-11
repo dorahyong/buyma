@@ -18,7 +18,7 @@ from crawler.revisit_scheduler import (
     SALES_WINDOW_DAYS, STRONG_SELLER_ORDER_COUNT, STRONG_SELLER_WINDOW_DAYS,
 )
 from storage import revisit_repo, orders_repo, sellers_repo
-from storage.db import connect, init_schema
+from storage.db import connect, init_schema, with_lock_retry
 from storage.store import now_iso
 
 
@@ -167,7 +167,10 @@ def run_revisit(
                     if status_code == 200:
                         try:
                             with db_lock:
-                                apply_revisit(main_conn, iid, body, obs_now)
+                                # 잠금 충돌이면 통째로 재시도. 여기는 예외를 아래서 잡아
+                                #   스레드가 죽진 않지만, 재시도가 없으면 그 아이템 관측이 유실된다.
+                                with_lock_retry(apply_revisit, main_conn, iid, body, obs_now,
+                                                label=f"[revisit] item {iid}")
                             with counts_lock:
                                 summary.observed += 1
                         except Exception as e:
@@ -178,7 +181,9 @@ def run_revisit(
                     else:
                         try:
                             with db_lock:
-                                status = apply_classification(main_conn, iid, status_code, obs_now)
+                                status = with_lock_retry(
+                                    apply_classification, main_conn, iid, status_code, obs_now,
+                                    label=f"[classify] item {iid}")
                             with counts_lock:
                                 if status is ItemStatus.DELETED:
                                     summary.deleted += 1
