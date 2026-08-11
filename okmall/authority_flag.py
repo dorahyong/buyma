@@ -21,3 +21,17 @@ def registered_sql(ace_alias='a'):
             "JOIN buyma_listings bl ON bl.id=so.listing_id AND bl.is_active=1 "
             f"WHERE so.ace_product_id={ace_alias}.id AND so.is_active=1 "
             "AND bl.is_published=1 AND bl.buyma_product_id IS NOT NULL)")
+
+
+def registered_join_where(offering_alias='so', listing_alias='bl'):
+    """★ registered_sql 과 '같은 정의'의 조인형.
+
+    registered_sql 은 ace 한 건마다 EXISTS 를 도는 형태라, 대량(수십만) 을 훑을 때 느리다.
+    이미 source_offerings·buyma_listings 를 조인해 둔 쿼리에서는 이 형태를 쓰면 같은 판정을
+    조인 한 번으로 끝낸다. (lotte 수집기 실측: EXISTS 형 77.7초 → 조인형 4.0초, 결과 동일)
+
+    ☆ 두 함수는 반드시 같은 뜻이어야 한다 — 한쪽만 고치면 등록판정이 갈린다.
+    """
+    return (f"{offering_alias}.is_active=1 AND {listing_alias}.is_active=1 "
+            f"AND {listing_alias}.is_published=1 "
+            f"AND {listing_alias}.buyma_product_id IS NOT NULL")

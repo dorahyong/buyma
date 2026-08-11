@@ -27,6 +27,7 @@
 """
 
 import os
+import sys
 import re
 import json
 import time
@@ -40,6 +41,10 @@ import requests
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
+
+# 등록판정(registered_sql)은 okmall/authority_flag.py 한 곳에만 있다 → sys.path 추가 후 import.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'okmall'))
+import authority_flag  # noqa: E402
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
@@ -412,11 +417,22 @@ def get_active_categories(only: Optional[str], all_cats: bool, root: Optional[st
 
 
 def get_published_product_ids() -> set:
+    """등록완료(=바이마 게시중) 상품의 mall_product_id.
+
+    등록판정은 목록(buyma_listings) 기준 — ace.is_published 는 2026-08-05 제거됨.
+    ★ raw(43만) 에서 출발해 ace 마다 EXISTS 를 돌면 77초가 걸려 서버 net_read_timeout(30초)
+      에 걸려 죽는다(2026-08-10 실측). 이 몰의 offering(2.6만) 에서 출발해 조인으로 끝낸다
+      → 4초. 판정 내용은 authority_flag 가 소유한 같은 정의를 쓴다.
+    """
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT r.mall_product_id FROM raw_scraped_data r
-            INNER JOIN ace_products a ON r.id = a.raw_data_id
-            WHERE r.source_site=:s AND a.is_published=1
+        rows = conn.execute(text(f"""
+            SELECT DISTINCT r.mall_product_id
+              FROM source_offerings so
+              JOIN buyma_listings bl  ON bl.id = so.listing_id
+              JOIN ace_products a     ON a.id = so.ace_product_id
+              JOIN raw_scraped_data r ON r.id = a.raw_data_id
+             WHERE so.source_site = :s
+               AND {authority_flag.registered_join_where('so', 'bl')}
         """), {'s': SOURCE_SITE})
         return {str(r[0]) for r in rows}
 
