@@ -1,36 +1,29 @@
 # -*- coding: utf-8 -*-
 """
-바이마 고아/유령 상품 정리 스크립트
+바이마 고아/유령 상품 정리 스크립트 (buyma_listings 단일권위)
 
-1) 고아 상품: 바이마에 등록되어 있지만 ace_products 테이블에 없는 상품 → 바이마에서 삭제
-2) 유령 상품: DB에 is_published=1인데 바이마에 실제로 없는 상품 → DB is_published=0 처리
+1) 고아 상품: 바이마에 있는데 buyma_listings 에 buyma_product_id 가 없음 → 바이마에서 삭제
+2) 유령 상품: listings.is_published=1 인데 바이마 전시목록에 없음 → listings.is_published=0
+
+※ 미게시인데 buyma_id 가 남은 건(옛 unpublished)은 이 파일이 아니라
+   buyma_unpublished_cleaner.py 가 담당. 출품정지(soldout)는 buyma_id 를 유지하는
+   정상 상태라 여기서 지우지 않는다.
 
 흐름:
   Phase 1:   바이마 출품 리스트 크롤링 → 상품ID 전체 수집 (requests + BeautifulSoup)
-  Phase 2-A: DB와 비교 → 고아 상품 추출 (바이마에만 있는 것)
-  Phase 2-B: DB와 비교 → 유령 상품 추출 (DB에만 있는 것)
+  Phase 2-A: DB 비교 → 고아 추출 (바이마에만 있는 것)
+  Phase 2-B: DB 비교 → 유령 추출 (DB 출품중인데 바이마에 없는 것)
   Phase 3:   고아 상품 삭제 (내부 API → 쇼퍼 API)
-  Phase 4:   유령 상품 DB 정리 (is_published=0)
+  Phase 4:   유령 상품 DB 정리 (listings.is_published=0)
 
 사용법:
-    # Step 1: 로그인 (최초 1회 - 브라우저 열림)
     python buyma_orphan_cleaner.py --login
-
-    # Step 2: 크롤링 + DB 비교 (고아/유령 상품 목록 생성)
     python buyma_orphan_cleaner.py --scan
-
-    # Step 3-A: 고아 상품 삭제 (먼저 dry-run)
     python buyma_orphan_cleaner.py --delete --dry-run
     python buyma_orphan_cleaner.py --delete
-
-    # Step 3-B: 유령 상품 DB 정리 (먼저 dry-run)
     python buyma_orphan_cleaner.py --clean-ghost --dry-run
     python buyma_orphan_cleaner.py --clean-ghost
-
-    # 전체 한번에
     python buyma_orphan_cleaner.py --scan --delete --clean-ghost
-
-작성일: 2026-02-25
 """
 
 import os
@@ -46,6 +39,12 @@ import requests as req_lib
 import pymysql
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
 
 # .env 파일 로드
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
@@ -102,7 +101,11 @@ DELETE_DELAY = 0.2        # 삭제 API 호출 간 대기
 
 def log(msg: str, level: str = "INFO") -> None:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts}] [{level}] {msg}", flush=True)
+    line = f"[{ts}] [{level}] {msg}"
+    try:
+        print(line, flush=True)
+    except UnicodeEncodeError:
+        print(line.encode('utf-8', errors='replace').decode('utf-8', errors='replace'), flush=True)
 
 
 # =====================================================
@@ -334,13 +337,13 @@ def crawl_buyma_product_ids(restart: bool = False) -> List[Dict]:
 # =====================================================
 
 def get_db_buyma_ids() -> Set[str]:
-    """DB ace_products에서 buyma_product_id 전체 조회"""
+    """DB buyma_listings 에서 buyma_product_id 전체 조회 (정체성 단일권위)."""
     conn = pymysql.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT DISTINCT buyma_product_id
-                FROM ace_products
+                FROM buyma_listings
                 WHERE buyma_product_id IS NOT NULL
                   AND buyma_product_id != ''
             """)
@@ -350,13 +353,13 @@ def get_db_buyma_ids() -> Set[str]:
 
 
 def find_orphans(buyma_products: List[Dict]) -> List[Dict]:
-    """바이마에만 있고 DB에 없는 고아 상품 추출"""
+    """바이마에만 있고 listings 에 없는 고아 상품 추출"""
     log("=" * 60)
-    log("Phase 2: DB 비교 → 고아 상품 추출")
+    log("Phase 2: DB 비교 → 고아 상품 추출 (buyma_listings)")
     log("=" * 60)
 
     db_ids = get_db_buyma_ids()
-    log(f"DB buyma_product_id: {len(db_ids)}개")
+    log(f"DB listings.buyma_product_id: {len(db_ids)}개")
 
     orphans = [p for p in buyma_products if p['buyma_product_id'] not in db_ids]
 
@@ -395,16 +398,17 @@ def find_orphans(buyma_products: List[Dict]) -> List[Dict]:
 # =====================================================
 
 def get_db_published_products() -> List[Dict]:
-    """DB에서 is_published=1인 상품 목록 조회 (buyma_product_id + model_no)"""
+    """출품중 listing 목록 (buyma_product_id + model_no). id = listing id."""
     conn = pymysql.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT id, buyma_product_id, model_no
-                FROM ace_products
+                FROM buyma_listings
                 WHERE buyma_product_id IS NOT NULL
                   AND buyma_product_id != ''
                   AND is_published = 1
+                  AND is_active = 1
             """)
             return cursor.fetchall()
     finally:
@@ -412,21 +416,20 @@ def get_db_published_products() -> List[Dict]:
 
 
 def find_ghosts(buyma_products: List[Dict]) -> List[Dict]:
-    """DB에 is_published=1이지만 바이마에 없는 유령 상품 추출"""
+    """listings 출품중인데 바이마 전시목록에 없는 유령 추출"""
     log("=" * 60)
-    log("Phase 2-B: DB 비교 → 유령 상품 추출")
-    log("  (DB is_published=1 인데 바이마에 없는 상품)")
+    log("Phase 2-B: DB 비교 → 유령 상품 추출 (buyma_listings)")
+    log("  (listings.is_published=1 인데 바이마에 없는 상품)")
     log("=" * 60)
 
     # 바이마 크롤링 결과에서 ID set 생성
     buyma_id_set = {p['buyma_product_id'] for p in buyma_products}
     log(f"바이마 실제 출품: {len(buyma_id_set)}개")
 
-    # DB에서 is_published=1인 상품 전체 조회
     db_published = get_db_published_products()
-    log(f"DB is_published=1: {len(db_published)}개")
+    log(f"DB listings 출품중: {len(db_published)}개")
 
-    # 유령 상품 = DB에는 published인데 바이마에 없음
+    # 유령 = DB 출품중인데 바이마에 없음
     ghosts = [
         p for p in db_published
         if str(p['buyma_product_id']).strip() not in buyma_id_set
@@ -438,14 +441,15 @@ def find_ghosts(buyma_products: List[Dict]) -> List[Dict]:
         log("\n--- 유령 상품 샘플 ---")
         for i, p in enumerate(ghosts[:30], 1):
             name = (p.get('model_no') or '')[:50]
-            log(f"  {i}. DB id={p['id']} | buyma_id={p['buyma_product_id']} | {name}")
+            log(f"  {i}. listing#{p['id']} | buyma_id={p['buyma_product_id']} | {name}")
         if len(ghosts) > 30:
             log(f"  ... 외 {len(ghosts) - 30}개")
 
-    # JSON 저장
+    # JSON 저장 (db_id = listing id — 관리화면/기존 산출물 키 호환)
     ghost_data = [
         {
             'db_id': p['id'],
+            'listing_id': p['id'],
             'buyma_product_id': str(p['buyma_product_id']),
             'model_no': p.get('model_no', ''),
         }
@@ -470,7 +474,7 @@ def find_ghosts(buyma_products: List[Dict]) -> List[Dict]:
 # =====================================================
 
 def clean_ghosts(dry_run: bool = False):
-    """유령 상품의 is_published를 0으로 업데이트"""
+    """유령 listing 의 is_published 를 0으로 업데이트 (바이마 페이지는 이미 없음)."""
     if os.path.exists(PROGRESS_FILE):
         log("크롤링이 완료되지 않았습니다(중단된 크롤링 있음). 부분 데이터로 정리하면 대량 오판정 "
             "위험이 있어 중단합니다. --scan 으로 끝까지 완료한 뒤 다시 실행하세요.", "ERROR")
@@ -488,7 +492,7 @@ def clean_ghosts(dry_run: bool = False):
 
     total = len(ghosts)
     log("=" * 60)
-    log(f"Phase 4: 유령 상품 DB 정리 ({total}개)")
+    log(f"Phase 4: 유령 상품 DB 정리 - buyma_listings ({total}개)")
     if dry_run:
         log("[DRY-RUN] 실제 업데이트하지 않습니다.")
     log("=" * 60)
@@ -496,7 +500,8 @@ def clean_ghosts(dry_run: bool = False):
     if dry_run:
         for i, g in enumerate(ghosts[:20], 1):
             name = (g.get('model_no') or '')[:40]
-            log(f"  [DRY-RUN] {i}. DB id={g['db_id']} | {name} → is_published=0")
+            lid = g.get('listing_id', g['db_id'])
+            log(f"  [DRY-RUN] {i}. listing#{lid} | {name} → is_published=0")
         if total > 20:
             log(f"  ... 외 {total - 20}개")
         log(f"\n[DRY-RUN] 총 {total}개가 is_published=0으로 변경 예정")
@@ -505,7 +510,7 @@ def clean_ghosts(dry_run: bool = False):
     conn = pymysql.connect(**DB_CONFIG)
     try:
         with conn.cursor() as cursor:
-            db_ids = [g['db_id'] for g in ghosts]
+            db_ids = [g.get('listing_id', g['db_id']) for g in ghosts]
 
             # 배치 업데이트 (100개씩)
             batch_size = 100
@@ -514,7 +519,12 @@ def clean_ghosts(dry_run: bool = False):
                 batch = db_ids[start:start + batch_size]
                 placeholders = ','.join(['%s'] * len(batch))
                 cursor.execute(
-                    f"UPDATE ace_products SET is_published = 0 WHERE id IN ({placeholders})",
+                    f"""
+                    UPDATE buyma_listings
+                    SET is_published = 0, updated_at = CURRENT_TIMESTAMP
+                    WHERE id IN ({placeholders})
+                      AND is_published = 1
+                    """,
                     batch
                 )
                 updated += cursor.rowcount
@@ -522,7 +532,7 @@ def clean_ghosts(dry_run: bool = False):
 
             conn.commit()
 
-        log(f"\n유령 상품 정리 완료: {updated}건 is_published=0 처리")
+        log(f"\n유령 상품 정리 완료: {updated}건 listings.is_published=0 처리")
     except Exception as e:
         conn.rollback()
         log(f"DB 업데이트 실패: {e}", "ERROR")
