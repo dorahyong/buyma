@@ -11,7 +11,7 @@
   - favorite_count   (총 찜)
   - access_count     (총 액세스)
 
-→ buyma_product_stats 테이블에 UPSERT (ace_product_id는 ace_products에서 매핑하여 채움).
+→ buyma_product_stats 테이블에 UPSERT (키 = buyma_product_id).
 
 로그인 쿠키는 buyma_cleaners/buyma_cookies.json 공유 사용.
 최초 1회 또는 쿠키 만료 시 buyma_cleaners 쪽에서 로그인:
@@ -251,29 +251,12 @@ def crawl_all(session: req_lib.Session,
 # DB UPSERT
 # =====================================================
 
-def _fetch_ace_id_map(conn, buyma_ids: List[str]) -> Dict[str, int]:
-    """buyma_product_id → ace_products.id 매핑."""
-    if not buyma_ids:
-        return {}
-    out: Dict[str, int] = {}
-    # IN 절이 너무 길어지지 않게 1000개씩 끊어서 조회
-    uniq = [b for b in {b for b in buyma_ids if b}]
-    for i in range(0, len(uniq), 1000):
-        chunk = uniq[i:i + 1000]
-        placeholders = ','.join(['%s'] * len(chunk))
-        sql = (
-            f"SELECT id, buyma_product_id FROM ace_products "
-            f"WHERE buyma_product_id IN ({placeholders})"
-        )
-        with conn.cursor() as c:
-            c.execute(sql, chunk)
-            for row in c.fetchall():
-                out[str(row[1])] = int(row[0])
-    return out
-
-
 def upsert_stats(rows: List[Dict]) -> None:
-    """크롤링 결과를 buyma_product_stats에 UPSERT."""
+    """크롤링 결과를 buyma_product_stats에 UPSERT.
+
+    통계의 키는 buyma_product_id 뿐이다. ace_product_id 는 쓰지 않는다
+    (정체성은 listings, 소비 쪽도 buyma_product_id 로 조인).
+    """
     if not rows:
         log("UPSERT 대상 없음")
         return
@@ -281,28 +264,20 @@ def upsert_stats(rows: List[Dict]) -> None:
     log(f"DB 접속 → {DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}")
     conn = pymysql.connect(**DB_CONFIG)
     try:
-        # buyma_product_id 별 ace_product_id 매핑 한 번에 가져오기
-        buyma_ids = [r['buyma_product_id'] for r in rows if r.get('buyma_product_id')]
-        ace_map = _fetch_ace_id_map(conn, buyma_ids)
-        log(f"ace_products 매칭: {len(ace_map)} / {len(buyma_ids)}건")
-
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         sql = """
             INSERT INTO buyma_product_stats
-                (buyma_product_id, ace_product_id,
-                 access_count, cart_count, favorite_count, stats_collected_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (buyma_product_id, access_count, cart_count, favorite_count, stats_collected_at)
+            VALUES (%s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
-                ace_product_id    = VALUES(ace_product_id),
-                access_count      = VALUES(access_count),
-                cart_count        = VALUES(cart_count),
-                favorite_count    = VALUES(favorite_count),
+                access_count       = VALUES(access_count),
+                cart_count         = VALUES(cart_count),
+                favorite_count     = VALUES(favorite_count),
                 stats_collected_at = VALUES(stats_collected_at)
         """
         params = [
             (
                 r['buyma_product_id'],
-                ace_map.get(r['buyma_product_id']),
                 r.get('access_count'),
                 r.get('cart_count'),
                 r.get('favorite_count'),
