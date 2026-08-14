@@ -2,7 +2,7 @@
 """
 scoring — 출품중(Listed) 예상일일마진액 계산 → score_index_listed.
 
-공식 (scoring-system/scoring-system-v1.md):
+공식 (scoring-system/is_published_scoring_system_v1.md):
   점수(원/일) = 앵커 × 마진 × 찜승수 × 가격승수 × 카테고리승수
               = 건당 마진 × 판매확률  = 슬롯당 기대이익
 

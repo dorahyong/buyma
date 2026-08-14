@@ -54,7 +54,7 @@ TASKS = [
         "id": "orphan_delete",
         "title": "바이마엔 있는데 DB엔 없는 상품 정리 (고아 상품 삭제)",
         "description": (
-            "바이마 출품 리스트를 크롤링해, 우리 DB에 행이 아예 없는 '고아' 상품을 "
+            "바이마 출품 리스트를 크롤링해, buyma_listings 에 상품번호가 없는 '고아'를 "
             "찾아 바이마에서 삭제합니다. '크롤링 다시 하기'를 켜면 새로 스캔하고, 끄면 "
             "직전 스캔 파일을 재사용합니다. (DB는 변경하지 않음)"
         ),
@@ -77,8 +77,8 @@ TASKS = [
         "id": "ghost_clean",
         "title": "DB엔 등록인데 바이마엔 없는 데이터 정리 (유령 상품)",
         "description": (
-            "DB에는 출품중(is_published=1)으로 돼 있지만 바이마 크롤링 결과 실제로는 "
-            "없는 '유령' 상품을 찾아, DB를 미등록(is_published=0)으로 정리합니다. "
+            "buyma_listings 에는 출품중(is_published=1)인데 바이마 크롤링 결과 실제로는 "
+            "없는 '유령'을 찾아, 목록을 미게시(is_published=0)로 정리합니다. "
             "'크롤링 다시 하기'를 켜면 새로 스캔하고, 끄면 직전 스캔 파일을 재사용합니다."
         ),
         "script": "buyma_cleaners/buyma_orphan_cleaner.py",
@@ -95,6 +95,24 @@ TASKS = [
         "preview_flags": ["--clean-ghost", "--dry-run"],
         "preview_label": "영향 미리보기 (정리 대상)",
         "apply_flags": ["--clean-ghost"],
+    },
+    {
+        "id": "draft_scoring_daily",
+        "title": "draft 점수 일배치 (셀 집계 → 채점)",
+        "description": (
+            "시장 수요 셀(market_demand_cells / market_mn_cells)을 다시 모은 뒤, "
+            "등록대기 draft 점수(score_index_draft)를 전부 다시 계산합니다. "
+            "먼저 품번 토큰 증분(빠진 listing/market 코드)을 채웁니다. "
+            "소요 약 15–25분. DB만 사용(WARP 불필요). "
+            "미리보기는 쓰기 없이 집계·채점 흐름만 확인합니다."
+        ),
+        "script": "scoring/run_daily_draft.py",
+        "env": "aws_ok",
+        "destructive": True,
+        "options": [],
+        "preview_flags": [],
+        "preview_label": "미리보기 (dry-run, 쓰기 없음)",
+        "apply_flags": ["--execute"],
     },
 ]
 
