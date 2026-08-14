@@ -184,6 +184,10 @@ BUYMA_FIXED_VALUES = {
 #   {"errors":{"shop_urls":["買付先は15件以内で入力してください。"]}}  (2026-07-22 실측)
 MAX_SHOP_URLS = 15
 
+# 품번(style_numbers) 한 칸의 최대 글자수. 초과하면 BUYMA 가 거부한다:
+#   {"errors":{"style_numbers":{"0":{"number":["品番は40文字以内で入力してください。"]}}}}
+MODEL_NO_MAX = 40
+
 # =====================================================
 # 유틸리티 함수
 # =====================================================
@@ -393,7 +397,17 @@ def generate_model_no_variants(model_no: str) -> List[str]:
     if no_special and no_special not in variants:
         variants.append(no_special)
 
-    return variants  # 리스트 반환
+    # 4. 40자 상한 (BUYMA: "品番は40文字以内で入力してください")
+    #    넘는 값은 세트상품('쇼트팬츠 4종' 처럼 품번이 여럿)이거나 수집처가 품번칸에
+    #    색상·상품명을 넣어준 것이다. 값 자체는 ace/목록에 그대로 두고 **보낼 때만** 자른다.
+    #    → ace 에서 자르면 그룹 판정(canonicalize) 기준이 바뀌어 병합이 깨진다.
+    #    자른 뒤 서로 같아지는 것이 생기므로 중복 제거하고 순서는 유지한다.
+    out = []
+    for v in variants:
+        v = v[:MODEL_NO_MAX].strip()
+        if v and v not in out:
+            out.append(v)
+    return out  # 리스트 반환
 
 
 def build_request_json(product: Dict, images: List[Dict], options: List[Dict], variants: List[Dict]) -> Dict:

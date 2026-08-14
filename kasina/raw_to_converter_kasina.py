@@ -45,7 +45,7 @@ if sys.platform == 'win32':
 # okmall 디렉토리 (공용 모듈 + 마스터 데이터 참조)
 OKMALL_DIR = os.path.join(os.path.dirname(__file__), '..', 'okmall')
 sys.path.insert(0, OKMALL_DIR)
-from name_rules import clean_product_name  # 몰별 상품명 정리 규칙
+from name_rules import clean_product_name, dedupe_model_id  # 몰별 상품명 정리 규칙 / 품번 중복 병기 정리
 
 # convert_to_japanese_gemini.py에서 배치 번역 함수 가져오기
 from convert_to_japanese_gemini import run_batch_translation
@@ -1187,10 +1187,14 @@ class RawToAceConverter:
         #   → 정리 규칙을 고치면 재수집 없이 '재변환'만으로 이미 모아 둔 상품에도 반영된다.
         #   (규칙은 okmall/name_rules.py. 멱등이라 두 번 적용해도 결과가 같다)
         product_name = clean_product_name(raw_data.get('source_site'), raw_data.get('product_name', ''))
+        # 품번 병기 정리 — 같은 품번을 ' / ' 로 두 번 쓴 것만 하나로. 다른 값이면 그대로 둔다.
+        #   raw 는 수집 원본 그대로 두고(source_model_id), ace 부터 정리된 값을 쓴다.
+        #   ★ 상품명에도 품번이 붙는데 이름은 게시 후 못 고치므로 여기서 잡아야 한다.
+        model_id = dedupe_model_id(raw_data.get('model_id'))
         buyma_name = format_buyma_product_name(
             brand_name=strip_brand_jp(brand_info.get('buyma_brand_name', '')),
             product_name=product_name,
-            model_id=raw_data.get('model_id')
+            model_id=model_id
         )
         buyma_name = sanitize_text(buyma_name)
 
@@ -1281,10 +1285,11 @@ class RawToAceConverter:
             'purchase_price_krw': purchase_price_krw, 
             'available_until': available_until,
             'buying_area_id': BUYMA_FIXED_VALUES['buying_area_id'], 'shipping_area_id': BUYMA_FIXED_VALUES['shipping_area_id'],
-            'model_no': raw_data.get('model_id'), 'theme_id': BUYMA_FIXED_VALUES['theme_id'],
-            'season_id': season_id, 'colorsize_comments': colorsize_comments, 
+            'model_no': model_id, 'theme_id': BUYMA_FIXED_VALUES['theme_id'],
+            'season_id': season_id, 'colorsize_comments': colorsize_comments,
             'colorsize_comments_jp': colorsize_comments_jp,
             'duty': BUYMA_FIXED_VALUES['duty'],
+            # source_model_id 는 '수집처가 준 값' 이므로 정리 전 원본을 그대로 둔다.
             'source_product_url': raw_data.get('product_url'), 'source_model_id': raw_data.get('model_id'),
         }
 
