@@ -107,6 +107,18 @@ def update_db_with_webhook(event, data):
                             updated_at = NOW()
                         WHERE reference_number = %s
                     """, (ref_num,))
+                # 이미 출품정지중인 상품에 재고 API(출품정지)를 또 보낸 것.
+                #   관리번호로만 상품을 지목하는데 정지된 상품은 못 찾아 거부된다.
+                #   우리 DB만 게시중이라 매 배치마다 반복 → 여기서 상태를 맞춰 대상에서 뺀다.
+                #   ★ 상품은 BUYMA에 살아 있다 → buyma_product_id·is_buyma_locked 는 건드리지 않는다.
+                #     지우면 신규등록 차단이 풀려 같은 상품이 또 올라간다. (2026-08-13 실측 314건)
+                elif '商品管理番号は不正な値です' in error_str:
+                    cursor.execute("""
+                        UPDATE buyma_listings
+                        SET is_published = 0, status = 'soldout', updated_at = NOW()
+                        WHERE reference_number = %s
+                    """, (ref_num,))
+                    print(f"[WEBHOOK] 이미 출품정지중: {ref_num} → is_published=0")
                 else:
                     cursor.execute("""
                         UPDATE buyma_listings
