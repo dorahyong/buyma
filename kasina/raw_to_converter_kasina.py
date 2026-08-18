@@ -831,8 +831,30 @@ class RawToAceConverter:
         self._category_size_keys_cache = {}  # 카테고리별 사이즈 키 캐시
         self._measurement_key_cache = {}  # 측정 키 캐시 (Gemini 매칭 결과)
         self._measurement_report_tracker = None  # 측정 키 리포트 트래커
+        self._use_own_images = None  # mall_sites.has_own_images (lazy)
 
         log("RawToAceConverter 초기화 완료")
+
+    def use_own_images(self) -> bool:
+        """이 수집처의 자체 이미지를 써도 되는지 — mall_sites.has_own_images.
+
+        0 이면 몰이 준 사진을 쓰지 않는다(지재권 차단 또는 워터마크). 그 몰 상품은
+        다른 수집처 사진으로 대체되거나(중복 상품) 사진 없이 남아 등록 대상에서 빠진다.
+        예: okmall(워터마크 → W컨셉에서 별도 수집), fabstyle(지재권).
+
+        ★ 이 값을 안 보면, 이미 지운 이미지가 재변환 때마다 raw 에서 되살아난다.
+        """
+        if self._use_own_images is None:
+            with self.engine.connect() as conn:
+                row = conn.execute(
+                    text("SELECT has_own_images FROM mall_sites WHERE site_name = :s"),
+                    {'s': self.source_site}
+                ).fetchone()
+            # 등록 안 된 몰은 종전대로 자체 이미지 사용(기본값 유지 — 동작 변화 없음)
+            self._use_own_images = True if row is None else bool(row[0])
+            if not self._use_own_images:
+                log(f"  [이미지] {self.source_site} 는 has_own_images=0 → 자체 이미지 저장 안 함")
+        return self._use_own_images
 
     def load_color_master_id_mapping(self) -> Dict[str, int]:
         """
@@ -1451,8 +1473,9 @@ class RawToAceConverter:
                         'source_option_code': None, 'source_stock_status': 'out_of_stock'
                     })
 
-        # kasina 자체 이미지: raw_json_data['images']에서 URL 추출
-        source_images = json_data.get('images', [])
+        # 자체 이미지: raw_json_data['images']에서 URL 추출.
+        #   has_own_images=0 인 몰(지재권 차단·워터마크)은 아예 안 가져온다.
+        source_images = json_data.get('images', []) if self.use_own_images() else []
 
         return {'product': ace_product, 'options': ace_options, 'variants': ace_variants, 'source_images': source_images}
 
