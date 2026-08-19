@@ -42,6 +42,8 @@ def _p(*parts):
 # 몰 목록
 # =====================================================
 OKMALL = 'okmall'
+# 자체 사진을 못 쓰는 몰 — W컨셉에서 이미지를 찾아온다 (mall_sites.has_own_images=0 과 일치)
+IMG_FROM_WCONCEPT = {OKMALL, 'fabstyle'}
 MULTISOURCE = ['kasina', 'nextzennpack', 'labellusso', '9tems',
                'brickmansion', 'loromoda', 'milaneez', 'maisonparco', 'musinsa', 'laprima']
 # naver 24몰. 캡챠로 사이트접속 직렬 → site_resource='naver'.
@@ -194,8 +196,9 @@ def worker_resolver(unit, stage):
         return [[PY, TRANSLATE, '--source', mall, '--price-checked-only']]
 
     if stage == 'IMAGE':
-        if mall == OKMALL:
-            # okmall: 이미지 수집 후 업로드 (멀티소스는 collector가 이미지URL 확보 → 업로드만)
+        if mall in IMG_FROM_WCONCEPT:
+            # 자체 사진을 못 쓰는 몰(mall_sites.has_own_images=0): W컨셉에서 찾아 업로드.
+            #   okmall 은 워터마크, fabstyle 은 지재권 때문에 원본을 안 쓴다.
             return [
                 [PY, IMG_COLLECT, '--source', mall, '--price-checked-only'],
                 [PY, IMG_UPLOAD, '--source', mall],
