@@ -94,8 +94,10 @@ MN_BLACKLIST = frozenset(
     }
 )
 _NON_ALNUM = re.compile(r"[^A-Z0-9]+")
-# 25SS / SS25 / 26FW 등
-_SEASON_RE = re.compile(r"^(?:20)?\d{2}(?:SS|FW|AW|SP)$|^(?:SS|FW|AW)\d{2}$")
+# 25SS / SS25 / 26FW / 19SS. 01FW·38AW 색상코드는 제외 (name_rules 와 동일)
+_SEASON_RE = re.compile(
+    r"^(?:20)?(?:1[5-9]|2[0-9])(?:SS|FW|AW|SP)$|^(?:SS|FW|AW)(?:1[5-9]|2[0-9])$"
+)
 # L1에서 "강한 품번" — 짧은 색·옵션 코드(N401 등)와 구분
 STRONG_MN_MIN_LEN = 6
 

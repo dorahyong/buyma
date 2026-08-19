@@ -138,6 +138,50 @@ def clean_product_name(mall: str, name: str) -> str:
 # 품번(model_id) 정리
 # =====================================================
 
+# 시즌코드만 (25SS / SS25 / 26FW / 19SS).
+# 연도 15-29 만 본다. 01FW·00AW·38AW·AW63 은 색상/사이즈 코드라 빼면 안 된다.
+_NON_ALNUM = re.compile(r'[^A-Z0-9]+')
+_SEASON_YEAR = r'(?:20)?(?:1[5-9]|2[0-9])(?:SS|FW|AW|SP)|(?:SS|FW|AW)(?:1[5-9]|2[0-9])'
+_SEASON_RE = re.compile(r'^(?:' + _SEASON_YEAR + r')$')
+_SEASON_HYPHEN_RE = re.compile(r'^(?:20)?(?:1[5-9]|2[0-9])(?:SS|FW|AW|SP)-', re.I)
+
+
+def has_season_model_token(model_id: str) -> bool:
+    """품번에 시즌 토큰(공백 분리 또는 하이픈 접두)이 있으면 True."""
+    if not model_id:
+        return False
+    s = model_id.strip()
+    if _SEASON_HYPHEN_RE.match(s):
+        return True
+    for p in s.split():
+        t = _NON_ALNUM.sub('', p.strip().upper())
+        if t and _SEASON_RE.match(t):
+            return True
+    return False
+
+
+def drop_season_model_tokens(model_id: str) -> str:
+    """품번에서 시즌 토큰만 뺀다. 남은 조각의 원문 표기는 유지한다.
+
+    예) "25FW AA06F234X 08AD" → "AA06F234X 08AD"
+        "25FW-PMPUPP01-541"   → "PMPUPP01-541"
+    색상코드 "364665189C 01FW" 는 그대로 둔다.
+    같은 값을 두 번 넣어도 결과가 같다(멱등).
+    """
+    if not model_id:
+        return model_id
+    s = _SEASON_HYPHEN_RE.sub('', model_id.strip())
+    kept = []
+    for p in s.split():
+        if not p:
+            continue
+        t = _NON_ALNUM.sub('', p.strip().upper())
+        if t and _SEASON_RE.match(t):
+            continue
+        kept.append(p)
+    return ' '.join(kept)
+
+
 def dedupe_model_id(model_id: str) -> str:
     """품번을 ' / ' 로 병기했는데 **같은 값을 두 번 쓴 것**이면 하나만 남긴다.
 

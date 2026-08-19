@@ -29,6 +29,8 @@ from datetime import datetime
 import pymysql
 from dotenv import load_dotenv
 
+from name_rules import drop_season_model_tokens
+
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
 
 logging.basicConfig(
@@ -97,6 +99,8 @@ def canonicalize(model_id: str) -> str:
     # 2. 슬래시 병기에서 마지막 항목만: "A / B" → "B"
     if ' / ' in s:
         s = s.split(' / ')[-1].strip()
+    # 2.5 시즌 토큰 제거: "25FW AA06…" → "AA06…" (공백 접두는 3번 하이픈 규칙이 못 잡음)
+    s = drop_season_model_tokens(s)
     # 3. 시즌 접두사 제거: "25FW-", "25SS-" 등
     s = re.sub(r'^\d{2}[A-Z]{2}-', '', s)
     # 4. 공백/하이픈/슬래시/백틱/어포스트로피 제거 + 대문자
