@@ -832,6 +832,7 @@ class RawToAceConverter:
         self._measurement_key_cache = {}  # 측정 키 캐시 (Gemini 매칭 결과)
         self._measurement_report_tracker = None  # 측정 키 리포트 트래커
         self._use_own_images = None  # mall_sites.has_own_images (lazy)
+        self._blocked_products = None  # blocked_image_products (lazy)
 
         log("RawToAceConverter 초기화 완료")
 
@@ -855,6 +856,39 @@ class RawToAceConverter:
             if not self._use_own_images:
                 log(f"  [이미지] {self.source_site} 는 has_own_images=0 → 자체 이미지 저장 안 함")
         return self._use_own_images
+
+    def blocked_products(self) -> set:
+        """이 수집처에서 '이 상품만' 사진을 쓰면 안 되는 목록 — blocked_image_products.
+
+        has_own_images 는 몰 단위라, 한 몰의 일부 상품만 막을 수가 없다.
+        신세계처럼 40만 개 중 특정 입점사(럭스보이) 상품만 지재권에 걸리는 경우가 그렇다.
+        몰 전체를 끄면 나머지 상품 사진까지 잃으므로 상품 단위 예외를 둔다.
+
+        ★ 이 목록을 안 보면 지운 이미지가 재변환 때마다 raw 에서 되살아난다
+          (has_own_images 와 같은 이유).
+        """
+        if self._blocked_products is None:
+            with self.engine.connect() as conn:
+                # 표가 없는 환경에서 변환 전체가 멎지 않도록 없으면 만든다(빈 표 = 차단 없음).
+                #   blocked_image_cleaner·shinsegae_luxboy_scan 과 같은 방식.
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS blocked_image_products (
+                        source_site     VARCHAR(50)  NOT NULL,
+                        mall_product_id VARCHAR(100) NOT NULL,
+                        reason          VARCHAR(100) NOT NULL DEFAULT 'ip_rights',
+                        created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (source_site, mall_product_id)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                      COMMENT='상품 단위 이미지 차단 — 몰 전체가 아니라 이 상품만 사진을 쓰지 않는다'
+                """))
+                rows = conn.execute(
+                    text("SELECT mall_product_id FROM blocked_image_products WHERE source_site = :s"),
+                    {'s': self.source_site}
+                ).fetchall()
+            self._blocked_products = {str(r[0]) for r in rows}
+            if self._blocked_products:
+                log(f"  [이미지] {self.source_site} 상품 단위 차단 {len(self._blocked_products):,}건")
+        return self._blocked_products
 
     def load_color_master_id_mapping(self) -> Dict[str, int]:
         """
@@ -1476,6 +1510,9 @@ class RawToAceConverter:
         # 자체 이미지: raw_json_data['images']에서 URL 추출.
         #   has_own_images=0 인 몰(지재권 차단·워터마크)은 아예 안 가져온다.
         source_images = json_data.get('images', []) if self.use_own_images() else []
+        #   몰은 써도 되지만 '이 상품'만 막힌 경우(예: 신세계에 입점한 럭스보이)
+        if source_images and str(raw_data.get('mall_product_id')) in self.blocked_products():
+            source_images = []
 
         return {'product': ace_product, 'options': ace_options, 'variants': ace_variants, 'source_images': source_images}
 
