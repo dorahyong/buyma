@@ -31,6 +31,8 @@
 "500","Royal Mail - Airmail","false"
 "501","Royal Mail - Airsure","false"
 "502","Royal Mail - International Signed For","false"
+"503","Royal Mail - International Standard","false"
+"504","Royal Mail - International Tracked","false"
 "600","Poste italiane","false"
 "601","Australia Post","false"
 "602","canada post","false"
