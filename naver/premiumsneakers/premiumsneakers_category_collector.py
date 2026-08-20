@@ -103,6 +103,9 @@ STORE_ALL_PRODUCT_URLS = {
     #   브랜드는 URL 이 아니라 상품 상세에서 읽으므로 6월 오염(죽은 브랜드 URL → 잡탕 상품을
     #   그 브랜드로 도장) 이 구조적으로 안 생긴다. (2026-08-10)
     'carpi': 'https://brand.naver.com/carpi/category/ALL?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
+    # luxboy: 지재권으로 이미지를 못 쓰는 수집처(mall_sites.has_own_images=0).
+    #   상품·가격·재고만 받고 사진은 변환기가 버린다. 사진은 W컨셉에서 따로 채운다(okmall 과 동일).
+    'luxboy': 'https://brand.naver.com/luxboy/category/94c8d69a125b4e259420a5a55449b1b8?st=POPULAR&dt=IMAGE&page=1&size=80&filters=oa',
 }
 
 PAGE_SIZE = 80
