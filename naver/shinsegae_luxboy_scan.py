@@ -114,10 +114,25 @@ CREATE TABLE IF NOT EXISTS shinsegae_luxboy_scan (
 #   서버 기본값(utf8mb4_uca1400_ai_ci)으로 만들면 mall_product_id 조인에서
 #   "Illegal mix of collations" 로 대상 조회가 통째로 실패한다. (2026-08-18)
 
+# 변환기가 실제로 보는 차단 목록. 판별 결과표는 '판정 기록'이고, 이쪽이 '집행'이다.
+#   둘을 나눠 두면 판정과 차단이 어긋나므로(실측: 판정 1,053 vs 차단 446)
+#   판정을 저장할 때 여기에도 같이 넣는다.
+CREATE_BLOCK_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS blocked_image_products (
+    source_site     VARCHAR(50)  NOT NULL,
+    mall_product_id VARCHAR(100) NOT NULL,
+    reason          VARCHAR(100) NOT NULL DEFAULT 'ip_rights',
+    created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (source_site, mall_product_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  COMMENT='상품 단위 이미지 차단 — 몰 전체가 아니라 이 상품만 사진을 쓰지 않는다'
+"""
+
 
 def create_table(conn):
     with conn.cursor() as cur:
         cur.execute(CREATE_TABLE_SQL)
+        cur.execute(CREATE_BLOCK_TABLE_SQL)
         # 이미 서버 기본 COLLATE 로 만들어져 있었으면 맞춰준다(데이터 보존).
         cur.execute("""
             SELECT TABLE_COLLATION FROM information_schema.TABLES
@@ -129,7 +144,7 @@ def create_table(conn):
             cur.execute("ALTER TABLE shinsegae_luxboy_scan "
                         "CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     conn.commit()
-    logger.info("shinsegae_luxboy_scan 테이블 준비 완료")
+    logger.info("shinsegae_luxboy_scan / blocked_image_products 테이블 준비 완료")
 
 
 def save_results(rows: List[Dict], retries: int = 4):
@@ -173,6 +188,19 @@ def _save_once(conn, rows: List[Dict]):
                 tier        = VALUES(tier),
                 checked_at  = NOW()
         """, rows)
+
+        # 럭스보이로 판정된 건 곧바로 차단 목록에 올린다.
+        #   따로 옮겨 담는 구조면 사람이 잊는다(실측: 판정 1,053 vs 차단 446).
+        #   ★ 빼는 건 자동으로 하지 않는다 — 재판정 때 상세를 못 읽으면(detail_ok=0)
+        #     is_luxboy 가 0 으로 남는데, 그걸 '해제'로 읽으면 차단이 풀려 사진이 샌다.
+        blocked = [{'mp': r['mall_product_id']} for r in rows if r.get('is_luxboy')]
+        if blocked:
+            cur.execute(CREATE_BLOCK_TABLE_SQL)
+            cur.executemany("""
+                INSERT IGNORE INTO blocked_image_products
+                    (source_site, mall_product_id, reason)
+                VALUES (%(source_site)s, %(mp)s, 'luxboy')
+            """, [{**b, 'source_site': SOURCE_SITE} for b in blocked])
     conn.commit()
 
 
