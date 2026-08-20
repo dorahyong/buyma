@@ -1,6 +1,6 @@
 # shipping_services
 
-> 원본: `shipping_services.csv` | 50행 | 생성: 2026-02-26
+> 원본: `shipping_services.csv` | 52행 | 생성: 2026-02-26
 
 | ﻿"id" | name | name_ko | anonymous_delivery |
 | --- | --- | --- | --- |
@@ -36,6 +36,8 @@
 | 500 | Royal Mail - Airmail | Royal Mail - Airmail | false |
 | 501 | Royal Mail - Airsure | Royal Mail - Airsure | false |
 | 502 | Royal Mail - International Signed For | Royal Mail - International Signed For | false |
+| 503 | Royal Mail - International Standard | Royal Mail - International Standard | false |
+| 504 | Royal Mail - International Tracked | Royal Mail - International Tracked | false |
 | 600 | Poste italiane | Poste italiane | false |
 | 601 | Australia Post | Australia Post | false |
 | 602 | canada post | canada post | false |
