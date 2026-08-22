@@ -43,6 +43,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 + 전 몰 공통 상품명 정리 규칙
 
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', line_buffering=True)
@@ -469,7 +470,10 @@ def map_to_row(product: Dict, benefits: Optional[Dict],
     if not product:
         return None
 
-    product_name = (product.get('name') or '').strip()
+    # 상품명 정리 (국내마커·시즌 등 전 몰 공통 규칙). 규칙은 okmall/name_rules.py 에 모여 있다.
+    #   ★모델번호를 뽑기 전에 정리한다 — 아래 extract_model_from_name 이 이름 뒤쪽을 긁어가므로
+    #     정리 안 된 이름을 쓰면 시즌이 품번에 딸려 들어간다.
+    product_name = clean_product_name(SOURCE_SITE, (product.get('name') or '').strip())
     if not product_name:
         return None
 

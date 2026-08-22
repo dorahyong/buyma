@@ -40,6 +40,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 + 전 몰 공통 상품명 정리 규칙
 from sqlalchemy.exc import OperationalError
 
 # ===========================================
@@ -504,6 +505,10 @@ def convert_to_raw_data(list_item: Dict, detail_info: Dict, brand_name_en: str,
     product_no = list_item['product_no']
     # 상품명: 상세 테이블 우선, 없으면 리스트명
     product_name = detail_info.get('product_name') or list_item.get('product_name', '')
+    # 상품명 정리 (국내마커·시즌 등 전 몰 공통 규칙). 규칙은 okmall/name_rules.py 에 모여 있다.
+    #   ★모델번호를 뽑기 전에 정리한다 — 아래 extract_model_id_from_name 이 이름에서 뽑으므로.
+    #     자체 SEASON_RE(25FA·25CR 등)는 공통 규칙에 없는 표기를 잡아주니 그대로 둔다.
+    product_name = clean_product_name(SOURCE_SITE, product_name)
     if not product_name:
         return None
 

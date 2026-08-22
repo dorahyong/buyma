@@ -34,6 +34,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 + 전 몰 공통 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -448,6 +449,10 @@ def extract_model_id(product_name: str, brand_name: str = '') -> str:
 def convert_to_raw_data(list_item: Dict, detail: Dict, category_path: str = '') -> Optional[Dict]:
     product_no = list_item['product_no']
     product_name = detail.get('product_name') or list_item.get('product_name', '')
+    # 상품명 정리 (국내마커·시즌 등 전 몰 공통 규칙). 규칙은 okmall/name_rules.py 에 모여 있다.
+    #   ★모델번호를 뽑기 전에 정리한다 — extract_model_id 가 브랜드 뒤 영숫자 토큰을 모으는 방식이라
+    #     정리 안 된 이름을 쓰면 브랜드 뒤에 온 시즌이 품번에 섞인다('프라다 25FW 1BC214…' → '25FW 1BC214…').
+    product_name = clean_product_name(SOURCE_SITE, product_name)
     brand_name = detail.get('brand_name', '')
     model_id = extract_model_id(product_name, brand_name)
     if not model_id:

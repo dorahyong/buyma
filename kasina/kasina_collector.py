@@ -23,6 +23,7 @@ from sqlalchemy import create_engine, text
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'okmall'))
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 + 전 몰 공통 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -368,8 +369,10 @@ def convert_to_raw_data(item: dict, detail: dict, options_data: dict) -> Optiona
         'source_site': SOURCE_SITE,
         'mall_product_id': product_no,
         'brand_name_en': item.get('brandName', '') or item.get('brandNameKo', ''),
-        'product_name': item.get('productName', ''),
-        'p_name_full': item.get('productNameEn', '') or item.get('productName', ''),
+        # 상품명 정리 (국내마커·시즌 등 전 몰 공통 규칙). 규칙은 okmall/name_rules.py 에 모여 있다.
+        #   모델번호는 productManagementCd 칸에서 따로 받으므로 이 정리에 영향받지 않는다.
+        'product_name': clean_product_name(SOURCE_SITE, item.get('productName', '')),
+        'p_name_full': clean_product_name(SOURCE_SITE, item.get('productNameEn', '') or item.get('productName', '')),
         'model_id': model_id,
         'category_path': category_path,
         'original_price': sale_price,

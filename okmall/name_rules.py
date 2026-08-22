@@ -14,7 +14,7 @@
    지우기만 하는 규칙은 자연히 멱등이다. 값을 덧붙이거나 바꾸는 규칙은 멱등이 깨지기 쉬우니 피한다.
    (변환 단계에서 한 번 더 부를 수 있어야 하므로 이 조건이 필요하다)
 2. **모델번호를 지우지 않는지 확인한다** — 색상코드 `20F`·`23S` 는 시즌코드와 생김새가 같다.
-   ★ 정리된 이름에서 모델번호를 뽑는 몰(GLOBAL_SKIP 참고)에서 특히 위험하다.
+   ★ 정리된 이름에서 모델번호를 뽑는 몰(loromoda·milaneez·maisonparco·unico 등)에서 특히 위험하다.
 3. 브랜드명을 지우지 않는지 확인한다 — 예) '국내'로 시작하는 브랜드는 없어서 국내마커 규칙이 안전하다.
 
 규칙 쓰는 법
@@ -31,25 +31,13 @@ import re
 # 전 몰 공통 규칙
 # =====================================================
 
-# 시즌코드 (26SS, 25FW, 26S, 24SU 등)
-SEASON_PATTERN = r'(?i)\b2[0-9](?:SS|FW|SU|AW|WT|SP|S|F|W)\b\s*'
-
 # 국내판매 마커: [국내...]/(국내...) 괄호토큰 + 관부가세포함 + 국냄매장판(오타).
 #   국내백화점/매장판/매장/당일/판/배송/신상/매장발송 등 '국내~' 전부. 브랜드명은 국내로 시작 안 함 → 안전.
 #   ★일본어 번역 변형(国内店舗版/国内正規品/韓国百貨店/国内当日 등)은 이 한글 마커를 지우면 원천 발생 안 함.
 GLOBAL_DOMESTIC_PATTERN = r'[\[(]\s*(?:국내[^\]\)]*|관부가세포함|국냄매장판)\s*[\])]\s*'
 
-# 적용 순서: 국내마커 → 시즌코드
-GLOBAL_PATTERNS = [GLOBAL_DOMESTIC_PATTERN, SEASON_PATTERN]
-
-# 공통 규칙을 적용하지 않는 몰
-#   ★이 몰들은 '정리된 상품명'에서 모델번호를 뽑아낸다.
-#     시즌코드 규칙은 모델번호 안의 색상코드(20F·23S·27S 등)까지 같이 지워서 모델번호를 깨뜨린다.
-#     (2026-08-05 실측: 이 6몰에서 23건이 깨짐 — 예 'IGELONG-1C00006-20F' → 'IGELONG-1C00006-')
-#   네이버 계열은 모델번호를 상품명이 아닌 다른 항목에서 뽑기 때문에 이 문제가 없다.
-GLOBAL_SKIP = {
-    '9tems', 'brickmansion', 'loromoda', 'laprima', 'labellusso', 'nextzennpack',
-}
+# 적용 순서: 국내마커 → 시즌토큰(strip_season_tokens)
+GLOBAL_PATTERNS = [GLOBAL_DOMESTIC_PATTERN]
 
 
 # =====================================================
@@ -75,20 +63,15 @@ MALL_PATTERNS = {
         r'\[[0-9]+%중복쿠폰\]\s*',
     ],
     'maniaon':    [r'\s*매니아온\s*$', r'\[국내배송\]\s*'],       # 끝의 '매니아온' suffix + [국내배송]
-    'unico':      [r'\s+\d{2}[A-Z]\s*$'],                         # 끝의 시즌코드 '26S' (unico 특정)
     # 앞의 '실시간유럽' 머리말. 괄호 있는 것([실시간유럽])과 없는 것(실시간유럽 프라다…)이 섞여 있고
     # 2026-07-27 199건 중 42건(괄호 14/민 28) 전부 맨 앞 → 괄호 옵셔널 + ^ 앵커.
     'luvgrande':  [r'^\s*[\[(]?\s*실시간유럽\s*[\])]?\s*'],
     'pano':       [r'\[국내신상\]\s*'],
     'wardrobe':   [r'\[워드로브\]\s*'],                         # 스토어 태그 '[워드로브]' 제거.
     'milanosangin': [r'[\[(]\s*당일\s*[\])]\s*'],              # 당일배송 표시 '(당일)' 제거. (미세하자 당일)'은 STORE_EXCLUDE_KEYWORDS 의 '하자'로 걸러짐
-    'thesogno':   [r'(?i)\b1[0-9](?:SS|FW|SU|AW|WT|SP)\b\s*'],     # 2010년대 시즌코드(19FW 등). 공통 SEASON_PATTERN은 2X 연도만 잡아 1X를 못 걸러냄.
     # 상품명 맨 앞 소괄호 토큰 전부 제거 — (국내아울렛) (수량한정) (국배내송) 등 종류가 다양해 내용을 열거하지 않고 '맨 앞 괄호'라는 위치로 지운다. 연속으로 붙은 것도 모두.
     #   ★단 '스크래치'가 든 괄호는 남긴다 — 지워버리면 아래 제외 규칙이 못 걸린다.
     'gimpooutlet': [r'^(?:\s*\((?![^)]*스크래치)(?![^)]*스크레치)[^)]{1,30}\)\s*)+'],
-    # 시즌코드 6F/6S/5F/5S (=26FW/26SS/25FW/25SS). 공통 SEASON_PATTERN은 26FW 형태만 잡아 못 걸러냄.
-    # "[CP컴퍼니]6F 품번…" · "프라다/5S 품번…" 둘 다 처리.
-    'artemoa':    [(r'\s*/?\s*\b\d[FSW]\b\s*', ' ')],
     'larlashoes': [r'[\[(]\s*(?:국내매장판|국내매장|국냄매장판)\s*[\])]\s*'],           # 국내매장판/매장/오타 국냄매장판 (괄호무관, 브랜드명 제외)
     'luxlimit':   [r'[\[(]\s*(?:국내백화점|국내매장판|국내매장|국내당일|관부가세포함)\s*[\])]\s*'],  # 국내백화점/매장판/매장/당일/관부가세포함 (괄호무관, 브랜드명 제외)
     'shinsegae':  [
@@ -110,6 +93,134 @@ MALL_PATTERNS = {
 
 
 # =====================================================
+# 시즌 토큰 (상품명·품번 공용)
+# =====================================================
+# 지운다
+#   연도 + SS/FW/SU/AW/WT/SP       26SS 25FW 15SS 24SP 19FW · 2026SS 2025FW
+#   SS/FW/SU/AW/WT/SP + 연도       SS25 FW24 AW23 SS26 · SS2026 FW2025
+#   26/25/6/5 + F/S/W              26S 25F 26W 6F 5S 5W
+#   연도(+년) + F/W · S/S 꼴        25F/W · 24 S/S · 26년F/W · S/S 25년 · 2026 S/S
+#     ※ 연도 = 15~29, 앞에 20 이 붙은 네 자리도 같이 본다(2015~2029).
+# 지우는 조건
+#   공백으로 떨어진 단독 단어일 때만. 앞뒤 괄호는 벗기고 판정한다([26SS] (25FW)).
+#   한글·일본어에 바로 붙은 것도 지운다(26SS스투시 → 스투시). 품번엔 한글이 없어 안전하다.
+# 손대지 않는다
+#   영문·숫자에 붙은 것        19CMSS058A · A25SS · SS25COLLECTION
+#   하이픈·슬래시로 이어진 것   25FW-PMPUPP01-541 · 프라다/5S
+#   연도 범위 밖              20F · 23S · 01FW · 00AW · 38AW
+#   ★연도 없는 맨 S/S · L/S    반팔(Short Sleeve)·긴팔(Long Sleeve)이지 시즌이 아니다.
+#     실측: 'L/S T-shirt' 336건과 짝을 이룬 'S/S Shirt' 3,559건. 그래서 연도가 붙은 것만 지운다.
+#   ★20F·23S 는 품번 끝에 붙는 색상코드다(예 '1A00108 597YW 20F' — 778·999 자리와 같다).
+#     연도를 15~29 로, 한 글자 형태를 26/25/6/5 로 좁게 잡아 이걸 지키고 있다.
+# 연도 — 두 자리(25) 와 네 자리(2025) 둘 다. 앞에 숫자가 더 붙어 있으면(1520SS) 시즌이 아니다.
+_YEAR = r'(?<![0-9])(?:20)?(?:1[5-9]|2[0-9])'
+_HALF = r'(?:SS|FW|SU|AW|WT|SP)'
+_SEASON_CORE = (_YEAR + _HALF
+                + r'|' + _HALF + _YEAR
+                + r'|(?<![0-9])(?:26|25|6|5)[FSW]')
+# 슬래시 꼴(F/W · S/S)은 토큰 경계가 아니라 연도 인접으로 가른다 — 연도가 없으면 반팔/긴팔이다.
+#   '년' 이 끼는 표기(26년F/W · S/S 25년신상)도 함께 받는다. 실측 신세계·롯데 1,593건.
+_SEASON_SLASH_RE = re.compile(
+    _YEAR + r'년?\s?[FS]/[SW]'
+    r'|[FS]/[SW]\s?' + _YEAR + r'년?(?![0-9])', re.I)
+# '붙어 있다'로 볼 이웃 글자 — 영문·숫자와 하이픈·언더바·슬래시·마침표.
+#   이 글자들에 닿아 있으면 품번의 일부로 보고 손대지 않는다(25FW-PMPUPP01 · A25SS · 프라다/5S).
+#   한글·일본어는 여기 없으므로 '26SS스투시' 는 떨어진 것으로 보아 지운다(품번엔 한글이 없다).
+_NEIGHBOR = r'[A-Za-z0-9\-_/.]'
+# ① 괄호가 시즌만 감싼 경우 — 괄호째 지운다. "[26SS] 프라다" → "프라다"
+_SEASON_BRACKETED_RE = re.compile(
+    r'[\[({]\s*(?:' + _SEASON_CORE + r')\s*[\])}]\s*', re.I)
+# ② 그 외 떨어져 있는 시즌.
+#    앞이 공백·여는괄호·문자열 시작이면 뒤 공백까지 먹는다 — "[26SS 신규입고]" → "[신규입고]".
+#    앞이 한글이면 뒤 공백은 남긴다 — "프라다26SS 백" → "프라다 백" (안 그러면 '프라다백' 이 된다).
+_SEASON_STANDALONE_RE = re.compile(
+    r'(?:^|(?<=[\s\[({]))(?:' + _SEASON_CORE + r')(?!' + _NEIGHBOR + r')\s*'
+    r'|(?<!' + _NEIGHBOR + r')(?:' + _SEASON_CORE + r')(?!' + _NEIGHBOR + r')', re.I)
+
+
+# ★맨 끝에 오는 시즌 모양 토큰은 시즌이 아니라 색상코드다 — 손대지 않는다.
+#   색상코드와 시즌은 생김새가 같아(둘 다 숫자2+글자2) 모양으로는 못 가른다. 자리로 가른다.
+#   실측(raw 전수, 맨 끝이 시즌 모양인 품번 27건):
+#     · 색상코드 확실 14건 — 같은 자리에 색상값이 함께 온다
+#         이자벨마랑  'PM0001FA A1X19M 23SU' ← 02FK · 02GY · 30BU · 86LC 와 같은 자리
+#         이자벨마랑  'SH0021FB B1J15E 23SU' ← 01BK(블랙) · 20WH(화이트) 와 같은 자리
+#         오트리      'AULW SU15'            ← BB52 · CB08 · DG01 · DW02 와 같은 자리 (형제 62종)
+#         unico      '15S TRLD WT16'        ← SR01 · SR02 · WT04 와 같은 자리
+#     · 시즌으로 보임 13건 — 형제가 없어 증거 부족. 대부분 통합 실행기 밖의 몰.
+#   → 지워서 품번을 깨뜨리는 쪽(색상 구분 소실·과병합)이 남겨두는 쪽보다 손해가 크다.
+#   → 그룹 판정은 canonicalize 가 따로 시즌을 떼고 하므로, 남겨둬도 묶음은 흔들리지 않는다.
+#   ★상품명에도 같은 예외를 쓴다. 상품명은 끝에 품번이 붙는 일이 많고(실측 27%),
+#     상품명이 시즌 모양으로 끝나는 581건 중 580건이 품번의 꼬리였다(진짜 시즌은 1건).
+#         labellusso '…옌키 로고 토트백PM0001FA A1X19M 23SU'  품번='PM0001FA A1X19M 23SU'
+#         lotte      '…앙티브 캔버스 토트백 6Y2B0D18 NDZ RFK 25S' 품번='6Y2B0D18 NDZ RFK 25S'
+#     변환기가 조립하는 이름('… 상품명 + 품번')은 항상 품번으로 끝나므로 더욱 그렇다.
+_SEASON_LAST_TOKEN_RE = re.compile(r'^(?:' + _SEASON_CORE + r')$', re.I)
+
+
+def _strip_season(text: str) -> str:
+    cleaned = _SEASON_SLASH_RE.sub(' ', text)
+    cleaned = _SEASON_BRACKETED_RE.sub('', cleaned)
+    cleaned = _SEASON_STANDALONE_RE.sub('', cleaned)
+    return re.sub(r'\s+', ' ', cleaned).strip()
+
+
+def strip_season_tokens(text: str, model_no: bool = True) -> str:
+    """상품명·품번에서 시즌 토큰만 뺀다. 남는 조각의 원문 표기는 유지한다.
+
+    맨 끝 토큰이 시즌 모양이면 손대지 않는다 — 거기 오는 건 색상코드이거나 품번의 꼬리다
+    (위 _SEASON_LAST_TOKEN_RE 설명 참고). model_no=False 로 그 보호를 끌 수 있다.
+
+    예) "26SS 프라다 백"            → "프라다 백"
+        "[26SS] 프라다 백"          → "프라다 백"          (괄호가 짝이면 통째로)
+        "[26SS 신규입고] 프라다"     → "[신규입고] 프라다"    (짝이 아니면 괄호는 남긴다)
+        "26SS 1A00108 597YW 20F"  → "1A00108 597YW 20F"   (색상코드 20F 보존)
+        "25FW-PMPUPP01-541"       → 그대로                (하이픈은 붙은 것으로 본다)
+        "AULW SU15" · "SH0021FB B1J15E 23SU" (model_no=True) → 그대로  (품번 맨 끝은 색상코드)
+    같은 값을 두 번 넣어도 결과가 같다(멱등).
+    """
+    if not text:
+        return text
+    if model_no:
+        parts = text.split()
+        # 맨 끝 토큰 보호는 '앞에 진짜 품번이 있을 때'만 뜻이 있다. 품번이 시즌 한 덩어리뿐이면
+        #   ('26SS' · '2024SS') 그건 색상코드가 아니라 그냥 품번이 없는 것이므로 지운다.
+        if len(parts) >= 2 and _SEASON_LAST_TOKEN_RE.match(parts[-1]):
+            head = _strip_season(' '.join(parts[:-1]))
+            return (head + ' ' + parts[-1]).strip()
+    return _strip_season(text)
+
+
+# =====================================================
+# 품번 유효성
+# =====================================================
+# 색상명 — 품번 후보에서 색상만 남는 것을 걸러내려고 쓴다.
+#   (okmall·naver 수집기가 각자 갖고 있던 목록을 합쳐 한 곳으로 모았다)
+_COLOR_WORDS = {
+    'BLACK', 'WHITE', 'NAVY', 'GREY', 'GRAY', 'RED', 'BLUE', 'GREEN', 'BROWN',
+    'BEIGE', 'PINK', 'CREAM', 'KHAKI', 'ORANGE', 'YELLOW', 'IVORY', 'CAMEL',
+    'CHARCOAL', 'SILVER', 'GOLD', 'BURGUNDY', 'OLIVE', 'TAN', 'SAND', 'NATURAL',
+    'DARK', 'LIGHT', 'MOSS', 'INK', 'FOG',
+}
+
+
+def is_valid_model_no(model_no: str) -> bool:
+    """품번으로 쓸 수 있는 값인지. 수집기들이 쓰던 판정과 같은 규칙이다.
+
+    3자 이하 / 한글 포함 / 색상명만 남는 값은 품번이 아니다.
+    이런 값으로 시세를 검색하면 엉뚱한 상품이 잔뜩 잡혀 최저가가 틀어진다.
+    """
+    s = (model_no or '').strip()
+    if len(s) <= 3:
+        return False
+    if re.search(r'[가-힣ㄱ-ㅎㅏ-ㅣ]', s):
+        return False
+    parts = [p for p in re.split(r'[\s/\-]+', s.upper()) if p]
+    if parts and all(p in _COLOR_WORDS for p in parts):
+        return False
+    return len(''.join(p for p in parts if p not in _COLOR_WORDS)) > 3
+
+
+# =====================================================
 # 정리 실행
 # =====================================================
 
@@ -126,9 +237,11 @@ def clean_product_name(mall: str, name: str) -> str:
             cleaned = re.sub(pat[0], pat[1], cleaned)
         else:
             cleaned = re.sub(pat, '', cleaned)
-    if mall not in GLOBAL_SKIP:
-        for pat in GLOBAL_PATTERNS:
-            cleaned = re.sub(pat, '', cleaned)
+    for pat in GLOBAL_PATTERNS:
+        cleaned = re.sub(pat, '', cleaned)
+    # 시즌 토큰 — 전 몰 공통. 단독 단어만 지우므로 '정리된 이름에서 품번을 뽑는 몰'도 안전하다
+    #   (예 loromoda '… / IGELONG-1C00006-20F' 은 하이픈으로 붙어 있어 안 걸린다).
+    cleaned = strip_season_tokens(cleaned)   # 맨 끝 토큰(품번 꼬리·색상코드)은 보호된다
     # 중복 공백 정리
     cleaned = re.sub(r'\s+', ' ', cleaned)
     return cleaned.strip()
@@ -138,6 +251,12 @@ def clean_product_name(mall: str, name: str) -> str:
 # 품번(model_id) 정리
 # =====================================================
 
+# ★ 아래 drop_season_model_tokens 는 위 strip_season_tokens 와 목적이 다르다. 합치지 말 것.
+#     strip_season_tokens      = 저장·전송되는 값을 고친다 → 보수적(하이픈으로 붙은 건 안 건드림)
+#     drop_season_model_tokens = 그룹 판정용 비교 키를 만든다(dedup_corrector_merge.canonicalize)
+#                                → 공격적(하이픈 접두 25FW- 도 뗀다). 같은 상품을 한 묶음으로 모으려면
+#                                  비교할 때는 시즌을 무시하는 게 맞다. 이 값은 어디에도 저장되지 않는다.
+#
 # 시즌코드만 (25SS / SS25 / 26FW / 19SS).
 # 연도 15-29 만 본다. 01FW·00AW·38AW·AW63 은 색상/사이즈 코드라 빼면 안 된다.
 _NON_ALNUM = re.compile(r'[^A-Z0-9]+')

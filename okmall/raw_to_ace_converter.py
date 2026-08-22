@@ -31,7 +31,7 @@ import unicodedata
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from sqlalchemy import create_engine, text
-from name_rules import clean_product_name, dedupe_model_id  # 몰별 상품명 정리 규칙 / 품번 중복 병기 정리
+from name_rules import clean_product_name, dedupe_model_id, strip_season_tokens, is_valid_model_no  # 상품명 정리 / 품번 중복 병기 / 시즌 토큰 / 품번 유효성
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
@@ -833,6 +833,19 @@ class RawToAceConverter:
         #   raw 는 수집 원본 그대로 두고(source_model_id), ace 부터 정리된 값을 쓴다.
         #   ★ 상품명에도 품번이 붙는데 이름은 게시 후 못 고치므로 여기서 잡아야 한다.
         model_id = dedupe_model_id(raw_data.get('model_id'))
+        # 품번 시즌 토큰 제거 — 전 몰 공통. ★상품명 조립보다 먼저여야 한다.
+        #   아래에서 이름 뒤에 품번을 붙이므로, 여기서 안 빼면 이름 정리로 지운 시즌이
+        #   품번을 타고 상품명에 다시 들어간다(이름은 게시 후 못 고친다).
+        _model_id_before = model_id
+        model_id = strip_season_tokens(model_id)
+        # ★품번 검증 — 전 몰 공통. 여기가 40몰이 모두 지나는 유일한 관문이다.
+        #   품번은 BUYMA 에서 그 상품을 찾아내는 열쇠다. '022' · '스니커즈' · '-' · 'NAVY' 같은 값으로
+        #   최저가를 검색하면 그 상품은 절대 안 나오고 엉뚱한 결과만 잡힌다 → ace 로 보내지 않는다.
+        #   (전에는 naver·okmall 수집기에만 같은 판정이 있어 나머지 몰은 그냥 통과했다)
+        if not is_valid_model_no(model_id):
+            _why = '시즌 제거 후 남지 않음' if _model_id_before != model_id else '품번으로 쓸 수 없음'
+            log(f"  → {_why}: '{_model_id_before}' → '{model_id}', skip")
+            return None
         buyma_name = format_buyma_product_name(
             brand_name=strip_brand_jp(brand_info.get('buyma_brand_name', '')),
             product_name=product_name,

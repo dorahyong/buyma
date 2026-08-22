@@ -30,6 +30,7 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 
 import authority_flag  # 단일권위 전환 스위치 (ace → buyma_listings)
+from name_rules import clean_product_name  # 몰별 + 전 몰 공통 상품명 정리 규칙
 
 # ===========================================
 # 환경 설정
@@ -503,6 +504,10 @@ def extract_product_data(html: str, product_url: str) -> Optional[Dict[str, Any]
 
     brand_en, brand_kr = extract_brand_info(product_ld, soup)
     product_name, full_name, model_id, season = extract_product_name(soup)
+    # 상품명 정리 (국내마커·시즌 등 전 몰 공통 규칙). 규칙은 okmall/name_rules.py 에 모여 있다.
+    #   모델번호는 원본 HTML 괄호에서 따로 뽑으므로 이 정리에 영향받지 않는다.
+    product_name = clean_product_name('okmall', product_name)
+    full_name = clean_product_name('okmall', full_name)
     original_price, sales_price = extract_price_info(product_ld, soup)
     category_path = extract_category_path(breadcrumb_ld)
     options = extract_options(soup, product_ld)
